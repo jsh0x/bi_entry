@@ -9,6 +9,7 @@ from typing import Dict as _Dict, Union as _Union, Any as _Any, List as _List, T
 import psutil as _psutil
 import pywinauto as pwn
 from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_wrapper, win32defines
+from pywinauto import win32structures as struct
 import numpy as np
 log = logging.getLogger('devLog')
 
@@ -34,6 +35,83 @@ def constant_factory(value):
 	return lambda: value
 
 
+class Coordinates:
+	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
+		self._left = None
+		self._top = None
+		self._right = None
+		self._bottom = None
+		#
+		self.left = np.uint32(left)
+		self.top = np.uint32(top)
+		self.right = np.uint32(right)
+		self.bottom = np.uint32(bottom)
+
+	@property
+	def left(self):
+		return self._left
+
+	@left.setter
+	def left(self, value):
+		if self._right and value >= self._right:
+			raise ValueError
+		else:
+			self._left = value
+
+	@property
+	def top(self):
+		return self._top
+
+	@top.setter
+	def top(self, value):
+		if self._bottom and value >= self._bottom:
+			raise ValueError
+		else:
+			self._top = value
+
+	@property
+	def right(self):
+		return self._right
+
+	@right.setter
+	def right(self, value):
+		if self._left and value <= self._left:
+			raise ValueError
+		else:
+			self._right = value
+
+	@property
+	def bottom(self):
+		return self._bottom
+
+	@bottom.setter
+	def bottom(self, value):
+		if self._top and value <= self._top:
+			raise ValueError
+		else:
+			self._bottom = value
+
+	@property
+	def width(self):
+		return np.subtract(self.right, self.left)
+
+	@property
+	def height(self):
+		return np.subtract(self.bottom, self.top)
+
+	@property
+	def center(self):
+		x = np.add(self.left, np.floor_divide(self.width, 2))
+		y = np.add(self.top, np.floor_divide(self.height, 2))
+		return x, y
+
+	def __str__(self):
+		return f"({self.left}, {self.top}, {self.right}, {self.bottom})"
+
+	def __repr__(self):
+		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
+
+
 class Control:
 	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], wrapper, preinit, text: str=None):
 		#self.window = window.__getattribute__(self.name)
@@ -43,6 +121,9 @@ class Control:
 		if not preinit:
 			self.ctrl = wrapper(self.window.element_info)
 		#self.__name__ = self.ctrl.criteria['control_type']
+		props = self.ctrl.get_properties()
+		coord = props['rectangle']
+		self.coordinates = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
 
 	def ready(self):
 		self.window.wait('ready')
@@ -592,6 +673,7 @@ class GridView(Control):
 		cell = self.window.child_window(title=cell_string, visible_only=True)
 		cell.set_focus()
 		cell.click_input()
+
 
 class Tab(Control):
 	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], name, controls, preinit, text: str=None):
