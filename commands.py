@@ -9,8 +9,10 @@ import win32gui
 import win32api
 import numpy as np
 import pywinauto as pwn
+from pywinauto import mouse
+import pyautogui as pag
 from exceptions import *
-from controls import Button
+from controls import Button, Coordinates
 from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm
 import shelve
 
@@ -46,6 +48,44 @@ def move_and_resize(corner: str, total_screens: int=1, spec_screen: int=None):
 			win32gui.MoveWindow(hwnd, 0, np.floor_divide(screen_width, 2), np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
 		elif corner == 'br':
 			win32gui.MoveWindow(hwnd, np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
+def moveTo(x: int, y: int):
+	mouse.move((x, y))
+
+
+def moveRel(xOffset: int=None, yOffset: int=None):
+	x,y = pag.position()
+	if xOffset:
+		x += xOffset
+	if yOffset:
+		y += yOffset
+	mouse.move((x, y))
+
+
+def enumerate_screens() -> Dict[int, Coordinates]:
+	screen_width = win32api.GetSystemMetrics(0)
+	screen_height = win32api.GetSystemMetrics(1)
+	screens = {1: Coordinates(left=0, top=0, right=screen_width-1, bottom=screen_height-1)}
+	moveTo(screen_width-1, np.floor_divide(screen_height, 2))
+	new_pos = 0
+	cur_pos = pag.position()
+	count = 0
+	while new_pos != cur_pos and count < 20:
+		cur_pos = pag.position()
+		moveRel(xOffset=np.floor_divide(screen_width, 2))
+		new_pos = pag.position()
+		moveRel(yOffset=np.multiply(screen_height, 2))
+		limit = pag.position()[1]
+		moveTo(*new_pos)
+		moveRel(xOffset=np.floor_divide(screen_width, 2)-2)
+		rec_pos = pag.position()
+		count += 1
+		result = rec_pos[0]+1, limit+1
+		i = len(screens.keys()) + 1
+		if result[0] != screen_width and new_pos != cur_pos:
+			if screen_height-10 < limit < screen_height+10:
+				limit = screen_height-1
+			screens[i] = Coordinates(left=screens[i-1].right+1, top=0, right=rec_pos[0], bottom=limit)
+	return screens
 
 
 class Application(subprocess.Popen):
