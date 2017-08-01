@@ -2,13 +2,16 @@ import sys
 import logging
 import configparser
 import pathlib
+import multiprocessing
 import datetime
 import argparse
 from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
 from time import sleep
 
+import numpy as np
+
 from __init__ import find_file
-from commands import Application
+from commands import Application, Process, enumerate_screens
 from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
@@ -117,6 +120,8 @@ def pre__init__(app: Application):
 
 
 def transact(app: Application):
+	print(1)
+	sleep(300)
 	log.debug("Transaction script started")
 	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
@@ -364,6 +369,22 @@ def reason():
 # '75268094752664615822V209t1437070'
 
 
+def _subprocess(filepath: str, opt: Dict[str, str], usr: str, pwd: str, cmd_all: Dict[str, callable], cmd: str, left: int, top: int, right: int, bottom: int):
+	with Application(filepath) as app:
+		print(app.pid)
+		app.move_and_resize(left=left, top=top, right=right, bottom=bottom)
+		log.debug('SyteLine application started')
+		try:
+			# crypt_key = opt.get('-k', def_key)
+			crypt_key = opt.get('-k', None)
+			if crypt_key:
+				pwd = decrypt(pwd, key=crypt_key)
+			app.log_in(usr, pwd)
+		except SyteLineLogInError:
+			log.exception("Failed to sign in")
+			quit()
+		cmd_all[cmd](app)
+
 def main(argv):
 	"""parser = argparse.ArgumentParser()
 	parser.add_argument('cmd', type=str)
@@ -411,8 +432,9 @@ def main(argv):
 					config.set('Paths', 'sl_exe', filepath)
 			else:
 				log.debug(f"Filepath set to '{filepath}' base on config")
-	windows = int(opt.get('-w', 1))
-	pref = opt.get('-p', 'lf')
+	instances = int(opt.get('-w', 1))
+	pref = opt.get('-p', None)
+	screens = enumerate_screens()
 	# pref[0]: -----------------------------------
 	# l = last
 	# m = middle (if 3+ screens, but WHY though???)
@@ -425,18 +447,86 @@ def main(argv):
 	# v = half (vertical, left-half/right-half)
 	# q = quarter
 	# p = partial
-	with Application(filepath) as app:
-		log.debug('SyteLine application started')
-		try:
-			# crypt_key = opt.get('-k', def_key)
-			crypt_key = opt.get('-k', None)
-			if crypt_key:
-				pwd = decrypt(pwd, key=crypt_key)
-			app.log_in(usr, pwd)
-		except SyteLineLogInError:
-			log.exception("Failed to sign in")
-			quit()
-		cmd_all[cmd](app)
+	cpu_count = multiprocessing.cpu_count()
+	if instances > cpu_count:
+		raise ValueError(f"Number of instances requested ({instances}) exceeds number of available processors ({cpu_count})")
+	if np.floor_divide(instances, len(screens.keys())) > 4:
+		raise ValueError(f"Number of instances requested ({instances}) exceeds limit of 4 instances per screen")
+	if not pref:
+		if instances == 1:
+			pref = 'lf'
+		elif instances == 2:
+			pref = 'lh'
+		elif instances >= 3:
+			pref = 'lq'
+	elif pref[1] == 'q' and instances > len(screens.keys())*4:
+			raise ValueError(f"Number of instances requested ({instances}) exceeds limit of 4 instances per screen")
+	elif pref[1] == 'h' and instances > len(screens.keys())*2:
+			raise ValueError(f"Number of instances requested ({instances}) exceeds limit of 4 instances per screen")
+	elif pref[1] == 'f' and instances > len(screens.keys()):
+			raise ValueError(f"Number of instances requested ({instances}) exceeds limit of 4 instances per screen")
+	data = []
+
+	for window in range(instances):
+		if pref[1] == 'f':
+			j = 1
+			k = 1
+			if pref[0] == 'l':
+				i = len(screens.keys()) - window
+			elif pref[0] == 'f':
+				i = 1 + window
+		elif pref[1] == 'h':
+			j = np.floor_divide(window, 2)
+			k = 2
+			if pref[0] == 'l':
+				i = len(screens.keys()) - j
+			elif pref[0] == 'f':
+				i = 1 + j
+		elif pref[1] == 'q':
+			j = np.floor_divide(window, 4)
+			k = 4
+			if pref[0] == 'l':
+				i = len(screens.keys()) - j
+			elif pref[0] == 'f':
+				i = 1 + j
+		else:
+			j = 1
+			k = 1
+			if pref[0] == 'l':
+				i = len(screens.keys()) - window
+			elif pref[0] == 'f':
+				i = 1 + window
+		scrn = screens[i]
+		subwindow = np.remainder(window, k)
+		left = scrn.left
+		top = scrn.top
+		right = scrn.right
+		bottom = scrn.bottom
+		if pref[1] == 'f':
+			pass
+		elif pref[1] == 'h':
+			if subwindow == 0:
+				bottom -= np.floor_divide(scrn.height, 2)
+			elif subwindow == 1:
+				top += np.floor_divide(scrn.height, 2)
+		elif pref[1] == 'q':
+			if subwindow == 0:
+				right -= np.floor_divide(scrn.width, 2)
+				bottom -= np.floor_divide(scrn.height, 2)
+			elif subwindow == 1:
+				left += np.floor_divide(scrn.width, 2)
+				bottom -= np.floor_divide(scrn.height, 2)
+			elif subwindow == 2:
+				top += np.floor_divide(scrn.height, 2)
+				right -= np.floor_divide(scrn.width, 2)
+			elif subwindow == 3:
+				left += np.floor_divide(scrn.width, 2)
+		data = (filepath, opt, usr, pwd, cmd_all, cmd, left, top, right, bottom)
+		p = multiprocessing.Process(target=_subprocess, args=data)
+		print(p.pid)
+		sleep(10)
+
+
 
 if __name__ == '__main__':
 	main(sys.argv)

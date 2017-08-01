@@ -1,5 +1,6 @@
 import os
 import subprocess
+import multiprocessing
 
 import logging
 from typing import Union, Iterable, Dict, Any, Tuple, List
@@ -74,42 +75,8 @@ def enumerate_screens() -> Dict[int, Coordinates]:
 			screens[i] = Coordinates(left=screens[i-1].right+1, top=0, right=rec_pos[0], bottom=limit)
 	return screens
 
-
-class Application(subprocess.Popen):
-	def __init__(self, args: Iterable[Union[bytes, str]]):
-		super().__init__(args)
-		log.debug("Application initialization started")
-		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
-		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self._sign_in = self.app_win32['Sign In']
-		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
-		self._hwnd = None
-		self._all_win = {'win32': self._win, 'uia': self._win2}
-		self.popup = self.app_win32['Infor ERP SL']
-		self._error = self.app_win32['Error']
-		self._forms = []
-		self.logged_in = False
-		self.log_in = self._log_in
-		#self.db = shelve.open('forms')
-		log.debug("Application initialization successful")
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, traceback):
-		if self.stdout:
-			self.stdout.close()
-		if self.stderr:
-			self.stderr.close()
-		try:  # Flushing a BufferedWriter may raise an error
-			if self.stdin:
-				self.stdin.close()
-		finally:
-			# self.wait()
-			self.kill()
-
-	def _log_in(self, username: str=None, password: str=None):
+class BaseApplication:
+	def _log_in(self, username: str = None, password: str = None):
 		log.debug("Attempting log in")
 		user_textbox = self._sign_in['Edit3']
 		password_textbox = self._sign_in['Edit2']
@@ -120,10 +87,10 @@ class Application(subprocess.Popen):
 		ok_button.Click()
 		log.debug("Logging in")
 		if self._error.exists():
-				message = self._error.Static2.texts()[0]
-				# Redo in regex
-				if ('count limit' in message) and ('exceeded' in message):
-					self._error.OKButton.Click()
+			message = self._error.Static2.texts()[0]
+			# Redo in regex
+			if ('count limit' in message) and ('exceeded' in message):
+				self._error.OKButton.Click()
 		while self.popup.exists():
 			message2 = self.popup.Static2.texts()[0]
 			if (f"session for user '{username}'" in message2) and ('already exists' in message2):
@@ -182,6 +149,7 @@ class Application(subprocess.Popen):
 			pass
 		else:
 			log.warning(f"Failed to remove form '{name}', it does not exist")
+
 	"""retval = {}
 		try:
 			self._forms = self._win.window(class_name_re='.*MDICLIENT*').children()
@@ -208,6 +176,70 @@ class Application(subprocess.Popen):
 		self._hwnd = self._win.handle
 		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
 		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
+
+
+class Application(BaseApplication, subprocess.Popen):
+	def __init__(self, args: Iterable[Union[bytes, str]]):
+		super().__init__(args)
+		log.debug("Application initialization started")
+		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
+		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
+		self._sign_in = self.app_win32['Sign In']
+		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
+		self._hwnd = None
+		self._all_win = {'win32': self._win, 'uia': self._win2}
+		self.popup = self.app_win32['Infor ERP SL']
+		self._error = self.app_win32['Error']
+		self._forms = []
+		self.logged_in = False
+		self.log_in = self._log_in
+		#self.db = shelve.open('forms')
+		log.debug("Application initialization successful")
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, traceback):
+		if self.stdout:
+			self.stdout.close()
+		if self.stderr:
+			self.stderr.close()
+		try:  # Flushing a BufferedWriter may raise an error
+			if self.stdin:
+				self.stdin.close()
+		finally:
+			# self.wait()
+			self.kill()
+
+
+class Process(BaseApplication, multiprocessing.Process):
+	def __init__(self, target: callable, args: Iterable[Union[bytes, str]]):
+		super().__init__(target=target, args=args)
+		self.start()
+		log.debug("Application initialization started")
+		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
+		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
+		self._sign_in = self.app_win32['Sign In']
+		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
+		self._hwnd = None
+		self._all_win = {'win32': self._win, 'uia': self._win2}
+		self.popup = self.app_win32['Infor ERP SL']
+		self._error = self.app_win32['Error']
+		self._forms = []
+		self.logged_in = False
+		self.log_in = self._log_in
+		#self.db = shelve.open('forms')
+		log.debug("Application initialization successful")
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self):
+		# self.wait()
+		self.terminate()
+
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

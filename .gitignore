@@ -203,6 +203,7 @@ develop-eggs/
 .installed.cfg
 dev.key
 *.log
+workspace.xml
 
 # Installer logs
 pip-log.txt
