@@ -5,15 +5,13 @@ import pathlib
 import datetime
 import argparse
 from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
-
 from time import sleep
 
 from __init__ import find_file
 from commands import Application
-from _sql import SQL
+from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
-from form_pickler import test
 
 LabeledDataRow = Dict[str, Any]
 SRO_Row = Dict[str, Any]
@@ -27,9 +25,8 @@ _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
                               '58803900396063004620360048603840426038404620',
                               '1121327')
 _adr_data, _usr_data, _pwd_data, _db_data, _key = _assorted_lengths_of_string
-sql = SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
-
-
+mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
+sqlite = SQL_Lite(database='positional_history.db', detect_types=1)
 # transact parts
 # quick query
 # inputting reason codes
@@ -37,7 +34,7 @@ sql = SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), p
 class Part:
 	def __init__(self, part_number: str, quantity: int=1):
 		self.part_number = part_number
-		_data = sql.query(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+		_data = mssql.query(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		self.quantity = quantity * int(_data.get('Qty', 1))
 		self.display_name = str(_data.get('DispName', None))
 		self.part_name = str(_data.get('PartName', None))
@@ -124,9 +121,9 @@ def transact(app: Application):
 	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
 	while True:
-		queued = sql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] <> 'QC'", fetchall=True)
+		queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] <> 'QC'", fetchall=True)
 		if not queued:
-			queued = sql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] = 'QC'", fetchall=True)
+			queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] = 'QC'", fetchall=True)
 			if not queued:
 				continue
 			else:
@@ -138,7 +135,7 @@ def transact(app: Application):
 			queued2.append(q[0])
 		queued = queued2
 		sorted_sfx_queue = sorted(queued, key=lambda x: sfx_dict[x])
-		unit_data = sql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
+		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
 		unit = Unit(**unit_data)
 		log.info("Unit data found:")
 		# Assumes Units form already open
@@ -285,7 +282,7 @@ def transact(app: Application):
 				SRO_Operations.general_tab.received_date.set_text(min_date.strftime("%m/%d/%Y %I:%M:%S %p"))
 			if not fl_d:
 				date_string = min_date.strftime("%Y-%m-%d 00:00:00")
-				value = sql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
+				value = mssql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
 				if not value:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
@@ -310,7 +307,7 @@ def transact(app: Application):
 				count += 1
 			if count > 0:
 				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{BACKSPACE}{BACKSPACE}{ENTER}')
-				res = sql.query(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{unit.operator}'")
+				res = mssql.query(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{unit.operator}'")
 				first,last = res['FirstName'],res['LastName']
 				initials = first[0].upper()+last[0].upper()
 				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{initials} {unit.datetime.strftime('%m/%d/%Y')}")
