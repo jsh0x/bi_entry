@@ -35,19 +35,6 @@ else:
 	dev_mode = False
 
 
-def move_and_resize(corner: str, total_screens: int=1, spec_screen: int=None):
-	hwnd = win32gui.GetForegroundWindow()
-	if total_screens > 1:
-		pass
-	else:
-		if corner == 'tl':
-			win32gui.MoveWindow(hwnd, 0, 0, np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
-		elif corner == 'tr':
-			win32gui.MoveWindow(hwnd, np.floor_divide(screen_width, 2), 0, np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
-		elif corner == 'bl':
-			win32gui.MoveWindow(hwnd, 0, np.floor_divide(screen_width, 2), np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
-		elif corner == 'br':
-			win32gui.MoveWindow(hwnd, np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
 def moveTo(x: int, y: int):
 	mouse.move((x, y))
 
@@ -97,6 +84,7 @@ class Application(subprocess.Popen):
 		self._sign_in = self.app_win32['Sign In']
 		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
 		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
+		self._hwnd = None
 		self._all_win = {'win32': self._win, 'uia': self._win2}
 		self.popup = self.app_win32['Infor ERP SL']
 		self._error = self.app_win32['Error']
@@ -215,6 +203,11 @@ class Application(subprocess.Popen):
 	def wait(self, _type: str):
 		self._win.wait(_type)
 		self._win2.wait(_type)
+
+	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
+		self._hwnd = self._win.handle
+		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
+		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):
