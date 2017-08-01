@@ -1,4 +1,5 @@
 from typing import Union, Dict, Tuple, Any
+import sqlite3
 # Try importing 3rd-party modules
 try:
 	missing_imports = []
@@ -30,11 +31,8 @@ def get_columns_from_command(cmd: str) -> Tuple[str]:
 
 
 class SQL:
-	def __init__(self, address: str, username: str, password: str, database: str):
-		try:
-			self._conn = pysql.connect(server=address, user=username, password=password, database=database, login_timeout=10)
-		except Exception:
-			raise ConnectionError("Connection to SQL Server failed!")
+	def __init__(self, conn: Union[pysql.Connection, sqlite3.Connection]):
+		self._conn = conn
 
 	def query(self, cmd: str, fetchall=False) -> Union[Any, Dict[str, Any], Tuple[Dict[str, Any]]]:
 		c = self._conn.cursor()
@@ -98,3 +96,23 @@ class SQL:
 			return tuple(retval)
 
 # TODO: Function to parse commands, for getting table name, if count, if distinct, if top #, if *, requested columns, etc.
+
+
+class MS_SQL(SQL):
+	def __init__(self, address: str, username: str, password: str, database: str):
+		try:
+			conn = pysql.connect(server=address, user=username, password=password, database=database, login_timeout=10)
+		except Exception:
+			raise ConnectionError("Connection to SQL Server failed!")
+		else:
+			super().__init__(conn=conn)
+
+
+class SQL_Lite(SQL):
+	def __init__(self, database: Union[bytes, str], detect_types: int=0):
+		try:
+			conn = sqlite3.connect(database=database, detect_types=detect_types)
+		except Exception:
+			raise ConnectionError("Connection to SQL Server failed!")
+		else:
+			super().__init__(conn=conn)
