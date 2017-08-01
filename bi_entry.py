@@ -373,11 +373,10 @@ def main(argv):
 		raise ValueError
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
 	cmd_all = {'transact': transact, 'query': query, 'reason': reason}
-	opt_all = ('-fp', '-n', '-w', '-m', '-k')
-	long_opt_all = ('--filepath', '--number', '--workers', '--monitors', '--key')
+	opt_all = ('-fp', '-w', '-k', '-p')
+	long_opt_all = ('--filepath', '--workers', '--key', '--preference')
 	cmd,usr,pwd = argv[1:4]
-	def_key = '6170319'
-	pwd = decrypt(pwd, key=def_key)
+	# def_key = '6170319'
 	if len(argv) > 5:
 		opt = dict(zip(argv[4::2], argv[5::2]))
 		for o in opt.keys():
@@ -391,7 +390,6 @@ def main(argv):
 	log.debug("Attempting to read 'config.ini'")
 	config.read_file(open('config.ini'))
 	filepath = opt.get('-fp', None)
-	# number = kwargs.get('-n', None)
 	if filepath and pathlib.Path(filepath).exists():
 		if config.has_section('Paths') and config.has_option('Paths', 'sl_exe'):
 			filepath = config.set('Paths', 'sl_exe', filepath)
@@ -413,9 +411,27 @@ def main(argv):
 					config.set('Paths', 'sl_exe', filepath)
 			else:
 				log.debug(f"Filepath set to '{filepath}' base on config")
+	windows = int(opt.get('-w', 1))
+	pref = opt.get('-p', 'lf')
+	# pref[0]: -----------------------------------
+	# l = last
+	# m = middle (if 3+ screens, but WHY though???)
+	# f = first
+	# a = all
+
+	# pref[1]: -----------------------------------
+	# f = full
+	# h = half (horizontal, top-half/bottom-half)
+	# v = half (vertical, left-half/right-half)
+	# q = quarter
+	# p = partial
 	with Application(filepath) as app:
 		log.debug('SyteLine application started')
 		try:
+			# crypt_key = opt.get('-k', def_key)
+			crypt_key = opt.get('-k', None)
+			if crypt_key:
+				pwd = decrypt(pwd, key=crypt_key)
 			app.log_in(usr, pwd)
 		except SyteLineLogInError:
 			log.exception("Failed to sign in")
