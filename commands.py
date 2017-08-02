@@ -75,7 +75,41 @@ def enumerate_screens() -> Dict[int, Coordinates]:
 			screens[i] = Coordinates(left=screens[i-1].right+1, top=0, right=rec_pos[0], bottom=limit)
 	return screens
 
-class BaseApplication:
+
+class Application(subprocess.Popen):
+	def __init__(self, args: Iterable[Union[bytes, str]]):
+		super().__init__(args)
+		log.debug("Application initialization started")
+		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
+		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
+		self._sign_in = self.app_win32['Sign In']
+		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
+		self._hwnd = None
+		self._all_win = {'win32': self._win, 'uia': self._win2}
+		self.popup = self.app_win32['Infor ERP SL']
+		self._error = self.app_win32['Error']
+		self._forms = []
+		self.logged_in = False
+		self.log_in = self._log_in
+		#self.db = shelve.open('forms')
+		log.debug("Application initialization successful")
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, type, value, traceback):
+		if self.stdout:
+			self.stdout.close()
+		if self.stderr:
+			self.stderr.close()
+		try:  # Flushing a BufferedWriter may raise an error
+			if self.stdin:
+				self.stdin.close()
+		finally:
+			# self.wait()
+			self.kill()
+
 	def _log_in(self, username: str = None, password: str = None):
 		log.debug("Attempting log in")
 		user_textbox = self._sign_in['Edit3']
@@ -176,70 +210,6 @@ class BaseApplication:
 		self._hwnd = self._win.handle
 		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
 		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
-
-
-class Application(BaseApplication, subprocess.Popen):
-	def __init__(self, args: Iterable[Union[bytes, str]]):
-		super().__init__(args)
-		log.debug("Application initialization started")
-		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
-		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self._sign_in = self.app_win32['Sign In']
-		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
-		self._hwnd = None
-		self._all_win = {'win32': self._win, 'uia': self._win2}
-		self.popup = self.app_win32['Infor ERP SL']
-		self._error = self.app_win32['Error']
-		self._forms = []
-		self.logged_in = False
-		self.log_in = self._log_in
-		#self.db = shelve.open('forms')
-		log.debug("Application initialization successful")
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, type, value, traceback):
-		if self.stdout:
-			self.stdout.close()
-		if self.stderr:
-			self.stderr.close()
-		try:  # Flushing a BufferedWriter may raise an error
-			if self.stdin:
-				self.stdin.close()
-		finally:
-			# self.wait()
-			self.kill()
-
-
-class Process(BaseApplication, multiprocessing.Process):
-	def __init__(self, target: callable, args: Iterable[Union[bytes, str]]):
-		super().__init__(target=target, args=args)
-		self.start()
-		log.debug("Application initialization started")
-		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
-		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self._sign_in = self.app_win32['Sign In']
-		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
-		self._hwnd = None
-		self._all_win = {'win32': self._win, 'uia': self._win2}
-		self.popup = self.app_win32['Infor ERP SL']
-		self._error = self.app_win32['Error']
-		self._forms = []
-		self.logged_in = False
-		self.log_in = self._log_in
-		#self.db = shelve.open('forms')
-		log.debug("Application initialization successful")
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self):
-		# self.wait()
-		self.terminate()
-
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

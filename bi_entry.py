@@ -11,7 +11,7 @@ from time import sleep
 import numpy as np
 
 from __init__ import find_file
-from commands import Application, Process, enumerate_screens
+from commands import Application, enumerate_screens
 from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
@@ -42,12 +42,16 @@ class Part:
 		self.display_name = str(_data.get('DispName', None))
 		self.part_name = str(_data.get('PartName', None))
 		self.location = str(_data.get('Location', None))
+		log.debug(f"Part initialization complete for part {self.part_number}")
+
+	def __str__(self):
+		return f"{self.display_name}({self.part_number}) x {self.quantity}"
 
 
 class Unit:
 	def __init__(self, **kwargs: LabeledDataRow):
-		for k,v in kwargs.items():
-			log.info(f"{k}  {v}")
+		# for k,v in kwargs.items():
+		# 	log.info(f"{k}  {v}")
 		self.id = kwargs.get('Id', None)
 		self.serial_number = kwargs.get('Serial Number', None)
 		# self.serial_number = kwargs.get('SerialNumber', None)
@@ -61,6 +65,7 @@ class Unit:
 		self.parts = kwargs.get('Parts', None).split(',')
 		self.datetime = kwargs.get('DateTime', None)
 		self.notes = kwargs.get('Notes', None)
+		log.debug("Unit initialization complete")
 
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
@@ -80,6 +85,7 @@ class Unit:
 	def serial_number_prefix(self, value: str):
 		if type(self.serial_number_prefix) is tuple and value in self.serial_number_prefix:
 			self._serial_number_prefix = value
+			log.debug(f"Serial Number Prefix set: {value}")
 		else:
 			self._serial_number_prefix = None
 
@@ -89,8 +95,12 @@ class Unit:
 
 	@parts.setter
 	def parts(self, value: Iterable[str]):
-		if value:
+		if value and value != ['']:
 			self._parts = map(Part, value)
+			string = ""
+			for p in self._parts:
+				string += f"{p}, "
+			log.debug("Parts mapped: "+string[:-2])
 		else:
 			self._parts = None
 
@@ -102,6 +112,7 @@ class Unit:
 	def datetime(self, value: str):
 		if type(value) is str:
 			self._datetime = datetime.datetime.strptime(value, "%m/%d/%Y %I:%M:%S %p")
+			log.debug(f"Datetime set: {self._datetime}")
 		else:
 			self._datetime = value
 
@@ -120,31 +131,40 @@ def pre__init__(app: Application):
 
 
 def transact(app: Application):
-	print(1)
-	sleep(300)
 	log.debug("Transaction script started")
 	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
 	while True:
+		log.debug("Checking queued non-QC transactions")
 		queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] <> 'QC'", fetchall=True)
 		if not queued:
+			log.debug("No queued non-QC transactions found")
+			log.debug("Checking queued QC transactions")
 			queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] = 'QC'", fetchall=True)
 			if not queued:
+				log.debug("No queued QC transactions found")
 				continue
 			else:
+				log.debug(f"Queued QC transaction found for suffix type: {queued[0]}")
 				mod = '='
 		else:
+			log.debug(f"Queued non-QC transaction found for suffix type: {queued[0]}")
 			mod = '<>'
 		queued2 = []
 		for q in queued:
 			queued2.append(q[0])
 		queued = queued2
 		sorted_sfx_queue = sorted(queued, key=lambda x: sfx_dict[x])
+		log.debug("Receiving unit data")
 		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
 		unit = Unit(**unit_data)
 		log.info("Unit data found:")
+		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
+		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
 		# Assumes Units form already open
+		log.debug("Opening Service Order Lines form")
 		app.add_form('UnitsForm')
+		log.debug("Unit form opened")
 		Units = app.UnitsForm
 		# test('UnitsForm', Units)
 		log.debug("Unit Started")
@@ -167,16 +187,21 @@ def transact(app: Application):
 			app.apply_filter.click()
 			if Units.serial_number != unit.serial_number_prefix + unit.serial_number:
 				raise ValueError
+		log.debug("Opening Owner History Tab")
 		Units.owner_history_tab.select()
+		log.debug("Checking Owner History Tab grid")
 		Units.owner_history_tab.grid.sort_with_header('Eff Date')
 		Units.owner_history_tab.grid.populate_grid('Eff Date', 1)
 		Units.owner_history_tab.grid.select_cell('Eff Date', 1)
 		min_date = Units.owner_history_tab.grid.cell
+		log.debug(f"Received date found: {min_date}")
 		# Check SROs
 		rows = []
+		log.debug("Opening Service History Tab")
 		Units.service_history_tab.select()
 		max_results = 3
 		max_rows = 5
+		log.debug("Checking Service History Tab grid")
 		if max_rows > Units.service_history_tab.grid.rows:
 			max_rows = Units.service_history_tab.grid.rows
 		Units.service_history_tab.grid.populate_grid('Close Date', range(1, max_rows+1))
@@ -187,103 +212,156 @@ def transact(app: Application):
 			if len(rows) >= max_results:
 				break
 		# Check each SRO making sure it's open
+		log.info(f"Out of first {max_rows} rows, {len(rows)} open SROs found: {rows}")
 		for i,row in enumerate(rows):
+			log.debug(f"Trying SRO")
 			Units.service_history_tab.grid.select_row(row)
 			Units.service_history_tab.view.click(wait_string=None)
+			log.debug("Opening Service Order Lines form")
 			app.add_form('ServiceOrderLinesForm')
 			SRO_Lines = app.ServiceOrderLinesForm
+			log.debug("Waiting for Service Order Lines form...")
 			SRO_Lines.sro_operations.ready()
+			log.debug("Service Order Lines form opened")
+			log.debug(f"Status found: {SRO_Lines.status}")
 			if SRO_Lines.status != 'Open':  # If Service Order Lines' status isn't open, go back and try next SRO
 				app.cancel_close.click()
 				continue
 			SRO_Lines.sro_operations.click(wait_string='form')
+			log.debug("Opening Service Order Operations form")
 			app.add_form('ServiceOrderOperationsForm')
 			SRO_Operations = app.ServiceOrderOperationsForm
+			log.debug("Waiting for Service Order Operations form...")
 			SRO_Operations.general_tab.ready()
+			log.debug("Service Order Operations form opened")
+			log.debug(f"Status found: {SRO_Operations.status}")
 			if SRO_Operations.status != 'Open':  # If Service Order Operations' status isn't open, go back and try next SRO
 				app.cancel_close.click()
 				app.cancel_close.click()
 				continue
-			SRO_Operations.sro_transactions.click(wait_string='form')
-			app.add_form('SROTransactionsForm')
-			SRO_Transactions = app.SROTransactionsForm
-			SRO_Transactions.apply_filter.ready()
-			SRO_Transactions.date_range_start.set_text(min_date)
-			SRO_Transactions.apply_filter.click()
-			max_rows = SRO_Transactions.grid.rows-1
-			posted = []
-			SRO_Transactions.post_batch.ready()
-			if max_rows > 0:
-				SRO_Transactions.grid.populate_grid(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
-				for j in range(1, max_rows + 1):
-					SRO_Transactions.grid.select_cell('Posted', j)
-					posted_cell = SRO_Transactions.grid.cell
-					if posted_cell:
-						SRO_Transactions.grid.select_cell('Item', j)
-						posted.append(SRO_Transactions.grid.cell)
-					else:
-						#raise SyteLineError
-						continue
-				SRO_Transactions.include_posted.click()
+			if unit.parts:
+				log.debug("Opening SRO Transactions form")
+				SRO_Operations.sro_transactions.click(wait_string='form')
+				app.add_form('SROTransactionsForm')
+				SRO_Transactions = app.SROTransactionsForm
+				log.debug("Waiting for SRO Transactions form...")
+				SRO_Transactions.apply_filter.ready()
+				log.debug("SRO Transactions form opened")
+				log.debug("Setting Date Range Start")
+				SRO_Transactions.date_range_start.set_text(min_date)
 				SRO_Transactions.apply_filter.click()
+				max_rows = SRO_Transactions.grid.rows-1
+				posted = []
 				SRO_Transactions.post_batch.ready()
-			count = 1
-			new_parts_list = []
-			for part in unit.parts:
-				if part.part_number in posted:
-					continue
-				SRO_Transactions.grid.select_cell('Item', count)
-				SRO_Transactions.grid.click_cell()
-				sleep(0.2)
-				while app.popup.exists():
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				SRO_Transactions.grid.cell = part.part_number
-				SRO_Transactions.grid.select_cell('Quantity', count)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				SRO_Transactions.grid.cell = part.quantity
-				SRO_Transactions.grid.select_cell('Billing Code', count)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				if unit.suffix == 'Direct' or unit.suffix == 'RTS':
-					SRO_Transactions.grid.cell = 'Contract'
+				log.debug("Checking for already-posted items")
+				if max_rows > 0:
+					SRO_Transactions.grid.populate_grid(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
+					for j in range(1, max_rows + 1):
+						SRO_Transactions.grid.select_cell('Posted', j)
+						posted_cell = SRO_Transactions.grid.cell
+						if posted_cell:
+							SRO_Transactions.grid.select_cell('Item', j)
+							posted.append(SRO_Transactions.grid.cell)
+						else:
+							#raise SyteLineError
+							continue
+					SRO_Transactions.include_posted.click()
+					SRO_Transactions.apply_filter.click()
+					SRO_Transactions.post_batch.ready()
+				if not posted:
+					log.debug("No posted items found")
 				else:
-					SRO_Transactions.grid.cell = 'No Charge'
-				count += 1
-				new_parts_list.append(part)
-			for i,part in zip(range(1, count+1), new_parts_list):
-				SRO_Transactions.grid.select_cell('Location', i)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					app.popup.close_alt_f4()
+					for p in posted:
+						log.debug(f"Posted item found: {p}")
+				count = 1
+				new_parts_list = []
+				for part in unit.parts:
+					log.debug(f"Attempting to transact part {part}")
+					if part.part_number in posted:
+						log.debug("Item already posted, skipping")
+						continue
+					SRO_Transactions.grid.select_cell('Item', count)
+					SRO_Transactions.grid.click_cell()
 					sleep(0.2)
-				SRO_Transactions.grid.cell = part.location
-			SRO_Transactions.post_batch.ready()
-			########################################
-			# app.save.click()
-			# SRO_Transactions.post_batch.ready()
-			# SRO_Transactions.post_batch.click()
-			# app.save_close.click()
-			# app.save_close.click()
-			########################################
-			app.cancel_close.click()  #####
-			app.cancel_close.click()  #####
-			SRO_Lines.sro_operations.ready()
-			SRO_Lines.sro_operations.click(wait_string='form')
-			app.add_form('ServiceOrderOperationsForm')
-			SRO_Operations.sro_transactions.ready()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Part Number: {part.part_number}")
+					SRO_Transactions.grid.cell = part.part_number
+					SRO_Transactions.grid.select_cell('Quantity', count)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Quantity: {part.quantity}")
+					SRO_Transactions.grid.cell = part.quantity
+					SRO_Transactions.grid.select_cell('Billing Code', count)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					if unit.suffix == 'Direct' or unit.suffix == 'RTS':
+						log.debug("Entering Billing Code: Contract")
+						SRO_Transactions.grid.cell = 'Contract'
+					else:
+						log.debug("Entering Billing Code: No Charge")
+						SRO_Transactions.grid.cell = 'No Charge'
+					count += 1
+					new_parts_list.append(part)
+				for i,part in zip(range(1, count+1), new_parts_list):
+					SRO_Transactions.grid.select_cell('Location', i)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Location: {part.location} for part {part.part_number}")
+					SRO_Transactions.grid.cell = part.location
+				log.debug("Posting batch")
+				SRO_Transactions.post_batch.ready()
+				########################################
+				# app.save.click()
+				# SRO_Transactions.post_batch.ready()
+				# SRO_Transactions.post_batch.click()
+				# app.save_close.click()
+				# app.save_close.click()
+				########################################
+				app.cancel_close.click()  #####
+				app.cancel_close.click()  #####
+				log.debug("Waiting for Service Order Lines form...")
+				SRO_Lines.sro_operations.ready()
+				log.debug("Service Order Lines form opened")
+				log.debug("Opening Service Order Operations form")
+				SRO_Lines.sro_operations.click(wait_string='form')
+				app.add_form('ServiceOrderOperationsForm')
+				log.debug("Waiting for Service Order Operations form...")
+				SRO_Operations.sro_transactions.ready()
+				log.debug("Service Order Operations form opened")
 			# SRO_Operations.general_tab.select()
+			log.debug("Initiating General Tab controls")
 			SRO_Operations.general_tab.initiate_controls()
+			log.debug("General Tab controls initiated")
 			rc_d = SRO_Operations.general_tab.received_date.text()
+			if not rc_d:
+				log.debug("No Received Date found")
+			else:
+				log.debug(f"Received Date found: {rc_d}")
 			fl_d = SRO_Operations.general_tab.floor_date.text()
+			if not fl_d:
+				log.debug("No Floor Date found")
+			else:
+				log.debug(f"Flood Date found: {fl_d}")
 			#fa_d = SRO_Operations.general_tab.fa_date.text()
 			cp_d = SRO_Operations.general_tab.complete_date.text()
+			if not cp_d:
+				log.debug("No Complete Date found")
+			else:
+				log.debug(f"Complete Date found: {cp_d}")
 			if not rc_d:
+				log.debug(f"Entering Received Date: {min_date.strftime('%m/%d/%Y %I:%M:%S %p')}")
 				SRO_Operations.general_tab.received_date.set_text(min_date.strftime("%m/%d/%Y %I:%M:%S %p"))
 			if not fl_d:
 				date_string = min_date.strftime("%Y-%m-%d 00:00:00")
@@ -293,10 +371,14 @@ def transact(app: Application):
 				else:
 					value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 					value = value.strftime("%m/%d/%Y %I:%M:%S %p")
+				log.debug(f"Entering Floor Date: {value}")
 				SRO_Operations.general_tab.floor_date.set_text(value)
 			if unit.operation == 'QC' and not cp_d:
+				log.debug(f"Entering Complete Date: {unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p')}")
 				SRO_Operations.general_tab.complete_date.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+			log.debug("Opening Reasons Tab")
 			SRO_Operations.reasons_tab.select()
+			quit()
 			# Fill out Resolution Notes
 			block_text = SRO_Operations.reasons_tab.resolution_notes.texts()
 			SRO_Operations.reasons_tab.resolution_notes.set_focus()
@@ -369,22 +451,6 @@ def reason():
 # '75268094752664615822V209t1437070'
 
 
-def _subprocess(filepath: str, opt: Dict[str, str], usr: str, pwd: str, cmd_all: Dict[str, callable], cmd: str, left: int, top: int, right: int, bottom: int):
-	with Application(filepath) as app:
-		print(app.pid)
-		app.move_and_resize(left=left, top=top, right=right, bottom=bottom)
-		log.debug('SyteLine application started')
-		try:
-			# crypt_key = opt.get('-k', def_key)
-			crypt_key = opt.get('-k', None)
-			if crypt_key:
-				pwd = decrypt(pwd, key=crypt_key)
-			app.log_in(usr, pwd)
-		except SyteLineLogInError:
-			log.exception("Failed to sign in")
-			quit()
-		cmd_all[cmd](app)
-
 def main(argv):
 	"""parser = argparse.ArgumentParser()
 	parser.add_argument('cmd', type=str)
@@ -432,7 +498,7 @@ def main(argv):
 					config.set('Paths', 'sl_exe', filepath)
 			else:
 				log.debug(f"Filepath set to '{filepath}' base on config")
-	instances = int(opt.get('-w', 1))
+	'''instances = int(opt.get('-w', 1))
 	pref = opt.get('-p', None)
 	screens = enumerate_screens()
 	# pref[0]: -----------------------------------
@@ -522,10 +588,22 @@ def main(argv):
 			elif subwindow == 3:
 				left += np.floor_divide(scrn.width, 2)
 		data = (filepath, opt, usr, pwd, cmd_all, cmd, left, top, right, bottom)
-		p = multiprocessing.Process(target=_subprocess, args=data)
-		print(p.pid)
-		sleep(10)
-
+		p = multiprocessing.Process(target=_subprocess, args=data)'''
+	with Application(filepath) as app:
+		# app.move_and_resize(left=left, top=top, right=right, bottom=bottom)
+		log.debug('SyteLine application started')
+		try:
+			# crypt_key = opt.get('-k', def_key)
+			crypt_key = opt.get('-k', None)
+			if crypt_key:
+				log.debug("Crypt key provided")
+				pwd = decrypt(pwd, key=crypt_key)
+			log.info("Attempting log in")
+			app.log_in(usr, pwd)
+		except SyteLineLogInError:
+			log.exception("Failed to sign in")
+			quit()
+		cmd_all[cmd](app)
 
 
 if __name__ == '__main__':

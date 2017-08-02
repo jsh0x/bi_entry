@@ -134,7 +134,11 @@ class Control:
 		return self.window.exists()
 
 	def get_properties(self):
+		return self.window.get_properties()
+
+	def get_image(self):
 		return self.window.capture_as_image()
+
 
 	"""	try:
 			val = self.ctrl.get_properties()
