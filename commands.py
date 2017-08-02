@@ -8,9 +8,10 @@ from time import sleep
 
 import win32gui
 import win32api
+from PIL import ImageGrab
 import numpy as np
 import pywinauto as pwn
-from pywinauto import mouse
+from pywinauto import mouse, keyboard as kbd, clipboard as clp
 import pyautogui as pag
 from exceptions import *
 from controls import Button, Coordinates
@@ -76,6 +77,15 @@ def enumerate_screens() -> Dict[int, Coordinates]:
 	return screens
 
 
+def screenshot():
+	clp.EmptyClipboard()
+	kbd.SendKeys('{PRTSC}')
+	sleep(0.01)
+	im = ImageGrab.grabclipboard()
+	clp.EmptyClipboard()
+	return im
+
+
 class Application(subprocess.Popen):
 	def __init__(self, args: Iterable[Union[bytes, str]]):
 		super().__init__(args)
@@ -119,7 +129,7 @@ class Application(subprocess.Popen):
 		user_textbox.SetEditText(username)
 		password_textbox.SetEditText(password)
 		ok_button.Click()
-		log.debug("Logging in")
+		log.debug("Logging in...")
 		if self._error.exists():
 			message = self._error.Static2.texts()[0]
 			# Redo in regex
@@ -138,15 +148,18 @@ class Application(subprocess.Popen):
 				raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
 			sleep(2)
 		log.debug("Log in successful")
+		log.debug("Waiting for Main form...")
 		self.wait('ready')
+		log.debug("Main form opened")
 		self.logged_in = True
-		self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False)
-		self.save = Button(window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False)
-		self.cancel_close = Button(window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False)
-		self.save_close = Button(window=self._all_win, criteria={'best_match': 'Save CloseButton'}, preinit=False)
-		self.apply_filter = Button(window=self._all_win, criteria={'best_match': 'FiPButton'}, preinit=False)
-		self.refresh_filter = Button(window=self._all_win, criteria={'best_match': 'RefreshButton'}, preinit=False)
-		self.reload_filter = Button(window=self._all_win, criteria={'best_match': 'Refresh currentButton'}, preinit=False)
+		log.debug("Initializing global controls")
+		self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
+		self.save = Button(window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False, control_name='Save')
+		self.cancel_close = Button(window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
+		self.save_close = Button(window=self._all_win, criteria={'best_match': 'Save CloseButton'}, preinit=False, control_name='Save Close')
+		self.apply_filter = Button(window=self._all_win, criteria={'best_match': 'FiPButton'}, preinit=False, control_name='Filter In Place')
+		self.refresh_filter = Button(window=self._all_win, criteria={'best_match': 'RefreshButton'}, preinit=False, control_name='Refresh')
+		self.reload_filter = Button(window=self._all_win, criteria={'best_match': 'Refresh currentButton'}, preinit=False, control_name='Refresh Current')
 		self.add_form = self._add_form
 		self.remove_form = self._remove_form
 		self.log_out = self._log_out

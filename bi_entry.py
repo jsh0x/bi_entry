@@ -9,9 +9,11 @@ from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
 from time import sleep
 
 import numpy as np
+from PIL import Image
+from matplotlib import pyplot as plt
 
 from __init__ import find_file
-from commands import Application, enumerate_screens
+from commands import Application, enumerate_screens, screenshot
 from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
@@ -131,6 +133,7 @@ def pre__init__(app: Application):
 
 
 def transact(app: Application):
+	global_props = {}
 	log.debug("Transaction script started")
 	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
@@ -162,12 +165,11 @@ def transact(app: Application):
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
 		# Assumes Units form already open
-		log.debug("Opening Service Order Lines form")
+		log.debug("Opening Units form")
 		app.add_form('UnitsForm')
 		log.debug("Unit form opened")
 		Units = app.UnitsForm
 		# test('UnitsForm', Units)
-		log.debug("Unit Started")
 		# Opens unit
 		if type(unit.serial_number_prefix) is tuple:
 			for pfx in unit.serial_number_prefix:
@@ -187,9 +189,26 @@ def transact(app: Application):
 			app.apply_filter.click()
 			if Units.serial_number != unit.serial_number_prefix + unit.serial_number:
 				raise ValueError
+		log.debug("Unit Started")
+		# TOP - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		im = np.array(screenshot())
+		crd = Units.owner_history_tab.coordinates
+		img = im[crd.top:crd.bottom, crd.left:crd.right]
+		plt.imshow(img)
+		plt.show()
+		# BTM - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 		log.debug("Opening Owner History Tab")
 		Units.owner_history_tab.select()
 		log.debug("Checking Owner History Tab grid")
+		# TOP - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		im = np.array(screenshot())
+		crd = Units.owner_history_tab.coordinates
+		img = im[crd.top:crd.bottom, crd.left:crd.right]
+		plt.imshow(img)
+		plt.show()
+		# BTM - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		quit()
+
 		Units.owner_history_tab.grid.sort_with_header('Eff Date')
 		Units.owner_history_tab.grid.populate_grid('Eff Date', 1)
 		Units.owner_history_tab.grid.select_cell('Eff Date', 1)
@@ -212,7 +231,7 @@ def transact(app: Application):
 			if len(rows) >= max_results:
 				break
 		# Check each SRO making sure it's open
-		log.info(f"Out of first {max_rows} rows, {len(rows)} open SROs found: {rows}")
+		log.info(f"Of first {max_rows} rows, {len(rows)} open SROs found: {rows}")
 		for i,row in enumerate(rows):
 			log.debug(f"Trying SRO")
 			Units.service_history_tab.grid.select_row(row)
@@ -361,14 +380,17 @@ def transact(app: Application):
 			else:
 				log.debug(f"Complete Date found: {cp_d}")
 			if not rc_d:
-				log.debug(f"Entering Received Date: {min_date.strftime('%m/%d/%Y %I:%M:%S %p')}")
-				SRO_Operations.general_tab.received_date.set_text(min_date.strftime("%m/%d/%Y %I:%M:%S %p"))
+				log.debug(f"Entering Received Date: {min_date}")
+				SRO_Operations.general_tab.received_date.set_text(min_date)
 			if not fl_d:
-				date_string = min_date.strftime("%Y-%m-%d 00:00:00")
+				min_date_temp = datetime.datetime.strptime(min_date, '%m/%d/%Y')
+				date_string = min_date_temp.strftime("%Y-%m-%d 00:00:00")
 				value = mssql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
 				if not value:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
+					print(value)
+					print(value[0])
 					value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 					value = value.strftime("%m/%d/%Y %I:%M:%S %p")
 				log.debug(f"Entering Floor Date: {value}")
@@ -376,9 +398,9 @@ def transact(app: Application):
 			if unit.operation == 'QC' and not cp_d:
 				log.debug(f"Entering Complete Date: {unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p')}")
 				SRO_Operations.general_tab.complete_date.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+			quit()
 			log.debug("Opening Reasons Tab")
 			SRO_Operations.reasons_tab.select()
-			quit()
 			# Fill out Resolution Notes
 			block_text = SRO_Operations.reasons_tab.resolution_notes.texts()
 			SRO_Operations.reasons_tab.resolution_notes.set_focus()
@@ -438,6 +460,14 @@ def transact(app: Application):
 			app.cancel_close.click()  #####
 			app.cancel_close.click()  #####
 		log.debug("Unit Completed")
+		for k,v in global_props.items():
+			try:
+				print(k)
+				print(v[0])
+				plt.imshow(v[1])
+				plt.show()
+			except Exception:
+				pass
 
 
 def query():
@@ -598,11 +628,11 @@ def main(argv):
 			if crypt_key:
 				log.debug("Crypt key provided")
 				pwd = decrypt(pwd, key=crypt_key)
-			log.info("Attempting log in")
 			app.log_in(usr, pwd)
 		except SyteLineLogInError:
 			log.exception("Failed to sign in")
 			quit()
+		log.info(f"Successfully logged in as '{usr}'")
 		cmd_all[cmd](app)
 
 

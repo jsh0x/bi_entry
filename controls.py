@@ -133,11 +133,11 @@ class Control:
 	def exists(self):
 		return self.window.exists()
 
-	def get_properties(self):
-		return self.window.get_properties()
+	def get_props(self):
+		return self.ctrl.get_properties()
 
 	def get_image(self):
-		return self.window.capture_as_image()
+		return self.ctrl.capture_as_image()
 
 
 	"""	try:
@@ -207,13 +207,20 @@ class Control:
 
 
 class Button(Control):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, text: str=None):
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, control_name, control_type_name=None, text: str=None):
+		self.control_name = control_name
+		if not control_type_name:
+			self.control_type_name = 'Button'
+		else:
+			self.control_type_name = control_type_name
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		super().__init__(window['uia'], criteria, ctrls.uia_controls.ButtonWrapper, preinit)
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def click(self, quantity: int = 1, wait_string: str = 'ready'):
 		if wait_string == 'form':
 			self.ctrl.click()
-			_sleep(2)
+			_sleep(1)
 		else:
 			for q in range(quantity):
 				self.ctrl.click()
@@ -222,8 +229,8 @@ class Button(Control):
 
 
 class Checkbox(Button):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, text: str = None):
-		super().__init__(window, criteria, preinit)
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, control_name, text: str = None):
+		super().__init__(window, criteria, preinit, control_name, control_type_name='Checkbox')
 
 	@property
 	def checked_state(self):
@@ -243,9 +250,16 @@ class Checkbox(Button):
 
 
 class Textbox(Control):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, fmt=('alphabetic','punctuation','numeric','mixed'), text: str=None):
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, control_name, control_type_name=None, fmt=('alphabetic','punctuation','numeric','mixed'), text: str=None):
+		self.control_name = control_name
+		if not control_type_name:
+			self.control_type_name = 'Textbox'
+		else:
+			self.control_type_name = control_type_name
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		super().__init__(window['win32'], criteria, ctrls.win32_controls.EditWrapper, preinit)
 		self.fmt = fmt
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def set_focus(self):
 		self.ctrl.set_focus()
@@ -320,21 +334,24 @@ class Textbox(Control):
 
 
 class Datebox(Textbox):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, text: str=None):
-		super().__init__(window, criteria, preinit)
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, control_name, text: str=None):
+		super().__init__(window, criteria, preinit, control_name, control_type_name='Datebox')
 		self.fmt = datetime.datetime
 
 
 class Scrollbar(Control):
-	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], preinit, text: str=None):
+	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], preinit, control_name, control_type_name, text: str=None):
+		self.control_name = control_name
+		self.control_type_name = control_type_name
+
 		super().__init__(window, criteria, ctrls.hwndwrapper.HwndWrapper, preinit)
 		self._possible_amounts = ('line', 'page', 'end')
 
 
 class VerticalScrollbar(Scrollbar):
-	def __init__(self, window: pwn.WindowSpecification, preinit, text: str=None):
-		super().__init__(window=window, criteria={'best_match': 'Vertical'}, preinit=preinit)
-
+	def __init__(self, window: pwn.WindowSpecification, preinit, control_name, text: str=None):
+		super().__init__(window=window, criteria={'best_match': 'Vertical'}, preinit=preinit, control_name=control_name, control_type_name="Vertical Scrollbar")
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		_column_down = self.window.child_window(title="Column down", control_type="Button", top_level_only=False, visible_only=False)
 		self._column_down = ctrls.uia_controls.ButtonWrapper(_column_down.element_info)
 		_column_up = self.window.child_window(title="Column up", control_type="Button", top_level_only=False, visible_only=False)
@@ -343,6 +360,7 @@ class VerticalScrollbar(Scrollbar):
 		#self._page_down = ctrls.uia_controls.ButtonWrapper(_page_down.element_info)
 		#_page_up = self.window.child_window(title="Page up", control_type="Button", top_level_only=False, visible_only=False)
 		#self._page_up = ctrls.uia_controls.ButtonWrapper(_page_up.element_info)
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def scroll_up(self, amount: str='line', count: int=1):
 		if amount not in self._possible_amounts:
@@ -372,8 +390,9 @@ class VerticalScrollbar(Scrollbar):
 
 
 class HorizontalScrollbar(Scrollbar):
-	def __init__(self, window: pwn.WindowSpecification, preinit, text: str = None):
-		super().__init__(window=window, criteria={'best_match': 'Horizontal'}, preinit=preinit)
+	def __init__(self, window: pwn.WindowSpecification, preinit, control_name, text: str = None):
+		super().__init__(window=window, criteria={'best_match': 'Horizontal'}, preinit=preinit, control_name=control_name, control_type_name="Horizontal Scrollbar")
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		_column_right = self.window.child_window(title="Column right", control_type="Button", top_level_only=False, visible_only=False)
 		self._column_right = ctrls.uia_controls.ButtonWrapper(_column_right.element_info)
 		_column_left = self.window.child_window(title="Column left", control_type="Button", top_level_only=False, visible_only=False)
@@ -382,6 +401,7 @@ class HorizontalScrollbar(Scrollbar):
 		#self._page_right = ctrls.uia_controls.ButtonWrapper(_page_right.element_info)
 		#_page_left = self.window.child_window(title="Page left", control_type="Button", top_level_only=False, visible_only=False)
 		#self._page_left = ctrls.uia_controls.ButtonWrapper(_page_left.element_info)
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def scroll_left(self, amount: str='line', count: int=1):
 		if amount not in self._possible_amounts:
@@ -411,7 +431,10 @@ class HorizontalScrollbar(Scrollbar):
 
 
 class GridView(Control):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, text: str=None):
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], preinit, control_name, text: str=None):
+		self.control_name = control_name
+		self.control_type_name = 'Grid'
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		super().__init__(window['uia'], criteria, ctrls.uia_controls.ListViewWrapper, preinit)
 		self.rows = 0
 		self._cell = None
@@ -464,6 +487,7 @@ class GridView(Control):
 			for k,v in self.header_dict.items():
 				self.header_dict_rev[v] = k
 			#self.populate_grid()
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def doit(self):
 		x_range = np.arange(self._grid.shape[1], dtype=np.intp)
@@ -680,11 +704,14 @@ class GridView(Control):
 
 
 class Tab(Control):
-	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], name, controls, preinit, text: str=None):
+	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], name, controls, preinit, control_name, text: str=None):
+		self.control_name = control_name
+		self.control_type_name = 'Tab'
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
 		super().__init__(window['uia'], criteria, ctrls.uiawrapper.UIAWrapper, preinit)
 		self._controls = controls
 		self._name = name
-		#log.debug(f"'{self.text}' {self.__name__} initialized")
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def initiate_controls(self):
 		for name,info in self._controls.items():

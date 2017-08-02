@@ -12,11 +12,11 @@ import logging.handlers
 
 
 log = logging.getLogger('devLog')
-
 #log.setLevel(logging.DEBUG)
 errFormat = logging.Formatter("[%(asctime)s][%(levelname)s][%(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
-infFormat = logging.Formatter("[%(asctime)s]  [%(levelname)s][%(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%Y/%m/%d %H:%M:%S')
-devFormat = logging.Formatter("[%(asctime)s.%(msecs)-3d]  [%(levelname)s][%(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
+infFormat = logging.Formatter("[%(asctime)s] %(levelname)-8s %(message)s", datefmt='%d/%m/%Y %H:%M:%S')
+devFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-8s %(module)8s:%(lineno)-4s  %(message)s", datefmt='%H:%M:%S')
+# devFormat = logging.Formatter("[%(asctime)s.%(msecs)-3d]  [%(levelname)s] [%(process)d, %(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
 
 errh = logging.StreamHandler(sys.stderr)
 errh.setLevel(logging.WARNING)
@@ -28,7 +28,7 @@ infh.setFormatter(infFormat)
 
 dbgh = logging.handlers.RotatingFileHandler(os.getcwd() + '\\dbg.log', maxBytes=50000000, backupCount=5)  # ~50MB
 dbgh.setLevel(logging.DEBUG)
-dbgh.setFormatter(infFormat)
+dbgh.setFormatter(devFormat)
 
 devh = logging.StreamHandler(sys.stdout)
 devh.setLevel(logging.DEBUG)
