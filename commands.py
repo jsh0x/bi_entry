@@ -456,7 +456,7 @@ class Application(subprocess.Popen):
 		rows = []
 		if not max_rows:
 			max_rows = self.app.forms['Units'].service_history_tab.grid.rows
-		self.app.forms['Units'].service_history_tab.grid.populate_grid(columns=column, rows=range(1, max_rows+1))
+		self.app.forms['Units'].service_history_tab.grid.populate(columns=column, rows=range(1, max_rows+1))
 		for i in range(1, max_rows+1):
 			self.app.forms['Units'].service_history_tab.grid.select_cell(column=column, row=i)
 			data = self.app.forms['Units'].service_history_tab.grid.cell
@@ -632,7 +632,7 @@ class Application(subprocess.Popen):
 	unit.app.forms['Units'].owner_history_tab.select()
 	unit.app.forms['Units'].owner_history_tab.grid.sort_with_header('Eff Date')
 	unit.app.forms['Units'].owner_history_tab.grid.select_cell('Eff Date', 1)
-	unit.app.forms['Units'].owner_history_tab.grid.populate_grid(columns='Eff Date', rows=1)
+	unit.app.forms['Units'].owner_history_tab.grid.populate(columns='Eff Date', rows=1)
 	min_date = unit.app.forms['Units'].owner_history_tab.grid.cell
 	sro_list = unit.check_SROs('Close Date', None, max_rows=3)
 	for i,row in enumerate(sro_list):

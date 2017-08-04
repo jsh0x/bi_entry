@@ -3,10 +3,9 @@ import sys
 import logging
 import configparser
 import pathlib
-import multiprocessing
 import datetime
 import argparse
-import threading
+from concurrent.futures import ThreadPoolExecutor as thread
 from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
 from time import sleep
 
@@ -173,7 +172,7 @@ def _open_first_open_sro(unit: Unit, app: Application):
 	log.debug("Checking Service History Tab grid")
 	if max_rows > Units.service_history_tab.grid.rows:
 		max_rows = Units.service_history_tab.grid.rows
-	Units.service_history_tab.grid.populate_grid('Close Date', range(1, max_rows + 1))
+	Units.service_history_tab.grid.populate('Close Date', range(1, max_rows + 1))
 	for i in range(1, max_rows + 1):
 		Units.service_history_tab.grid.select_cell('Close Date', i)
 		if Units.service_history_tab.grid.cell == None:
@@ -256,7 +255,7 @@ def transact(app: Application):
 
 		log.debug("Unit Started")
 		Units.owner_history_tab.grid.sort_with_header('Eff Date')
-		Units.owner_history_tab.grid.populate_grid('Eff Date', 1)
+		Units.owner_history_tab.grid.populate('Eff Date', 1)
 		Units.owner_history_tab.grid.select_cell('Eff Date', 1)
 		min_date = Units.owner_history_tab.grid.cell
 		log.debug(f"Received date found: {min_date}")
@@ -300,7 +299,7 @@ def transact(app: Application):
 			SRO_Transactions.post_batch.ready()
 			log.debug("Checking for already-posted items")
 			if max_rows > 0:
-				SRO_Transactions.grid.populate_grid(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
+				SRO_Transactions.grid.populate(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
 				for j in range(1, max_rows + 1):
 					SRO_Transactions.grid.select_cell('Posted', j)
 					posted_cell = SRO_Transactions.grid.cell
@@ -464,7 +463,7 @@ def transact(app: Application):
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('UDI{ENTER}')
 			SRO_Operations.reasons_tab.reason_notes.send_keystrokes('PASSED ALL TESTS')
 			# Fill out Reasons Grid
-			SRO_Operations.reasons_tab.grid.populate_grid(('General Reason', 'Specific Reason',
+			SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason',
 																	  'General Resolution', 'Specific Resolution'), 1)
 			SRO_Operations.reasons_tab.grid.select_cell('General Reason', 1)
 			if not SRO_Operations.reasons_tab.grid.cell:  # ???
@@ -540,7 +539,7 @@ def reason(app: Application):
 			log.debug("Service Order Operations form opened")
 		SRO_Operations.reasons_tab.select()
 		row = SRO_Operations.reasons_tab.grid.rows
-		SRO_Operations.reasons_tab.grid.populate_grid(('General Reason', 'General Resolution'), row-1)
+		SRO_Operations.reasons_tab.grid.populate(('General Reason', 'General Resolution'), row-1)
 		SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
 		gen_rsn = SRO_Operations.reasons_tab.grid.cell
 		gen_rso, spec_rso = unit.notes.split(',')
@@ -575,6 +574,8 @@ def reason(app: Application):
 		mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
 
 
+def scrap(app: Application):
+	pass
 
 # Select s.items
 # from PyComm
@@ -741,3 +742,4 @@ def main(argv):
 if __name__ == '__main__':
 	main(sys.argv)
 # TODO: Check if other requests for same sn exist, if so, do as well
+# TODO: Pause-able commands? (Possibility/demand needs looking into)

@@ -487,7 +487,7 @@ class GridView(Control):
 			self.header_dict_rev = {}
 			for k,v in self.header_dict.items():
 				self.header_dict_rev[v] = k
-			#self.populate_grid()
+			#self.populate()
 		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 	def doit(self):
@@ -501,7 +501,7 @@ class GridView(Control):
 				cell = cell.child_window(title=cell_string, visible_only=False)
 				print(x,y,cell.get_properties())
 
-	def populate_grid(self, columns: _Union[str, _Tuple[str]]=None, rows: _Union[int, _Tuple[int]]=None, visible_only=False):
+	def populate(self, columns: _Union[str, _Tuple[str]]=None, rows: _Union[int, _Tuple[int]]=None, visible_only=False):
 		if not columns:
 			x_range = np.arange(self._grid.shape[1], dtype=np.intp)
 		else:
