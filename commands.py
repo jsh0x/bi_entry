@@ -165,6 +165,11 @@ class Application(subprocess.Popen):
 		self.log_out = self._log_out
 		self.__delattr__('log_in')
 
+	# def apply_filter(self):
+	## 	if filter is applied, refresh and reload filter are things
+	## 	elif not filter is applied, clear in place is thing
+	# 	pass
+
 	def _log_out(self, force_quit=True):
 		if force_quit:
 			self._win.SignOut.select()
@@ -223,6 +228,14 @@ class Application(subprocess.Popen):
 		self._hwnd = self._win.handle
 		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
 		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
+
+	def popup_blocker(self):
+		while True:
+			while self.popup.exists():
+				log.debug("Close pop-up")
+				self.popup.close_alt_f4()
+				sleep(0.2)
+			sleep(0.5)
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

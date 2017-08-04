@@ -7,8 +7,9 @@ from string import ascii_letters as _ascii_letters, punctuation as _punctuation,
 from typing import Dict as _Dict, Union as _Union, Any as _Any, List as _List, Tuple as _Tuple
 
 import psutil as _psutil
+import pyautogui as pag
 import pywinauto as pwn
-from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_wrapper, win32defines
+from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_wrapper, win32defines, mouse
 from pywinauto import win32structures as struct
 import numpy as np
 log = logging.getLogger('devLog')
@@ -725,7 +726,13 @@ class Tab(Control):
 		try:
 			self.ctrl.select()
 		except Exception:
-			self.ctrl.select(self._name)
+			try:
+				self.ctrl.select(self._name)
+			except Exception:
+				print(self.coordinates)
+				print(self.coordinates.center)
+				cxy = self.coordinates.center
+				mouse.click(coords=cxy)
 		self.window.wait('ready')
 		self.initiate_controls()
 
