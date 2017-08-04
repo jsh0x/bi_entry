@@ -516,11 +516,15 @@ def reason(app: Application):
 		SRO_Operations = app.ServiceOrderOperationsForm
 		if 'Initial' in unit.operation:
 			SRO_Operations.general_tab.initiate_controls()
-			fl_d = SRO_Operations.general_tab.floor_date.text()
-			if not fl_d:
+			fl_d = SRO_Operations.general_tab.floor_date
+			if not fl_d.text():
 				log.debug("No Floor Date found")
+				fl_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+				fa_d = SRO_Operations.general_tab.fa_date
+				if not fa_d.text():
+					fa_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
 			else:
-				log.debug(f"Flood Date found: {fl_d}")
+				log.debug(f"Flood Date found: {fl_d.text()}")
 			# app.save_close.click()
 			app.cancel_close.click()  #####
 			app.add_form('ServiceOrderLinesForm')
@@ -535,26 +539,32 @@ def reason(app: Application):
 			SRO_Operations.general_tab.ready()
 			log.debug("Service Order Operations form opened")
 		SRO_Operations.reasons_tab.select()
-		SRO_Operations.reasons_tab.grid.select_cell('General Reason', 1)
-		SRO_Operations.reasons_tab.grid.populate_grid('General Reason', 1)
-		gen_rsn = SRO_Operations.reasons_tab.grid.cell
 		row = SRO_Operations.reasons_tab.grid.rows
+		SRO_Operations.reasons_tab.grid.populate_grid(('General Reason', 'General Resolution'), row-1)
+		SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
+		gen_rsn = SRO_Operations.reasons_tab.grid.cell
 		gen_rso, spec_rso = unit.notes.split(',')
-		# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
-		gen_rsn = str(gen_rsn).strip(' ')
-		spec_rsn = '20'
-		# spec_rsn = spec_rsn.strip(' ')
-		gen_rso = gen_rso.strip(' ')
-		spec_rso = spec_rso.strip(' ')
-
-		SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
-		SRO_Operations.reasons_tab.grid.cell = gen_rsn
-		SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
-		SRO_Operations.reasons_tab.grid.cell = spec_rsn
-		SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
-		SRO_Operations.reasons_tab.grid.cell = gen_rso
-		SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
-		SRO_Operations.reasons_tab.grid.cell = spec_rso
+		SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+		if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
+			# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
+			gen_rsn = str(gen_rsn).strip(' ')
+			spec_rsn = '20'
+			# spec_rsn = spec_rsn.strip(' ')
+			gen_rso = gen_rso.strip(' ')
+			spec_rso = spec_rso.strip(' ')
+			SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
+			SRO_Operations.reasons_tab.grid.cell = gen_rsn
+			SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
+			SRO_Operations.reasons_tab.grid.cell = spec_rsn
+			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
+			SRO_Operations.reasons_tab.grid.cell = gen_rso
+			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
+			SRO_Operations.reasons_tab.grid.cell = spec_rso
+		else:  # Else, fill last row
+			# SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+			SRO_Operations.reasons_tab.grid.cell = gen_rso
+			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
+			SRO_Operations.reasons_tab.grid.cell = spec_rso
 		sleep(7200)
 		quit()
 		app.save_close.click()
