@@ -130,12 +130,12 @@ class ServiceOrderOperationsForm(Form):
 		reasons_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'auto_id': "ReasonsSubGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Reasons'}}
 
 		# Define Tabs
-		self.general_tab = Tab(window=window, criteria={'best_match': "GeneralTabControl", }, name='General', controls={'received_date': received_date,
+		self.general_tab = Tab(window=window, criteria={'best_match': "GeneralTabItemControl", }, name='General', controls={'received_date': received_date,
 																									  'floor_date': floor_date,
 																									  'fa_date': fa_date,
 																									  'complete_date': complete_date}, preinit=preinit, control_name='General')
 
-		self.reasons_tab = Tab(window=window, criteria={'best_match': "ReasonsTabControl"}, name='Reasons', controls={'grid': reasons_grid,
+		self.reasons_tab = Tab(window=window, criteria={'best_match': "ReasonsTabItemControl"}, name='Reasons', controls={'grid': reasons_grid,
 																									  'reason_notes': reason_notes,
 																									  'resolution_notes': resolution_notes,
 																									  'print_repair_statement': print_repair_statement}, preinit=preinit, control_name='Reasons')

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import multiprocessing
+import threading
 
 import logging
 from typing import Union, Iterable, Dict, Any, Tuple, List
@@ -35,6 +36,24 @@ if 'dev.key' in file_list:
 	dev_mode = True
 else:
 	dev_mode = False
+
+
+class StoppableThread(threading.Thread):
+	"""Thread class with a stop() method. The thread itself has to check
+	regularly for the stopped() condition."""
+
+	def __init__(self, target: callable, args: Tuple=None):
+		if not args:
+			super().__init__(target=target)
+		else:
+			super().__init__(target=target, args=args)
+		self._stop_event = threading.Event()
+
+	def stop(self):
+		self._stop_event.set()
+
+	def stopped(self):
+		return self._stop_event.is_set()
 
 
 def moveTo(x: int, y: int):
@@ -80,7 +99,7 @@ def enumerate_screens() -> Dict[int, Coordinates]:
 def screenshot():
 	clp.EmptyClipboard()
 	kbd.SendKeys('{PRTSC}')
-	sleep(0.01)
+	sleep(0.02)
 	im = ImageGrab.grabclipboard()
 	clp.EmptyClipboard()
 	return im
@@ -102,6 +121,8 @@ class Application(subprocess.Popen):
 		self._forms = []
 		self.logged_in = False
 		self.log_in = self._log_in
+		self._popup_blocker_active = False
+		self._blocker = None
 		#self.db = shelve.open('forms')
 		log.debug("Application initialization successful")
 
@@ -165,6 +186,11 @@ class Application(subprocess.Popen):
 		self.log_out = self._log_out
 		self.__delattr__('log_in')
 
+	# def apply_filter(self):
+	## 	if filter is applied, refresh and reload filter are things
+	## 	elif not filter is applied, clear in place is thing
+	# 	pass
+
 	def _log_out(self, force_quit=True):
 		if force_quit:
 			self._win.SignOut.select()
@@ -223,6 +249,29 @@ class Application(subprocess.Popen):
 		self._hwnd = self._win.handle
 		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
 		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
+
+	def _popup_blocker_thread(self):
+		while True:
+			while self.popup.exists():
+				log.debug("Close pop-up")
+				self.popup.close_alt_f4()
+				sleep(0.2)
+			sleep(0.5)
+
+	def popup_blocker(self, activate: bool):
+		if activate:
+			if not self._popup_blocker_active:
+				self._blocker = StoppableThread(target=self._popup_blocker_thread)
+				self._blocker.setDaemon(True)
+				self._blocker.start()
+				self._popup_blocker_active = True
+			# else:
+			# 	raise ValueError("Popup blocker already on")
+		elif not activate:
+			if self._popup_blocker_active:
+				self._blocker.stop()
+			# else:
+			# 	raise ValueError("Popup blocker already off")
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

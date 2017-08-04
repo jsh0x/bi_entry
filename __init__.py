@@ -30,7 +30,7 @@ dbgh = logging.handlers.RotatingFileHandler(os.getcwd() + '\\dbg.log', maxBytes=
 dbgh.setLevel(logging.DEBUG)
 dbgh.setFormatter(devFormat)
 
-devh = logging.StreamHandler(sys.stdout)
+devh = logging.StreamHandler((sys.stdout, sys.stderr))
 devh.setLevel(logging.DEBUG)
 #devh.setFormatter(devFormat)
 
