@@ -157,17 +157,16 @@ class Application(subprocess.Popen):
 			if ('count limit' in message) and ('exceeded' in message):
 				self._error.OKButton.Click()
 		while self.popup.exists():
-			message2 = self.popup.Static2.texts()[0]
-			if (f"session for user '{username}'" in message2) and ('already exists' in message2):
-				if dev_mode:
+			try:
+				message2 = self.popup.Static2.texts()[0]
+				if (f"session for user '{username}'" in message2) and ('already exists' in message2):
 					self.popup['&YesButton'].Click()
-				else:
-					self.popup['&NoButton'].Click()
-					raise SyteLineLogInError("Failed to log in")
-			elif ('Exception initializing form' in message2) and ('executable file vbc.exe cannot be found' in message2):
-				self.popup.OKButton.Click()
-				raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
-			sleep(2)
+				elif ('Exception initializing form' in message2) and ('executable file vbc.exe cannot be found' in message2):
+					self.popup.OKButton.Click()
+					raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
+				sleep(2)
+			except Exception:
+				break
 		log.debug("Log in successful")
 		log.debug("Waiting for Main form...")
 		self.wait('ready')
@@ -195,7 +194,8 @@ class Application(subprocess.Popen):
 		# 	self.log_out = self._log_out
 		# 	self.__delattr__('log_in')
 
-		self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
+		# self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
+		self.open_form = self._open_form
 		self.save = Button(window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False, control_name='Save')
 		self.cancel_close = Button(window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
 		self.save_close = Button(window=self._all_win, criteria={'best_match': 'Save CloseButton'}, preinit=False, control_name='Save Close')
@@ -296,6 +296,13 @@ class Application(subprocess.Popen):
 				self._blocker.stop()
 			# else:
 			# 	raise ValueError("Popup blocker already off")
+
+	def _open_form(self, name: str):
+		kbd.SendKeys('^o')
+		kbd.SendKeys(name)
+		kbd.SendKeys('{ENTER}')
+		self.wait('ready')
+		self.add_form(name+'Form')
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

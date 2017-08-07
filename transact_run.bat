@@ -1,3 +1,3 @@
 @echo off
-C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\python.exe bi_entry.py transact jredding 75268094752664615822V209t1437070 -k 6170319%*
+C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\python.exe bi_entry.py transact BISync01 b748p225Q61612321606132012101064156211881430129813201210 -k 6302707%*
 pause

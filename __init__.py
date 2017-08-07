@@ -9,10 +9,12 @@ import os
 import sys
 import logging
 import logging.handlers
+import pathlib
 
 
 log = logging.getLogger('devLog')
-#log.setLevel(logging.DEBUG)
+log_dir = pathlib.WindowsPath.cwd()/'logs'
+log_dir.mkdir(exist_ok=True)
 errFormat = logging.Formatter("[%(asctime)s][%(levelname)s][%(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
 infFormat = logging.Formatter("[%(asctime)s] %(levelname)-8s %(message)s", datefmt='%d/%m/%Y %H:%M:%S')
 devFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-8s %(module)8s:%(lineno)-4s  %(message)s", datefmt='%H:%M:%S')
@@ -22,11 +24,11 @@ errh = logging.StreamHandler(sys.stderr)
 errh.setLevel(logging.WARNING)
 errh.setFormatter(errFormat)
 
-infh = logging.handlers.RotatingFileHandler(os.getcwd() + '\\info.log', maxBytes=20000000, backupCount=5)  # ~20MB
+infh = logging.handlers.TimedRotatingFileHandler(log_dir/'info.log', when='D', interval=7, backupCount=3)
 infh.setLevel(logging.INFO)
 infh.setFormatter(infFormat)
 
-dbgh = logging.handlers.RotatingFileHandler(os.getcwd() + '\\dbg.log', maxBytes=50000000, backupCount=5)  # ~50MB
+dbgh = logging.handlers.TimedRotatingFileHandler(log_dir/'dbg.log', when='M', interval=5, backupCount=11)
 dbgh.setLevel(logging.DEBUG)
 dbgh.setFormatter(devFormat)
 

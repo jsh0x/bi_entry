@@ -173,20 +173,22 @@ def _open_first_open_sro(unit: Unit, app: Application):
 		for pfx in unit.serial_number_prefix:
 			log.debug(f"Trying prefix '{pfx}'")
 			Units.serial_number = pfx + unit.serial_number
-			app.apply_filter.click()
+			Units._unit.send_keystrokes('{F4}')
 			if Units.serial_number == pfx + unit.serial_number:
 				log.debug(f"Setting prefix to '{pfx}'")
 				unit.serial_number_prefix = pfx
 				break
-			app.apply_filter.click()
-			app.refresh_filter.click()
+			Units._unit.send_keystrokes('{F4}')
+			Units._unit.send_keystrokes('{F5}')
 		else:
-			raise ValueError
+			log.error(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
+			raise InvalidSerialNumberError(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
 	else:
 		Units.serial_number = unit.serial_number_prefix + unit.serial_number
 		app.apply_filter.click()
 		if Units.serial_number != unit.serial_number_prefix + unit.serial_number:
-			raise ValueError
+			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
+			raise SyteLineFilterInPlaceError("")
 	log.debug("Unit Started")
 	# Check SROs
 	rows = []
@@ -197,9 +199,10 @@ def _open_first_open_sro(unit: Unit, app: Application):
 	log.debug("Checking Service History Tab grid")
 	if max_rows > Units.service_history_tab.grid.rows:
 		max_rows = Units.service_history_tab.grid.rows
-	if Units.service_history_tab.grid.rows == 1:
+	try:
+		Units.service_history_tab.grid.populate('Close Date', range(1, max_rows + 1))
+	except Exception:
 		raise DataGridError("")
-	Units.service_history_tab.grid.populate('Close Date', range(1, max_rows + 1))
 	for i in range(1, max_rows + 1):
 		Units.service_history_tab.grid.select_cell('Close Date', i)
 		if Units.service_history_tab.grid.cell == None:
@@ -247,8 +250,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 def transact(app: Application):
 	log.debug("Transaction script started")
 	log.debug("Opening Units form")
-	# Assumes Units form already open
-	app.add_form('UnitsForm')
+	app.open_form('Units')
+	Units = app.UnitsForm
 	log.debug("Unit form opened")
 	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
@@ -279,246 +282,237 @@ def transact(app: Application):
 		log.info("Unit data found:")
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
-
 		log.debug("Unit Started")
-		Units.owner_history_tab.grid.sort_with_header('Eff Date')
-		Units.owner_history_tab.grid.populate('Eff Date', 1)
-		Units.owner_history_tab.grid.select_cell('Eff Date', 1)
-		min_date = Units.owner_history_tab.grid.cell
-		log.debug(f"Received date found: {min_date}")
-		Units = app.UnitsForm
-		# test('UnitsForm', Units)
-		# Opens unit
-		_open_first_open_sro(unit, app)
-		# TOP - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-		im = np.array(screenshot())
-		crd = Units.owner_history_tab.coordinates
-		img = im[crd.top:crd.bottom, crd.left:crd.right]
-		plt.imshow(img)
-		plt.show()
-		# BTM - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-		log.debug("Opening Owner History Tab")
-		Units.owner_history_tab.select()
-		log.debug("Checking Owner History Tab grid")
-		# TOP - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-		im = np.array(screenshot())
-		crd = Units.owner_history_tab.coordinates
-		img = im[crd.top:crd.bottom, crd.left:crd.right]
-		plt.imshow(img)
-		plt.show()
-		# BTM - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-		quit()
-		SRO_Lines = app.ServiceOrderLinesForm
-		SRO_Operations = app.ServiceOrderOperationsForm
-		if unit.parts:
-			log.debug("Opening SRO Transactions form")
-			SRO_Operations.sro_transactions.click(wait_string='form')
-			app.add_form('SROTransactionsForm')
-			SRO_Transactions = app.SROTransactionsForm
-			log.debug("Waiting for SRO Transactions form...")
-			SRO_Transactions.apply_filter.ready()
-			log.debug("SRO Transactions form opened")
-			log.debug("Setting Date Range Start")
-			SRO_Transactions.date_range_start.set_text(min_date)
-			SRO_Transactions.apply_filter.click()
-			max_rows = SRO_Transactions.grid.rows-1
-			posted = []
-			SRO_Transactions.post_batch.ready()
-			log.debug("Checking for already-posted items")
-			if max_rows > 0:
-				SRO_Transactions.grid.populate(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
-				for j in range(1, max_rows + 1):
-					SRO_Transactions.grid.select_cell('Posted', j)
-					posted_cell = SRO_Transactions.grid.cell
-					if posted_cell:
-						SRO_Transactions.grid.select_cell('Item', j)
-						posted.append(SRO_Transactions.grid.cell)
-					else:
-						#raise SyteLineError
-						continue
-				SRO_Transactions.include_posted.click()
+		mssql.modify("UPDATE PyComm SET ")###########################################################
+		try:
+			_open_first_open_sro(unit, app)
+			min_date = datetime.datetime.now()
+			min_date = min_date.strftime('%m/%d/%Y')
+			# Units.owner_history_tab.select()
+			# Units.owner_history_tab.grid.sort_with_header('Eff Date')
+			# Units.owner_history_tab.grid.populate('Eff Date', 1)
+			# Units.owner_history_tab.grid.select_cell('Eff Date', 1)
+			# min_date = Units.owner_history_tab.grid.cell
+			# log.debug(f"Received date found: {min_date}")
+			# test('UnitsForm', Units)
+			# Opens unit
+			SRO_Lines = app.ServiceOrderLinesForm
+			SRO_Operations = app.ServiceOrderOperationsForm
+			if unit.parts:
+				log.debug("Opening SRO Transactions form")
+				SRO_Operations.sro_transactions.click(wait_string='form')
+				app.add_form('SROTransactionsForm')
+				SRO_Transactions = app.SROTransactionsForm
+				log.debug("Waiting for SRO Transactions form...")
+				SRO_Transactions.apply_filter.ready()
+				log.debug("SRO Transactions form opened")
+				log.debug("Setting Date Range Start")
+				SRO_Transactions.date_range_start.set_text(min_date)
 				SRO_Transactions.apply_filter.click()
+				max_rows = SRO_Transactions.grid.rows-1
+				posted = []
 				SRO_Transactions.post_batch.ready()
-			if not posted:
-				log.debug("No posted items found")
-			else:
-				for p in posted:
-					log.debug(f"Posted item found: {p}")
-			count = 1
-			new_parts_list = []
-			for part in unit.parts:
-				log.debug(f"Attempting to transact part {part}")
-				if part.part_number in posted:
-					log.debug("Item already posted, skipping")
-					continue
-				SRO_Transactions.grid.select_cell('Item', count)
-				SRO_Transactions.grid.click_cell()
-				sleep(0.2)
-				while app.popup.exists():
-					log.debug("Close pop-up")
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				log.debug(f"Entering Part Number: {part.part_number}")
-				SRO_Transactions.grid.cell = part.part_number
-				SRO_Transactions.grid.select_cell('Quantity', count)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					log.debug("Close pop-up")
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				log.debug(f"Entering Quantity: {part.quantity}")
-				SRO_Transactions.grid.cell = part.quantity
-				SRO_Transactions.grid.select_cell('Billing Code', count)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					log.debug("Close pop-up")
-					app.popup.close_alt_f4()
-					sleep(0.2)
-				if unit.suffix == 'Direct' or unit.suffix == 'RTS':
-					log.debug("Entering Billing Code: Contract")
-					SRO_Transactions.grid.cell = 'Contract'
+				log.debug("Checking for already-posted items")
+				if max_rows > 0:
+					SRO_Transactions.grid.populate(('Posted', 'Item'), range(1, max_rows+1), visible_only=True)
+					for j in range(1, max_rows + 1):
+						SRO_Transactions.grid.select_cell('Posted', j)
+						posted_cell = SRO_Transactions.grid.cell
+						if posted_cell:
+							SRO_Transactions.grid.select_cell('Item', j)
+							posted.append(SRO_Transactions.grid.cell)
+						else:
+							#raise SyteLineError
+							continue
+					SRO_Transactions.include_posted.click()
+					SRO_Transactions.apply_filter.click()
+					SRO_Transactions.post_batch.ready()
+				if not posted:
+					log.debug("No posted items found")
 				else:
-					log.debug("Entering Billing Code: No Charge")
-					SRO_Transactions.grid.cell = 'No Charge'
-				count += 1
-				new_parts_list.append(part)
-			for i,part in zip(range(1, count+1), new_parts_list):
-				SRO_Transactions.grid.select_cell('Location', i)
-				SRO_Transactions.grid.click_cell()
-				while app.popup.exists():
-					log.debug("Close pop-up")
-					app.popup.close_alt_f4()
+					for p in posted:
+						log.debug(f"Posted item found: {p}")
+				count = 1
+				new_parts_list = []
+				for part in unit.parts:
+					log.debug(f"Attempting to transact part {part}")
+					if part.part_number in posted:
+						log.debug("Item already posted, skipping")
+						continue
+					SRO_Transactions.grid.select_cell('Item', count)
+					SRO_Transactions.grid.click_cell()
 					sleep(0.2)
-				log.debug(f"Entering Location: {part.location} for part {part.part_number}")
-				SRO_Transactions.grid.cell = part.location
-			log.debug("Posting batch")
-			SRO_Transactions.post_batch.ready()
-			########################################
-			# app.save.click()
-			# SRO_Transactions.post_batch.ready()
-			# SRO_Transactions.post_batch.click()
-			# app.save_close.click()
-			# app.save_close.click()
-			########################################
-			app.cancel_close.click()  #####
-			app.cancel_close.click()  #####
-			log.debug("Waiting for Service Order Lines form...")
-			SRO_Lines.sro_operations.ready()
-			log.debug("Service Order Lines form opened")
-			log.debug("Opening Service Order Operations form")
-			SRO_Lines.sro_operations.click(wait_string='form')
-			app.add_form('ServiceOrderOperationsForm')
-			log.debug("Waiting for Service Order Operations form...")
-			SRO_Operations.sro_transactions.ready()
-			log.debug("Service Order Operations form opened")
-		# SRO_Operations.general_tab.select()
-		log.debug("Initiating General Tab controls")
-		SRO_Operations.general_tab.initiate_controls()
-		log.debug("General Tab controls initiated")
-		rc_d = SRO_Operations.general_tab.received_date.text()
-		if not rc_d:
-			log.debug("No Received Date found")
-		else:
-			log.debug(f"Received Date found: {rc_d}")
-		fl_d = SRO_Operations.general_tab.floor_date.text()
-		if not fl_d:
-			log.debug("No Floor Date found")
-		else:
-			log.debug(f"Flood Date found: {fl_d}")
-		#fa_d = SRO_Operations.general_tab.fa_date.text()
-		cp_d = SRO_Operations.general_tab.complete_date.text()
-		if not cp_d:
-			log.debug("No Complete Date found")
-		else:
-			log.debug(f"Complete Date found: {cp_d}")
-		if not rc_d:
-			log.debug(f"Entering Received Date: {min_date}")
-			SRO_Operations.general_tab.received_date.set_text(min_date)
-		if not fl_d:
-			min_date_temp = datetime.datetime.strptime(min_date, '%m/%d/%Y')
-			date_string = min_date_temp.strftime("%Y-%m-%d 00:00:00")
-			value = mssql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
-			if not value:
-				value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Part Number: {part.part_number}")
+					SRO_Transactions.grid.cell = part.part_number
+					SRO_Transactions.grid.select_cell('Quantity', count)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Quantity: {part.quantity}")
+					SRO_Transactions.grid.cell = part.quantity
+					SRO_Transactions.grid.select_cell('Billing Code', count)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					if unit.suffix == 'Direct' or unit.suffix == 'RTS':
+						log.debug("Entering Billing Code: Contract")
+						SRO_Transactions.grid.cell = 'Contract'
+					else:
+						log.debug("Entering Billing Code: No Charge")
+						SRO_Transactions.grid.cell = 'No Charge'
+					count += 1
+					new_parts_list.append(part)
+				for i,part in zip(range(1, count+1), new_parts_list):
+					SRO_Transactions.grid.select_cell('Location', i)
+					SRO_Transactions.grid.click_cell()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
+					log.debug(f"Entering Location: {part.location} for part {part.part_number}")
+					SRO_Transactions.grid.cell = part.location
+				log.debug("Posting batch")
+				SRO_Transactions.post_batch.ready()
+				if dev_mode:
+					app.cancel_close.click()  #####
+					app.cancel_close.click()  #####
+				else:
+					app.save.click()
+					SRO_Transactions.post_batch.ready()
+					SRO_Transactions.post_batch.click()
+					app.save_close.click()
+					app.save_close.click()
+				log.debug("Waiting for Service Order Lines form...")
+				SRO_Lines.sro_operations.ready()
+				log.debug("Service Order Lines form opened")
+				log.debug("Opening Service Order Operations form")
+				SRO_Lines.sro_operations.click(wait_string='form')
+				app.add_form('ServiceOrderOperationsForm')
+				log.debug("Waiting for Service Order Operations form...")
+				SRO_Operations.sro_transactions.ready()
+				log.debug("Service Order Operations form opened")
+			# SRO_Operations.general_tab.select()
+			log.debug("Initiating General Tab controls")
+			SRO_Operations.general_tab.initiate_controls()
+			log.debug("General Tab controls initiated")
+			rc_d = SRO_Operations.general_tab.received_date.text()
+			if not rc_d:
+				log.debug("No Received Date found")
 			else:
-				print(value)
-				print(value[0])
-				value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-				value = value.strftime("%m/%d/%Y %I:%M:%S %p")
-			log.debug(f"Entering Floor Date: {value}")
-			SRO_Operations.general_tab.floor_date.set_text(value)
-		if unit.operation == 'QC' and not cp_d:
-			log.debug(f"Entering Complete Date: {unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p')}")
-			SRO_Operations.general_tab.complete_date.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
-		quit()
-		log.debug("Opening Reasons Tab")
-		SRO_Operations.reasons_tab.select()
-		# Fill out Resolution Notes
-		block_text = SRO_Operations.reasons_tab.resolution_notes.texts()
-		SRO_Operations.reasons_tab.resolution_notes.set_focus()
-		SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
-		SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('^{END}')
-		if block_text[-1].strip(' ') != '':
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{ENTER}')
-		count = 0
-		for part in unit.parts:
-			if part.part_number in posted:
-				continue
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{part.part_name}, ")
-			count += 1
-		if count > 0:
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{BACKSPACE}{BACKSPACE}{ENTER}')
-			res = mssql.query(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{unit.operator}'")
-			first,last = res['FirstName'],res['LastName']
-			initials = first[0].upper()+last[0].upper()
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{initials} {unit.datetime.strftime('%m/%d/%Y')}")
-		if unit.operation == 'QC':
-			# Fill out Reason Notes
-			block_text = SRO_Operations.reasons_tab.reason_notes.texts()
-			for line in block_text:
-				if 'UDI' in line.upper():
-					udi = True
-					break
+				log.debug(f"Received Date found: {rc_d}")
+			fl_d = SRO_Operations.general_tab.floor_date.text()
+			if not fl_d:
+				log.debug("No Floor Date found")
 			else:
-				udi = False
-			SRO_Operations.reasons_tab.reason_notes.set_focus()
-			SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes('^{END}')
+				log.debug(f"Flood Date found: {fl_d}")
+			#fa_d = SRO_Operations.general_tab.fa_date.text()
+			cp_d = SRO_Operations.general_tab.complete_date.text()
+			if not cp_d:
+				log.debug("No Complete Date found")
+			else:
+				log.debug(f"Complete Date found: {cp_d}")
+			if not rc_d:
+				log.debug(f"Entering Received Date: {min_date}")
+				SRO_Operations.general_tab.received_date.set_text(min_date)
+			if not fl_d:
+				min_date_temp = datetime.datetime.strptime(min_date, '%m/%d/%Y')
+				date_string = min_date_temp.strftime("%Y-%m-%d 00:00:00")
+				value = mssql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
+				if not value:
+					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
+				else:
+					print(value)
+					print(value[0])
+					value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+					value = value.strftime("%m/%d/%Y %I:%M:%S %p")
+				log.debug(f"Entering Floor Date: {value}")
+				SRO_Operations.general_tab.floor_date.set_text(value)
+			if unit.operation == 'QC' and not cp_d:
+				log.debug(f"Entering Complete Date: {unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p')}")
+				SRO_Operations.general_tab.complete_date.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+			log.debug("Opening Reasons Tab")
+			SRO_Operations.reasons_tab.select()
+			# Fill out Resolution Notes
+			block_text = SRO_Operations.reasons_tab.resolution_notes.texts()
+			SRO_Operations.reasons_tab.resolution_notes.set_focus()
+			SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
+			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('^{END}')
 			if block_text[-1].strip(' ') != '':
-				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('{ENTER}')
-			if not udi:
-				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('UDI{ENTER}')
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes('PASSED ALL TESTS')
-			# Fill out Reasons Grid
-			SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason',
-																	  'General Resolution', 'Specific Resolution'), 1)
-			SRO_Operations.reasons_tab.grid.select_cell('General Reason', 1)
-			if not SRO_Operations.reasons_tab.grid.cell:  # ???
-				raise ValueError
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', 1)
-			if not SRO_Operations.reasons_tab.grid.cell:
-				SRO_Operations.reasons_tab.grid.cell = 20
-			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', 1)
-			if not SRO_Operations.reasons_tab.grid.cell:
-				SRO_Operations.reasons_tab.grid.cell = 10000
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', 1)
-			if not SRO_Operations.reasons_tab.grid.cell:
-				SRO_Operations.reasons_tab.grid.cell = 100
-			SRO_Operations.status = 'Closed'
-		########################
-		# app.save_close.click()
-		# app.save_close.click()
-		########################
-		app.cancel_close.click()  #####
-		app.cancel_close.click()  #####
-		log.debug("Unit Completed")
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{ENTER}')
+			count = 0
+			for part in unit.parts:
+				if part.part_number in posted:
+					continue
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{part.part_name}, ")
+				count += 1
+			if count > 0:
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{BACKSPACE}{BACKSPACE}{ENTER}')
+				res = mssql.query(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{unit.operator}'")
+				first,last = res['FirstName'],res['LastName']
+				initials = first[0].upper()+last[0].upper()
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{initials} {unit.datetime.strftime('%m/%d/%Y')}")
+			if unit.operation == 'QC':
+				# Fill out Reason Notes
+				block_text = SRO_Operations.reasons_tab.reason_notes.texts()
+				for line in block_text:
+					if 'UDI' in line.upper():
+						udi = True
+						break
+				else:
+					udi = False
+				SRO_Operations.reasons_tab.reason_notes.set_focus()
+				SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('^{END}')
+				if block_text[-1].strip(' ') != '':
+					SRO_Operations.reasons_tab.reason_notes.send_keystrokes('{ENTER}')
+				if not udi:
+					SRO_Operations.reasons_tab.reason_notes.send_keystrokes('UDI{ENTER}')
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('PASSED ALL TESTS')
+				# Fill out Reasons Grid
+				SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason',
+																		  'General Resolution', 'Specific Resolution'), 1)
+				SRO_Operations.reasons_tab.grid.select_cell('General Reason', 1)
+				if not SRO_Operations.reasons_tab.grid.cell:  # ???
+					raise ValueError
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 20
+				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 10000
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 100
+				SRO_Operations.status = 'Closed'
+		except Exception:
+			mssql.modify("UPDATE PyComm SET ")  ###########################################################
+		finally:
+			if dev_mode:
+				app.cancel_close.click()
+				app.cancel_close.click()
+			else:
+				app.save_close.click()
+				app.save_close.click()
+				Units._unit.set_focus()
+				Units._unit.set_keyboard_focus()
+				Units._unit.send_keystrokes('{F4}')
+				Units._unit.send_keystrokes('{F5}')
+				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
 
 
 def query(app: Application):
 	log.debug("Query script started")
 	log.debug("Opening Units form")
-	# Assumes Units form already open
-	app.add_form('UnitsForm')
+	app.open_form('Units')
 	Units = app.UnitsForm
 	log.debug("Unit form opened")
 	while True:
@@ -592,16 +586,20 @@ def query(app: Application):
 			mssql.modify(f"UPDATE UnitData SET [ItemNumber] = '{build}',[Carrier] = '{carrier}',[Date] = GETDATE(),[Suffix] = '{sfx}',[ESN] = '{esn}',[SyteLineData] = 1 WHERE [SerialNumber] = '{sn2}'")
 		else:
 			mssql.modify(f"INSERT INTO UnitData ([SerialNumber],[ItemNumber],[Carrier],[Date],[Suffix],[ESN],[SyteLineData]) VALUES ('{sn2}','{build}','{carrier}',GETDATE(),'{sfx}','{esn}',1)")
+		Units._unit.set_focus()
+		Units._unit.set_keyboard_focus()
+		Units._unit.send_keystrokes('{F4}')
+		Units._unit.send_keystrokes('{F5}')
 		mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Status] = 'Request'")
 
 
 def reason(app: Application):
 	log.debug("Reason Code script started")
 	log.debug("Opening Units form")
-	# Assumes Units form already open
-	app.add_form('UnitsForm')
+	app.open_form('Units')
 	log.debug("Unit form opened")
 	while True:
+		Units = app.UnitsForm
 		# try:
 		log.debug("Checking queued Reason Codes")
 		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
@@ -619,6 +617,13 @@ def reason(app: Application):
 		SRO_Operations = app.ServiceOrderOperationsForm
 		if 'Initial' in unit.operation:
 			SRO_Operations.general_tab.initiate_controls()
+			rc_d = SRO_Operations.general_tab.received_date
+			if not rc_d.text():
+				log.debug("No Received Date found")
+				now = datetime.datetime.now()
+				rc_d.set_text(now.strftime("%m/%d/%Y 12:00:00 AM"))
+			else:
+				log.debug(f"Received Date found: {rc_d}")
 			fl_d = SRO_Operations.general_tab.floor_date
 			if not fl_d.text():
 				log.debug("No Floor Date found")
@@ -645,7 +650,7 @@ def reason(app: Application):
 			log.debug("Service Order Operations form opened")
 		SRO_Operations.reasons_tab.select()
 		row = SRO_Operations.reasons_tab.grid.rows
-		SRO_Operations.reasons_tab.grid.populate(('General Reason', 'General Resolution'), row-1)
+		SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution'), row-1)
 		SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
 		gen_rsn = SRO_Operations.reasons_tab.grid.cell
 		gen_rso, spec_rso = unit.notes.split(',')
@@ -666,21 +671,41 @@ def reason(app: Application):
 			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
 			SRO_Operations.reasons_tab.grid.cell = spec_rso
 		else:  # Else, fill last row
-			# SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+			SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row-1)
+			if not SRO_Operations.reasons_tab.grid.cell:
+				spec_rsn = '20'
+				SRO_Operations.reasons_tab.grid.cell = spec_rsn
+			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
 			SRO_Operations.reasons_tab.grid.cell = gen_rso
 			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
 			SRO_Operations.reasons_tab.grid.cell = spec_rso
-		break
-		sleep(7200)
-		quit()
+
+		if int(gen_rso) == 10000 and int(spec_rso) == 100:
+			SRO_Operations.reasons_tab.reason_notes.set_focus()
+			SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
+			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
+			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[POWER UP OK]")
+			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
+			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[ACCEPTED]")
+
+			SRO_Operations.reasons_tab.resolution_notes.set_focus()
+			SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
+			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes("^{END}")
+			fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{unit.operator}'")
+			first,last = fullname[0].split(' ')
+			initials = first[0].upper()+last[0].upper()
+			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 		if not dev_mode:
 			app.save_close.click()
 			app.save_close.click()
 		# finally:
 		if not dev_mode:
-			app.apply_filter.click()
-			app.refresh_filter.click()
+			Units._unit.set_focus()
+			Units._unit.set_keyboard_focus()
+			Units._unit.send_keystrokes('{F4}')
+			Units._unit.send_keystrokes('{F5}')
 			mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
+			log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
 
 
 def reason2(app: Application):
@@ -789,22 +814,29 @@ def main(argv):
 	parser.parse_args('username', type=str)
 	parser.add_argument('-d', '--directory', help='directory of SyteLine executable')"""
 	if len(argv) < 4:
-		raise ValueError
+		log.error(f"Expected >4 cmd arguments, got {len(argv)}")
+		raise ValueError(f"Expected >4 cmd arguments, got {len(argv)}")
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
 	cmd_all = {'transact': transact, 'query': query, 'reason': reason, 'dev': reason2}
-	opt_all = ('-fp', '-w', '-k', '-p')
-	long_opt_all = ('--filepath', '--workers', '--key', '--preference')
+	opt_all = ('-fp', '-w', '-k', '-p', '-o')
+	long_opt_all = ('--filepath', '--workers', '--key', '--preference', '--override')
 	cmd,usr,pwd = argv[1:4]
 	# def_key = '6170319'
 	if len(argv) > 5:
 		opt = dict(zip(argv[4::2], argv[5::2]))
 		for o in opt.keys():
 			if o not in opt_all:
-				raise ValueError
+				log.error(f"Invalid cmd argument: '{o}'")
+				raise ValueError(f"Invalid cmd argument: '{o}'")
 	else:
 		opt = {}
 	if cmd not in cmd_all.keys():
-		raise ValueError(f"command {cmd} is not valid")
+		log.error(f"Invalid command: '{cmd}'")
+		raise ValueError(f"Invalid command: '{cmd}'")
+
+	if opt.get('-o', False):
+		global dev_mode
+		dev_mode = False
 
 	log.debug("Attempting to read 'config.ini'")
 	config.read_file(open('config.ini'))
@@ -823,7 +855,7 @@ def main(argv):
 				log.debug(f"Checking entire root directory for a 'WinStudio.exe', this may take a while...")
 				filepath = find_file('WinStudio.exe')
 				if not filepath:
-					log.debug("'WinStudio.exe' could not be found")
+					log.error("'WinStudio.exe' could not be found")
 					raise FileNotFoundError
 				else:
 					log.debug(f"'WinStudio.exe' found at '{filepath}', setting config to new filepath")

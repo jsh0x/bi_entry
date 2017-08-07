@@ -53,6 +53,11 @@ class SyteLineError(Error):
 		super().__init__(data, message)
 
 
+class SyteLineFilterInPlaceError(SyteLineError):
+	def __init__(self, data, message: str=None):
+		super().__init__(data, message)
+
+
 class SyteLineFormContainerError(SyteLineError):
 	def __init__(self, data, message: str=None):
 		super().__init__(data, message)
