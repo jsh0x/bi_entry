@@ -17,7 +17,7 @@ import pyautogui as pag
 from exceptions import *
 from controls import Button, Coordinates
 from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm
-import shelve
+from concurrent.futures import ThreadPoolExecutor
 
 # Initial variables
 screen_width = win32api.GetSystemMetrics(0)
@@ -174,6 +174,27 @@ class Application(subprocess.Popen):
 		log.debug("Main form opened")
 		self.logged_in = True
 		log.debug("Initializing global controls")
+		# with ThreadPoolExecutor(max_workers=20) as ex:
+		# 	open_form = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
+		# 	save = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False, control_name='Save')
+		# 	cancel_close = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
+		# 	save_close = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'Save CloseButton'}, preinit=False, control_name='Save Close')
+		# 	apply_filter = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'FiPButton'}, preinit=False, control_name='Filter In Place')
+		# 	refresh_filter = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'RefreshButton'}, preinit=False, control_name='Refresh')
+		# 	reload_filter = ex.submit(fn=Button, window=self._all_win, criteria={'best_match': 'Refresh currentButton'}, preinit=False, control_name='Refresh Current')
+		#
+		# 	self.open_form = open_form.result(timeout=10)
+		# 	self.save = save.result(timeout=10)
+		# 	self.cancel_close = cancel_close.result(timeout=10)
+		# 	self.save_close = save_close.result(timeout=10)
+		# 	self.apply_filter = apply_filter.result(timeout=10)
+		# 	self.refresh_filter = refresh_filter.result(timeout=10)
+		# 	self.reload_filter = reload_filter.result(timeout=10)
+		# 	self.add_form = self._add_form
+		# 	self.remove_form = self._remove_form
+		# 	self.log_out = self._log_out
+		# 	self.__delattr__('log_in')
+
 		self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
 		self.save = Button(window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False, control_name='Save')
 		self.cancel_close = Button(window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
@@ -214,6 +235,9 @@ class Application(subprocess.Popen):
 
 	def _add_form(self, name: str, preinit=False):
 		log.debug(f"Attempting to add form '{name}'")
+		# with ThreadPoolExecutor(max_workers=20) as ex:
+		# 	form = ex.submit(_form_dict[name], self._all_win, preinit)
+		# 	self.__setattr__(name, form.result(timeout=10))
 		self.__setattr__(name, _form_dict[name](self._all_win, preinit))
 
 	def _remove_form(self, name: str):

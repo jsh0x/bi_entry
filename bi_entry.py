@@ -5,7 +5,7 @@ import configparser
 import pathlib
 import datetime
 import argparse
-from concurrent.futures import ThreadPoolExecutor as thread
+import concurrent.futures as cf
 from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
 from time import sleep
 
@@ -42,6 +42,30 @@ if 'dev.key' in file_list:
 	dev_mode = True
 else:
 	dev_mode = False
+
+class TestTimer:
+	def __init__(self):
+		self._start_time = None
+
+	def start(self):
+		self._start_time = datetime.datetime.now()
+
+	def lap(self):
+		if self._start_time:
+			retval = datetime.datetime.now() - self._start_time
+			return retval
+		else:
+			print(None)
+			return None
+
+	def reset(self):
+		self._start_time = None
+
+	def stop(self):
+		retval = self.lap()
+		self.reset()
+		return retval
+timer = TestTimer()
 
 class Part:
 	def __init__(self, part_number: str, quantity: int=1):
@@ -172,6 +196,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 	log.debug("Checking Service History Tab grid")
 	if max_rows > Units.service_history_tab.grid.rows:
 		max_rows = Units.service_history_tab.grid.rows
+	if Units.service_history_tab.grid.rows == 1:
+		raise DataGridError("")
 	Units.service_history_tab.grid.populate('Close Date', range(1, max_rows + 1))
 	for i in range(1, max_rows + 1):
 		Units.service_history_tab.grid.select_cell('Close Date', i)
@@ -524,8 +550,10 @@ def reason(app: Application):
 					fa_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
 			else:
 				log.debug(f"Flood Date found: {fl_d.text()}")
-			# app.save_close.click()
-			app.cancel_close.click()  #####
+			if dev_mode:
+				app.cancel_close.click()
+			else:
+				app.save_close.click()
 			app.add_form('ServiceOrderLinesForm')
 			SRO_Lines = app.ServiceOrderLinesForm
 			log.debug("Waiting for Service Order Lines form...")
@@ -564,14 +592,106 @@ def reason(app: Application):
 			SRO_Operations.reasons_tab.grid.cell = gen_rso
 			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
 			SRO_Operations.reasons_tab.grid.cell = spec_rso
+		break
 		sleep(7200)
 		quit()
-		app.save_close.click()
-		app.save_close.click()
+		if not dev_mode:
+			app.save_close.click()
+			app.save_close.click()
 		# finally:
-		app.apply_filter.click()
-		app.refresh_filter.click()
-		mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
+		if not dev_mode:
+			app.apply_filter.click()
+			app.refresh_filter.click()
+			mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
+
+
+def reason2(app: Application):
+	log.debug("Reason Code script started")
+	log.debug("Opening Units form")
+	# Assumes Units form already open
+	with cf.ThreadPoolExecutor() as thread:
+		thread.submit(fn=app.add_form, args=('Units Form',))
+		log.debug("Unit form opened")
+		while True:
+			# try:
+			log.debug("Checking queued Reason Codes")
+			unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
+			if not unit_data:
+				log.debug("No queued Reason Codes found")
+				continue
+			log.debug(f"Queued Reason Codes found")
+			log.debug("Receiving unit data")
+			unit = Unit(**unit_data)
+			log.info("Unit data found:")
+			log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
+			log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
+			log.debug("Unit Started")
+			thread.submit(fn=_open_first_open_sro, args=(unit, app))
+			SRO_Operations = app.ServiceOrderOperationsForm
+			if 'Initial' in unit.operation:
+				thread.submit(fn=SRO_Operations.general_tab.initiate_controls)
+				fl_d = SRO_Operations.general_tab.floor_date
+				if not fl_d.text():
+					log.debug("No Floor Date found")
+					fl_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+					fa_d = SRO_Operations.general_tab.fa_date
+					if not fa_d.text():
+						fa_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+				else:
+					log.debug(f"Flood Date found: {fl_d.text()}")
+				if dev_mode:
+					app.cancel_close.click()
+				else:
+					app.save_close.click()
+				thread(fn=app.add_form, args=('ServiceOrderLinesForm',))
+				SRO_Lines = app.ServiceOrderLinesForm
+				log.debug("Waiting for Service Order Lines form...")
+				SRO_Lines.sro_operations.ready()
+				log.debug("Service Order Lines form opened")
+				log.debug("Opening Service Order Operations form")
+				SRO_Lines.sro_operations.click(wait_string='form')
+				app.add_form('ServiceOrderOperationsForm')
+				log.debug("Waiting for Service Order Operations form...")
+				SRO_Operations.general_tab.ready()
+				log.debug("Service Order Operations form opened")
+			thread.submit(fn=SRO_Operations.reasons_tab.select)
+			row = SRO_Operations.reasons_tab.grid.rows
+			thread.submit(fn=SRO_Operations.reasons_tab.grid.populate, args=(('General Reason', 'General Resolution'), row-1))
+			SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
+			gen_rsn = SRO_Operations.reasons_tab.grid.cell
+			gen_rso, spec_rso = unit.notes.split(',')
+			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+			if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
+				# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
+				gen_rsn = str(gen_rsn).strip(' ')
+				spec_rsn = '20'
+				# spec_rsn = spec_rsn.strip(' ')
+				gen_rso = gen_rso.strip(' ')
+				spec_rso = spec_rso.strip(' ')
+				SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
+				SRO_Operations.reasons_tab.grid.cell = gen_rsn
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
+				SRO_Operations.reasons_tab.grid.cell = spec_rsn
+				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
+				SRO_Operations.reasons_tab.grid.cell = gen_rso
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
+				SRO_Operations.reasons_tab.grid.cell = spec_rso
+			else:  # Else, fill last row
+				# SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+				SRO_Operations.reasons_tab.grid.cell = gen_rso
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
+				SRO_Operations.reasons_tab.grid.cell = spec_rso
+			break
+			sleep(7200)
+			quit()
+			if not dev_mode:
+				app.save_close.click()
+				app.save_close.click()
+			# finally:
+			if not dev_mode:
+				app.apply_filter.click()
+				app.refresh_filter.click()
+				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
 
 
 def scrap(app: Application):
@@ -585,6 +705,7 @@ def scrap(app: Application):
 
 
 def main(argv):
+	timer.start()
 	"""parser = argparse.ArgumentParser()
 	parser.add_argument('cmd', type=str)
 	parser.parse_args('username', type=str)
@@ -592,7 +713,7 @@ def main(argv):
 	if len(argv) < 4:
 		raise ValueError
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
-	cmd_all = {'transact': transact, 'query': query, 'reason': reason}
+	cmd_all = {'transact': transact, 'query': query, 'reason': reason, 'dev': reason2}
 	opt_all = ('-fp', '-w', '-k', '-p')
 	long_opt_all = ('--filepath', '--workers', '--key', '--preference')
 	cmd,usr,pwd = argv[1:4]
@@ -737,6 +858,7 @@ def main(argv):
 			quit()
 		log.info(f"Successfully logged in as '{usr}'")
 		cmd_all[cmd](app)
+	print(timer.stop())
 
 
 if __name__ == '__main__':

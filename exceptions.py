@@ -25,7 +25,7 @@ class Error(Exception):
 		self.message = message
 		self.timestamp = datetime.datetime.now()
 
-
+# General/Input-caused error - - - - - - - - - - - - - -
 class UnitClosedError(Error):
 	def __init__(self, data, message: str=None):
 		super().__init__(data, message)
@@ -44,8 +44,10 @@ class InvalidPartNumberError(Error):
 class InvalidReasonCodeError(Error):
 	def __init__(self, data, message: str=None):
 		super().__init__(data, message)
+# - - - - - - - - - - - - - - - - - - - - - - - -
 
 
+# SyteLine-caused error - - - - - - - - - - - - -
 class SyteLineError(Error):
 	def __init__(self, data, message):
 		super().__init__(data, message)
@@ -56,7 +58,19 @@ class SyteLineFormContainerError(SyteLineError):
 		super().__init__(data, message)
 
 
-
 class SyteLineLogInError(SyteLineError):
 	def __init__(self, data, message: str=None):
 		super().__init__(data, message)
+# - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+# Control-caused error - - - - - - - - - - - - -
+class ControlError(Error):
+	def __init__(self, data, message):
+		super().__init__(data, message)
+
+
+class DataGridError(ControlError):
+	def __init__(self, data, message: str=None):
+		super().__init__(data, message)
+# - - - - - - - - - - - - - - - - - - - - - - -
