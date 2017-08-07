@@ -3,6 +3,7 @@ import sys
 import logging
 import configparser
 import pathlib
+from string import ascii_letters as letters
 import datetime
 import argparse
 import concurrent.futures as cf
@@ -513,8 +514,85 @@ def transact(app: Application):
 		log.debug("Unit Completed")
 
 
-def query():
-	pass
+def query(app: Application):
+	log.debug("Query script started")
+	log.debug("Opening Units form")
+	# Assumes Units form already open
+	app.add_form('UnitsForm')
+	Units = app.UnitsForm
+	log.debug("Unit form opened")
+	while True:
+		# try:
+		log.debug("Checking queued Queries")
+		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Request' ORDER BY [DateTime] ASC")
+		if not unit_data:
+			log.debug("No queued Queries found")
+			continue
+		log.debug(f"Queued Queries found")
+		log.debug("Receiving unit data")
+		unit = Unit(**unit_data)
+		log.info("Unit data found:")
+		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
+		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
+		log.debug("Unit Started")
+		try:
+			sn = unit.serial_number_prefix + unit.serial_number
+		except (ValueError, KeyError):
+			mode = 'esn'
+			esn = unit.esn = unit.serial_number
+			unit.serial_number = None
+		else:
+			mode = 'item'
+		Units.unit_data_tab.select()
+		if mode == 'esn':
+			Units.unit_data_tab.esn.set_text(unit.esn)
+			app.apply_filter()
+			item = Units.item.text()
+			sn = Units.serial_number
+			app.apply_filter()
+			app.refresh_filter()
+		elif mode == 'item':
+			Units.serial_number = sn
+			app.apply_filter()
+			item = Units.item.text()
+			esn = Units.unit_data_tab.esn.test()
+			app.apply_filter()
+			app.refresh_filter()
+		try:
+			if sn[2] in letters:
+				sn2 = sn[3:]
+			else:
+				sn2 = sn[2:]
+		except IndexError:
+			sn2 = 'No SL Data'
+			esn = 'No SL Data'
+		if item.endswith('M'):
+			sfx = 'Monitoring'
+		elif item.endswith('DEMO'):
+			sfx = 'Demo'
+		elif item.endswith('R'):
+			sfx = 'Refurb'
+		elif len(item) > 0:
+			sfx = 'Direct'
+		else:
+			sfx = 'No SL Data'
+
+		if 'V' in item[3:]:
+			carrier = 'Verizon'
+		elif 'S' in item[3:]:
+			carrier = 'Sprint'
+		else:
+			carrier = 'None'
+		build = (item[:3]+item[3:].replace('S', '').replace('V', '')).strip()
+		if not build:
+			build = 'No SL Data'
+
+		row = mssql.query(f"SELECT * FROM UnitData WHERE [SerialNumber] = '{sn2}'")
+		if row:
+			mssql.modify(f"UPDATE UnitData SET [ItemNumber] = '{build}',[Carrier] = '{carrier}',[Date] = GETDATE(),[Suffix] = '{sfx}',[ESN] = '{esn}',[SyteLineData] = 1 WHERE [SerialNumber] = '{sn2}'")
+		else:
+			mssql.modify(f"INSERT INTO UnitData ([SerialNumber],[ItemNumber],[Carrier],[Date],[Suffix],[ESN],[SyteLineData]) VALUES ('{sn2}','{build}','{carrier}',GETDATE(),'{sfx}','{esn}',1)")
+		mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Status] = 'Request'")
 
 
 def reason(app: Application):
