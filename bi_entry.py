@@ -283,7 +283,7 @@ def transact(app: Application):
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
 		log.debug("Unit Started")
-		mssql.modify("UPDATE PyComm SET ")###########################################################
+		mssql.modify("UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 		try:
 			_open_first_open_sro(unit, app)
 			min_date = datetime.datetime.now()
@@ -493,8 +493,13 @@ def transact(app: Application):
 					SRO_Operations.reasons_tab.grid.cell = 100
 				SRO_Operations.status = 'Closed'
 		except Exception:
-			mssql.modify("UPDATE PyComm SET ")  ###########################################################
-		finally:
+			mssql.modify("UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.open_form("Units")
+		else:
 			if dev_mode:
 				app.cancel_close.click()
 				app.cancel_close.click()
