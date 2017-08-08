@@ -631,15 +631,18 @@ class GridView(Control):
 			cell.click_input()
 			if self._grid[y,x,1] == str:
 				value = str(value)
+				log.debug(f"Setting cell@({x}, {y}) to string: {value}")
 				keyboard.SendKeys("{DELETE}")
-				keyboard.SendKeys(value)
+				pag.typewrite(value)
 			elif self._grid[y,x,1] == int:
 				value = int(value)
+				log.debug(f"Setting cell@({x}, {y}) to integer: {value}")
 				keyboard.SendKeys("{DELETE}")
 				keyboard.SendKeys(str(value))
 			elif self._grid[y,x,1] == datetime.date:
 				month, day, year = value.split('/', 2)
 				value = datetime.date(year=int(year), month=int(month), day=int(day))
+				log.debug(f"Setting cell@({x}, {y}) to date: {value.strftime('%m/%d/%Y')}")
 				keyboard.SendKeys("{DELETE}")
 				keyboard.SendKeys(value.strftime("%m/%d/%Y"))
 			elif self._grid[y,x,1] == datetime.datetime:
@@ -652,16 +655,18 @@ class GridView(Control):
 				elif mod == 'PM' and int(hour) != 12:
 					hour = str(int(hour) + 12)
 				value = datetime.datetime(year=int(year), month=int(month), day=int(day), hour=int(hour), minute=int(minute), second=int(second))
+				log.debug(f"Setting cell@({x}, {y}) to datetime: {value.strftime('%m/%d/%Y %I:%M:%S %p')}")
 				keyboard.SendKeys("{DELETE}")
 				keyboard.SendKeys(value.strftime("%m/%d/%Y %I:%M:%S %p"))
 			elif self._grid[y,x,1] == Checkbox:
 				pass
 			else:
 				value = str(value)
+				log.debug(f"No specific type detected, setting cell@({x}, {y}) to string: {value}")
 				keyboard.SendKeys("{HOME}")
 				keyboard.SendKeys("+{END}")
 				keyboard.SendKeys("{DELETE}")
-				keyboard.SendKeys(value)
+				pag.typewrite(value)
 		self._grid[y,x,0] = value
 
 	def sort_with_header(self, column: str, order: str='desc'):

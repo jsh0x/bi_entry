@@ -25,6 +25,7 @@ SRO_Row = Dict[str, Any]
 Date_Dict = Dict[str, datetime.datetime]
 pfx_dict = {'11': 'OT', '13': 'LC', '40': 'SL', '21': 'SL', '63': ('BE', 'ACB'), '48': 'LCB'}
 log = logging.getLogger('devLog')
+time_log = logging.getLogger('timeLog')
 config = configparser.ConfigParser()
 _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
                               '474046203600486038404260432039003960',
@@ -128,16 +129,17 @@ class Unit:
 		return self._parts
 
 	@parts.setter
-	def parts(self, value: Iterable[str]):
+	def parts(self, value):
 		if value:
 			value = value.split(',')
 			if value != ['']:
-				self._parts = map(Part, value)
+				self._parts = list(map(Part, value))
 				string = ""
 				for p in self._parts:
 					string += f"{p}, "
 				log.debug("Parts mapped: "+string[:-2])
 		else:
+			log.debug("No parts")
 			self._parts = None
 
 	@property
@@ -166,7 +168,7 @@ def pre__init__(app: Application):
 	log.debug("Pre-initialization completed")
 
 
-def _open_first_open_sro(unit: Unit, app: Application):
+def _try_unit(unit: Unit, app: Application):
 	# Assumes Units form already open
 	Units = app.UnitsForm
 	if type(unit.serial_number_prefix) is tuple:
@@ -180,6 +182,7 @@ def _open_first_open_sro(unit: Unit, app: Application):
 				break
 			Units._unit.send_keystrokes('{F4}')
 			Units._unit.send_keystrokes('{F5}')
+			timer.start()
 		else:
 			log.error(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
 			raise InvalidSerialNumberError(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
@@ -190,6 +193,11 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
 			raise SyteLineFilterInPlaceError("")
 	log.debug("Unit Started")
+
+
+def _open_first_open_sro(unit: Unit, app: Application):
+	# Assumes Units form already open
+	Units = app.UnitsForm
 	# Check SROs
 	rows = []
 	log.debug("Opening Service History Tab")
@@ -211,7 +219,9 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			break
 	# Check each SRO making sure it's open
 	log.info(f"Of first {max_rows} rows, {len(rows)} open SROs found: {rows}")
+	sro_count = 0
 	for i, row in enumerate(rows):
+		sro_count += 1
 		try:
 			log.debug(f"Trying SRO")
 			Units.service_history_tab.grid.select_row(row)
@@ -244,8 +254,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 				app.cancel_close.click()
 			continue
 	else:
-		raise UnitClosedError
-
+		raise UnitClosedError("Unit has no open SROs")
+	return sro_count
 
 def transact(app: Application):
 	log.debug("Transaction script started")
@@ -277,27 +287,55 @@ def transact(app: Application):
 		queued = queued2
 		sorted_sfx_queue = sorted(queued, key=lambda x: sfx_dict[x])
 		log.debug("Receiving unit data")
-		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
+		# Select Top 1 * FROM
+		# (Select[Serial Number],
+		# 	   [Build],
+		# 	   [Suffix],
+		# 	   [Operation],
+		# 	   SUBSTRING(u.[FirstName], 1, 1) +
+		# 	   SUBSTRING(u.[LastName], 1, 1) AS Initials,
+		# 	   Parts,
+		# 	   [DateTime],
+		# 	   [Notes],
+		# 	   [Status]
+		# 	   From PyComm
+		# 	   Inner join Users u
+		# on Operator = u.Username
+		# Where[Status] = 'Queued' AND Operation <> 'QC' AND Parts != ''
+		# UNION
+		# Select[Serial Number], [Build], [Suffix], [Operation],
+		#        SUBSTRING(u.[FirstName], 1, 1) +
+		#        SUBSTRING(u.[LastName], 1, 1) AS Initials,
+		# 	   Parts,
+		# 	   [DateTime],
+		# 	   [Notes],
+		# 	   [Status]
+		# 	   From PyComm
+		# 	   Inner join Users u
+		# on Operator = u.Username
+		# Where[Status] = 'Queued' AND Operation = 'QC' AND Parts != '') q
+		# Order by q.[Suffix] ASC, q.[DateTime] ASC
+		# unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
+		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] DESC")
 		unit = Unit(**unit_data)
 		log.info("Unit data found:")
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
-		log.debug("Unit Started")
-		mssql.modify("UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
+		mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 		try:
-			_open_first_open_sro(unit, app)
-			min_date = datetime.datetime.now()
-			min_date = min_date.strftime('%m/%d/%Y')
-			# Units.owner_history_tab.select()
-			# Units.owner_history_tab.grid.sort_with_header('Eff Date')
-			# Units.owner_history_tab.grid.populate('Eff Date', 1)
-			# Units.owner_history_tab.grid.select_cell('Eff Date', 1)
-			# min_date = Units.owner_history_tab.grid.cell
-			# log.debug(f"Received date found: {min_date}")
-			# test('UnitsForm', Units)
+			timer.start()
 			# Opens unit
+			_try_unit(unit, app)
+			Units.owner_history_tab.select()
+			Units.owner_history_tab.grid.sort_with_header('Eff Date')
+			Units.owner_history_tab.grid.populate('Eff Date', 1)
+			Units.owner_history_tab.grid.select_cell('Eff Date', 1)
+			min_date = Units.owner_history_tab.grid.cell
+			log.debug(f"Received date found: {min_date}")
+			sro_count = _open_first_open_sro(unit, app)
 			SRO_Lines = app.ServiceOrderLinesForm
 			SRO_Operations = app.ServiceOrderOperationsForm
+			part_count = 0
 			if unit.parts:
 				log.debug("Opening SRO Transactions form")
 				SRO_Operations.sro_transactions.click(wait_string='form')
@@ -379,15 +417,34 @@ def transact(app: Application):
 						sleep(0.2)
 					log.debug(f"Entering Location: {part.location} for part {part.part_number}")
 					SRO_Transactions.grid.cell = part.location
+				app.enter()
+
+				while app.popup.exists():
+					log.debug("Close pop-up")
+					app.popup.close_alt_f4()
+					sleep(0.2)
+
+				if not dev_mode:
+					app.save()
+
+				while app.popup.exists():
+					log.debug("Close pop-up")
+					app.popup.close_alt_f4()
+					sleep(0.2)
+				app.wait('ready')
 				log.debug("Posting batch")
 				SRO_Transactions.post_batch.ready()
 				if dev_mode:
 					app.cancel_close.click()  #####
 					app.cancel_close.click()  #####
 				else:
-					app.save.click()
+					part_count = len(new_parts_list)
 					SRO_Transactions.post_batch.ready()
 					SRO_Transactions.post_batch.click()
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.popup.close_alt_f4()
+						sleep(0.2)
 					app.save_close.click()
 					app.save_close.click()
 				log.debug("Waiting for Service Order Lines form...")
@@ -429,8 +486,6 @@ def transact(app: Application):
 				if not value:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
-					print(value)
-					print(value[0])
 					value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
 					value = value.strftime("%m/%d/%Y %I:%M:%S %p")
 				log.debug(f"Entering Floor Date: {value}")
@@ -440,6 +495,7 @@ def transact(app: Application):
 				SRO_Operations.general_tab.complete_date.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
 			log.debug("Opening Reasons Tab")
 			SRO_Operations.reasons_tab.select()
+
 			# Fill out Resolution Notes
 			block_text = SRO_Operations.reasons_tab.resolution_notes.texts()
 			SRO_Operations.reasons_tab.resolution_notes.set_focus()
@@ -449,17 +505,34 @@ def transact(app: Application):
 				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{ENTER}')
 			count = 0
 			for part in unit.parts:
-				if part.part_number in posted:
+				if (part.part_number in posted) or (part.part_name is None) or (part.part_name == 'None'):
 					continue
-				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{part.part_name}, ")
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{part.part_name}], ")
 				count += 1
 			if count > 0:
 				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes('{BACKSPACE}{BACKSPACE}{ENTER}')
-				res = mssql.query(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{unit.operator}'")
-				first,last = res['FirstName'],res['LastName']
-				initials = first[0].upper()+last[0].upper()
-				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"{initials} {unit.datetime.strftime('%m/%d/%Y')}")
+			fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{unit.operator}'")
+			first, last = fullname[0].split(' ')
+			initials = first[0].upper()+last[0].upper()
+			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+			is_closed_status = 'not '
 			if unit.operation == 'QC':
+				# Fill out Reasons Grid
+				row = SRO_Operations.reasons_tab.grid.rows
+				SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'), rows=row - 1)
+				SRO_Operations.reasons_tab.grid.select_cell('General Reason', row - 1)
+				if not SRO_Operations.reasons_tab.grid.cell:  # ???
+					raise ValueError
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row - 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 20
+				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row - 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 10000
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row - 1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					SRO_Operations.reasons_tab.grid.cell = 100
+
 				# Fill out Reason Notes
 				block_text = SRO_Operations.reasons_tab.reason_notes.texts()
 				for line in block_text:
@@ -474,26 +547,20 @@ def transact(app: Application):
 				if block_text[-1].strip(' ') != '':
 					SRO_Operations.reasons_tab.reason_notes.send_keystrokes('{ENTER}')
 				if not udi:
-					SRO_Operations.reasons_tab.reason_notes.send_keystrokes('UDI{ENTER}')
-				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('PASSED ALL TESTS')
-				# Fill out Reasons Grid
-				SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason',
-																		  'General Resolution', 'Specific Resolution'), 1)
-				SRO_Operations.reasons_tab.grid.select_cell('General Reason', 1)
-				if not SRO_Operations.reasons_tab.grid.cell:  # ???
-					raise ValueError
-				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', 1)
-				if not SRO_Operations.reasons_tab.grid.cell:
-					SRO_Operations.reasons_tab.grid.cell = 20
-				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', 1)
-				if not SRO_Operations.reasons_tab.grid.cell:
-					SRO_Operations.reasons_tab.grid.cell = 10000
-				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', 1)
-				if not SRO_Operations.reasons_tab.grid.cell:
-					SRO_Operations.reasons_tab.grid.cell = 100
+					SRO_Operations.reasons_tab.reason_notes.send_keystrokes('[UDI]{ENTER}')
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes('[PASSED ALL TESTS]')
+
 				SRO_Operations.status = 'Closed'
+				is_closed_status = ''
+		except UnitClosedError:
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.open_form("Units")
 		except Exception:
-			mssql.modify("UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -512,6 +579,15 @@ def transact(app: Application):
 				Units._unit.send_keystrokes('{F5}')
 				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 				log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
+				end_time = timer.stop()
+				sro_string = part_string = ""
+				if sro_count > 1:
+					sro_string = f" {sro_count} SROs tried,"
+				if part_count < len(unit.parts):
+					part_string = f" {part_count} out of {len(unit.parts)} parts transacted,"
+				elif part_count > 0:
+					part_string = f" {part_count} parts transacted,"
+				time_log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed,{sro_string}{part_string} status {is_closed_status}closed, total time {end_time}")
 
 
 def query(app: Application):
@@ -607,6 +683,20 @@ def reason(app: Application):
 		Units = app.UnitsForm
 		# try:
 		log.debug("Checking queued Reason Codes")
+	# Select TOP 1
+	# 	p.[Serial Number],
+	# 	p.Suffix, p.Operation,
+	# 	p.[Datetime], p.Notes,
+	# 	f.Failure,
+	# 	SUBSTRING(u.[FirstName], 1, 1) +
+	# 	SUBSTRING(u.[LastName], 1, 1) AS Initials
+	# 	from PyComm p
+	# Inner join FailuresRepairs f
+	# on p.Notes = f.ReasonCodes
+	# Inner Join Users u
+	# on p.Operator = u.Username
+	# Where p.[Status] = 'Reason'
+	# Order by[DateTime] ASC
 		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
 		if not unit_data:
 			log.debug("No queued Reason Codes found")
@@ -618,6 +708,7 @@ def reason(app: Application):
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
 		log.debug("Unit Started")
+		_try_unit(unit, app)
 		_open_first_open_sro(unit, app)
 		SRO_Operations = app.ServiceOrderOperationsForm
 		if 'Initial' in unit.operation:
@@ -813,7 +904,6 @@ def scrap(app: Application):
 
 
 def main(argv):
-	timer.start()
 	"""parser = argparse.ArgumentParser()
 	parser.add_argument('cmd', type=str)
 	parser.parse_args('username', type=str)
@@ -973,7 +1063,6 @@ def main(argv):
 			quit()
 		log.info(f"Successfully logged in as '{usr}'")
 		cmd_all[cmd](app)
-	print(timer.stop())
 
 
 if __name__ == '__main__':

@@ -196,7 +196,8 @@ class Application(subprocess.Popen):
 
 		# self.open_form = Button(window=self._all_win, criteria={'best_match': 'Open a formButton'}, preinit=False, control_name='Open Form')
 		self.open_form = self._open_form
-		self.save = Button(window=self._all_win, criteria={'best_match': 'SaveButton'}, preinit=False, control_name='Save')
+		self.save = self._save
+		self.enter = self._enter
 		self.cancel_close = Button(window=self._all_win, criteria={'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
 		self.save_close = Button(window=self._all_win, criteria={'best_match': 'Save CloseButton'}, preinit=False, control_name='Save Close')
 		self.apply_filter = Button(window=self._all_win, criteria={'best_match': 'FiPButton'}, preinit=False, control_name='Filter In Place')
@@ -223,6 +224,8 @@ class Application(subprocess.Popen):
 			self.__delattr__(form)
 		self._forms.clear()
 		self.__delattr__('open_form')
+		self.__delattr__('save')
+		self.__delattr__('enter')
 		self.__delattr__('cancel_close')
 		self.__delattr__('save_close')
 		self.__delattr__('apply_filter')
@@ -303,6 +306,12 @@ class Application(subprocess.Popen):
 		kbd.SendKeys('{ENTER}')
 		self.wait('ready')
 		self.add_form(name+'Form')
+
+	def _save(self):
+		kbd.SendKeys('^s')
+
+	def _enter(self):
+		kbd.SendKeys('{ENTER}')
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):
