@@ -202,7 +202,9 @@ sdist/
 develop-eggs/
 .installed.cfg
 dev.key
-*.log
+logs/
+time_logs/
+*.bat
 workspace.xml
 
 # Installer logs
