@@ -3,6 +3,8 @@ from collections import defaultdict as _defaultdict
 from time import sleep as _sleep
 import datetime
 import logging
+import queue
+import threading
 from string import ascii_letters as _ascii_letters, punctuation as _punctuation, digits as _digits
 from typing import Dict as _Dict, Union as _Union, Any as _Any, List as _List, Tuple as _Tuple
 
@@ -15,6 +17,10 @@ import numpy as np
 log = logging.getLogger('devLog')
 ctrl_log = logging.getLogger('ctrlLog')
 
+# __name__
+# __annotations__
+# __defaults__
+# __kwdefaults__
 
 def string2date(string: str):
 	month, day, year = string.split('/', 2)
@@ -113,9 +119,13 @@ class Coordinates:
 	def __repr__(self):
 		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
 
+	def __bytes__(self):
+		return bytes(f"{self.left},{self.top},{self.right},{self.down}", encoding="utf-8")
+
 
 class Control:
 	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], wrapper, preinit, text: str=None):
+		self.__name__ = ''
 		#self.window = window.__getattribute__(self.name)
 		self.window = None
 		self.parent_window = None
@@ -154,10 +164,12 @@ class Control:
 		except Exception: pass
 		try: log_string += f", framework_id: '{self.ctrl.framework_id()}'"
 		except Exception: pass
+		try: log_string += f", tree: '{self.ctrl.dump_tree()}'"
+		except Exception: pass
 
 		ctrl_log.debug(log_string)
 
-	@always_wait_until_passes(5, 1)
+	@always_wait_until_passes(10, 1)
 	def get_ctrl(self, window, criteria, wrapper):
 		self.window = window.child_window(**criteria)
 		self.parent_window = window
@@ -519,9 +531,9 @@ class GridView(Control):
 					except Exception:
 						pass
 			self.rows += 1
-			# log.debug("Creating reference grid")
+			log.debug("Creating reference grid")
 			self._grid = np.empty((self.rows, column_count, 2), dtype=np.object_)
-			# log.debug("Reference grid created")
+			log.debug("Reference grid created")
 			#self._grid = np.empty((self.rows, column_count, 3), dtype=np.object_)
 			#self._grid[...,1] = False
 			self.header_dict_rev = {}
@@ -773,6 +785,7 @@ class GridView(Control):
 
 class Tab(Control):
 	def __init__(self, window: _Dict[str, pwn.WindowSpecification], criteria: _Dict[str, _Any], name, controls, preinit, control_name, text: str=None):
+		self.__metaclass__ = 'a'
 		self.control_name = control_name
 		self.control_type_name = 'Tab'
 		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
@@ -781,6 +794,29 @@ class Tab(Control):
 		self._name = name
 		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
+	# def _initiate_controls(self, name: str, info: _Dict[str, _Any], q: queue.Queue):
+	# 	_class = info['class']
+	# 	args = info.get('args', [])
+	# 	kwargs = info.get('kwargs', {})
+	# 	log.debug(f"Attempting to create '{_class}' with '{args}' and '{kwargs}'")
+	# 	retval = _class.__new__(_class, *args, **kwargs)
+	# 	log.debug(f"'{_class}' created")
+	# 	q.put((name, retval))
+	# 	log.debug(f"'{_class}' put in queue")
+	# def initiate_controls(self):
+	# 	q = queue.Queue(maxsize=0)
+	# 	for name,info in self._controls.items():
+	# 		worker = threading.Thread(target=self._initiate_controls, args=(name, info, q))
+	# 		worker.setDaemon(True)
+	# 		worker.start()
+	# 	worker.join()
+	# 	log.debug(f"Workers joined")
+	# 	while not q.empty():
+	# 		log.debug("Iterating queue")
+	# 		name, _class = q.get()
+	# 		log.debug(f"Got {name} {_class} from queue")
+	# 		self.__setattr__(name, _class)
+	# 		log.debug(f"{_class} attribute created with name {name}")
 	def initiate_controls(self):
 		for name,info in self._controls.items():
 			_class = info['class']
@@ -798,7 +834,7 @@ class Tab(Control):
 			except Exception:
 				cxy = self.coordinates.center
 				mouse.click(coords=cxy)
-		self.window.wait('ready')
+		# self.window.wait('ready')
 		self.initiate_controls()
 
 '''class Button(Control):

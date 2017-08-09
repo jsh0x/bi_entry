@@ -38,7 +38,7 @@ _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
                               '1121327')
 _adr_data, _usr_data, _pwd_data, _db_data, _key = _assorted_lengths_of_string
 mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
-sqlite = SQL_Lite(database='positional_history.db', detect_types=1)
+# sqlite = SQL_Lite(database='positional_history.db')
 # transact parts
 # quick query
 # inputting reason codes
@@ -329,6 +329,8 @@ def transact(app: Application):
 		if not dev_mode:
 			mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 		try:
+			app.add_form('UnitsForm')
+			Units = app.UnitsForm
 			timer.start()
 			# Opens unit
 			_try_unit(unit, app)
@@ -454,8 +456,12 @@ def transact(app: Application):
 					SRO_Transactions.post_batch.click()
 					while app.popup.exists():
 						log.debug("Close pop-up")
-						app.popup.close_alt_f4()
+						app.popup.enter()
 						sleep(0.2)
+					while app.popup.exists():
+						log.debug("Close pop-up")
+						app.enter()
+						sleep(2)
 					app.save_close.click()
 					app.save_close.click()
 				log.debug("Waiting for Service Order Lines form...")
@@ -580,8 +586,11 @@ def transact(app: Application):
 			app.cancel_close.click()
 			app.open_form("Units")
 		except Exception:
-			log.error("Something went horribly wrong")
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			log.exception("Something went horribly wrong")
+			if not dev_mode:
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			else:
+				quit()
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
