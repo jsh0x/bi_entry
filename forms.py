@@ -55,8 +55,8 @@ class UnitsForm(Form):
 		# self.warranty = Checkbox(name='WarrantyButton', text='Warranty', window=window)
 
 		# Define Grid
-		owner_history_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'auto_id': "ConsumerHistoryGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Owner History'}}
-		service_history_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'auto_id': "fsTmpSROLineViewsGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Service History'}}
+		owner_history_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'parent': self.window_uia.child_window(best_match='Alt. 6/7 Digit SN:GroupBox'), 'auto_id': "ConsumerHistoryGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Owner History'}}
+		service_history_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'parent': self.window_uia.child_window(best_match='Resource:GroupBox'), 'auto_id': "fsTmpSROLineViewsGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Service History'}}
 
 		# Define Tabs
 		self.owner_history_tab = Tab(window=window, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', controls={'grid': owner_history_grid}, preinit=preinit, control_name='Owner History')
@@ -110,6 +110,8 @@ class ServiceOrderOperationsForm(Form):
 	def __init__(self, window, preinit=False):
 		log.debug("Initializing 'Service Order Operations' form")
 		super().__init__(name='Service Order Operations (Linked)', text='Service Order Operations')
+		self.window_uia = window['uia']
+		self.window_win32 = window['win32']
 
 		# Define Textboxes
 		self._status = Textbox(window=window, criteria={'best_match': "Status:Edit3"}, preinit=preinit, control_name='Status')
@@ -127,15 +129,15 @@ class ServiceOrderOperationsForm(Form):
 		print_repair_statement = {'class': Button, 'kwargs': {'window': window, 'criteria': {'auto_id': "uf_PrintRepairStatement", 'control_type': "Button", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Print Repair Statement'}}
 
 		# Define Grids
-		reasons_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'auto_id': "ReasonsSubGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Reasons'}}
+		reasons_grid = {'class': GridView, 'kwargs': {'window': window, 'criteria': {'parent': self.window_uia.child_window(best_match='Tax Code:GroupBox'), 'auto_id': "ReasonsSubGrid", 'control_type': "Table", 'top_level_only': False}, 'preinit': preinit, 'control_name': 'Reasons'}}
 
 		# Define Tabs
-		self.general_tab = Tab(window=window, criteria={'best_match': "GeneralTabItemControl", }, name='General', controls={'received_date': received_date,
+		self.general_tab = Tab(window=window, criteria={'parent': self.window_uia.child_window(best_match='GeneralTabControl'), 'best_match': "GeneralTabItemControl", }, name='General', controls={'received_date': received_date,
 																									  'floor_date': floor_date,
 																									  'fa_date': fa_date,
 																									  'complete_date': complete_date}, preinit=preinit, control_name='General')
 
-		self.reasons_tab = Tab(window=window, criteria={'best_match': "ReasonsTabItemControl"}, name='Reasons', controls={'grid': reasons_grid,
+		self.reasons_tab = Tab(window=window, criteria={'parent': self.window_uia.child_window(best_match='ReasonsTabControl'), 'best_match': "ReasonsTabItemControl"}, name='Reasons', controls={'grid': reasons_grid,
 																									  'reason_notes': reason_notes,
 																									  'resolution_notes': resolution_notes,
 																									  'print_repair_statement': print_repair_statement}, preinit=preinit, control_name='Reasons')
@@ -158,6 +160,8 @@ class SROTransactionsForm(Form):
 	def __init__(self, window, preinit=False):
 		log.debug("Initializing 'SRO Transactions' form")
 		super().__init__(name='SRO Transactions', text='SRO Transactions')
+		self.window_uia = window['uia']
+		self.window_win32 = window['win32']
 
 		# Define Textboxes
 		self.date_range_start = Textbox(window=window, criteria={'best_match': "Date Range:Edit1"}, fmt=datetime.date, preinit=preinit, control_name='Date Range Start')

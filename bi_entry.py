@@ -13,12 +13,16 @@ from time import sleep
 import numpy as np
 from PIL import Image
 from matplotlib import pyplot as plt
+import pyautogui as pag
+from pywinauto.timings import always_wait_until_passes
 
 from __init__ import find_file
 from commands import Application, enumerate_screens, screenshot
 from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
+
+pag.FAILSAFE = True
 
 LabeledDataRow = Dict[str, Any]
 SRO_Row = Dict[str, Any]
@@ -225,22 +229,22 @@ def _open_first_open_sro(unit: Unit, app: Application):
 		try:
 			log.debug(f"Trying SRO")
 			Units.service_history_tab.grid.select_row(row)
-			Units.service_history_tab.view.click(wait_string=None)
+			Units.service_history_tab.view.click()
 			log.debug("Opening Service Order Lines form")
 			app.add_form('ServiceOrderLinesForm')
 			SRO_Lines = app.ServiceOrderLinesForm
-			log.debug("Waiting for Service Order Lines form...")
-			SRO_Lines.sro_operations.ready()
+			# log.debug("Waiting for Service Order Lines form...")
+			# SRO_Lines.sro_operations.ready()
 			log.debug("Service Order Lines form opened")
 			log.debug(f"Status found: {SRO_Lines.status}")
 			if SRO_Lines.status != 'Open':  # If Service Order Lines' status isn't open, go back and try next SRO
 				raise SROClosedWarning(data='SRO_Lines')
-			SRO_Lines.sro_operations.click(wait_string='form')
+			SRO_Lines.sro_operations.click()
 			log.debug("Opening Service Order Operations form")
 			app.add_form('ServiceOrderOperationsForm')
 			SRO_Operations = app.ServiceOrderOperationsForm
-			log.debug("Waiting for Service Order Operations form...")
-			SRO_Operations.general_tab.ready()
+			# log.debug("Waiting for Service Order Operations form...")
+			# SRO_Operations.general_tab.ready()
 			log.debug("Service Order Operations form opened")
 			log.debug(f"Status found: {SRO_Operations.status}")
 			if SRO_Operations.status != 'Open':  # If Service Order Operations' status isn't open, go back and try next SRO
@@ -256,6 +260,7 @@ def _open_first_open_sro(unit: Unit, app: Application):
 	else:
 		raise UnitClosedError("Unit has no open SROs")
 	return sro_count
+
 
 def transact(app: Application):
 	log.debug("Transaction script started")
@@ -321,7 +326,8 @@ def transact(app: Application):
 		log.info("Unit data found:")
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
-		mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
+		if not dev_mode:
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 		try:
 			timer.start()
 			# Opens unit
@@ -338,11 +344,11 @@ def transact(app: Application):
 			part_count = 0
 			if unit.parts:
 				log.debug("Opening SRO Transactions form")
-				SRO_Operations.sro_transactions.click(wait_string='form')
+				SRO_Operations.sro_transactions.click()
 				app.add_form('SROTransactionsForm')
 				SRO_Transactions = app.SROTransactionsForm
 				log.debug("Waiting for SRO Transactions form...")
-				SRO_Transactions.apply_filter.ready()
+				# SRO_Transactions.apply_filter.ready()
 				log.debug("SRO Transactions form opened")
 				log.debug("Setting Date Range Start")
 				SRO_Transactions.date_range_start.set_text(min_date)
@@ -364,7 +370,7 @@ def transact(app: Application):
 							continue
 					SRO_Transactions.include_posted.click()
 					SRO_Transactions.apply_filter.click()
-					SRO_Transactions.post_batch.ready()
+					# SRO_Transactions.post_batch.ready()
 				if not posted:
 					log.debug("No posted items found")
 				else:
@@ -408,6 +414,11 @@ def transact(app: Application):
 						SRO_Transactions.grid.cell = 'No Charge'
 					count += 1
 					new_parts_list.append(part)
+				app.enter()
+				while app.popup.exists():
+					log.debug("Close pop-up")
+					app.popup.close_alt_f4()
+					sleep(0.2)
 				for i,part in zip(range(1, count+1), new_parts_list):
 					SRO_Transactions.grid.select_cell('Location', i)
 					SRO_Transactions.grid.click_cell()
@@ -451,7 +462,7 @@ def transact(app: Application):
 				SRO_Lines.sro_operations.ready()
 				log.debug("Service Order Lines form opened")
 				log.debug("Opening Service Order Operations form")
-				SRO_Lines.sro_operations.click(wait_string='form')
+				SRO_Lines.sro_operations.click()
 				app.add_form('ServiceOrderOperationsForm')
 				log.debug("Waiting for Service Order Operations form...")
 				SRO_Operations.sro_transactions.ready()
@@ -552,7 +563,16 @@ def transact(app: Application):
 
 				SRO_Operations.status = 'Closed'
 				is_closed_status = ''
+		except pag.FailSafeException:
+			log.error("Failsafe triggered!")
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			quit()
 		except UnitClosedError:
+			log.error("No open SROs found")
 			mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -560,6 +580,7 @@ def transact(app: Application):
 			app.cancel_close.click()
 			app.open_form("Units")
 		except Exception:
+			log.error("Something went horribly wrong")
 			mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -739,7 +760,7 @@ def reason(app: Application):
 			SRO_Lines.sro_operations.ready()
 			log.debug("Service Order Lines form opened")
 			log.debug("Opening Service Order Operations form")
-			SRO_Lines.sro_operations.click(wait_string='form')
+			SRO_Lines.sro_operations.click()
 			app.add_form('ServiceOrderOperationsForm')
 			log.debug("Waiting for Service Order Operations form...")
 			SRO_Operations.general_tab.ready()
@@ -848,7 +869,7 @@ def reason2(app: Application):
 				SRO_Lines.sro_operations.ready()
 				log.debug("Service Order Lines form opened")
 				log.debug("Opening Service Order Operations form")
-				SRO_Lines.sro_operations.click(wait_string='form')
+				SRO_Lines.sro_operations.click()
 				app.add_form('ServiceOrderOperationsForm')
 				log.debug("Waiting for Service Order Operations form...")
 				SRO_Operations.general_tab.ready()

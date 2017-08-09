@@ -14,15 +14,19 @@ import pathlib
 
 log = logging.getLogger('devLog')
 time_log = logging.getLogger('timeLog')
+ctrl_log = logging.getLogger('ctrlLog')
+
 log_dir = pathlib.WindowsPath.cwd()/'logs'
 log_dir.mkdir(exist_ok=True)
 time_dir = pathlib.WindowsPath.cwd()/'time_logs'
 time_dir.mkdir(exist_ok=True)
+ctrl_dir = pathlib.WindowsPath.cwd()/'control_logs'
+ctrl_dir.mkdir(exist_ok=True)
 errFormat = logging.Formatter("[%(asctime)s][%(levelname)s][%(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
 infFormat = logging.Formatter("[%(asctime)s]%(levelname)-8s %(message)s", datefmt='%d/%m/%Y %H:%M:%S')
-devFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-5s %(module)8s:%(lineno)-4s %(message)s", datefmt='%H:%M:%S')
+devFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-5s %(module)8s:%(lineno)-5s %(message)s", datefmt='%H:%M:%S')
 # devFormat = logging.Formatter("[%(asctime)s.%(msecs)-3d] [%(levelname)s] [%(process)d, %(module)s.py, line:%(lineno)s]  %(message)s", datefmt='%H:%M:%S')
-consoleFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-5s %(module)8s:%(lineno)-4s%(message)s", datefmt='%H:%M:%S')
+consoleFormat = logging.Formatter("[%(asctime)s.%(msecs)03d] %(levelname)-5s %(module)8s:%(lineno)-5s%(message)s", datefmt='%H:%M:%S')
 timeFormat = logging.Formatter("[%(asctime)s] %(message)s", datefmt='%H:%M:%S')
 
 errh = logging.StreamHandler(sys.stderr)
@@ -33,7 +37,7 @@ infh = logging.handlers.TimedRotatingFileHandler(log_dir/'info.log', when='D', i
 infh.setLevel(logging.INFO)
 infh.setFormatter(infFormat)
 
-dbgh = logging.handlers.TimedRotatingFileHandler(log_dir/'dbg.log', when='H', interval=1, backupCount=1)
+dbgh = logging.FileHandler(log_dir/'dbg.log', mode='w')
 dbgh.setLevel(logging.DEBUG)
 dbgh.setFormatter(devFormat)
 
@@ -45,6 +49,10 @@ timeh = logging.handlers.TimedRotatingFileHandler(time_dir/'completed.log', when
 timeh.setLevel(logging.INFO)
 timeh.setFormatter(timeFormat)
 
+ctrlh = logging.FileHandler(ctrl_dir/'controls.log', mode='w')
+ctrlh.setLevel(logging.DEBUG)
+ctrlh.setFormatter(timeFormat)
+
 log.addHandler(errh)
 log.addHandler(infh)
 log.addHandler(dbgh)
@@ -53,6 +61,9 @@ log.setLevel(logging.DEBUG)
 
 time_log.addHandler(timeh)
 time_log.setLevel(logging.INFO)
+
+ctrl_log.addHandler(ctrlh)
+ctrl_log.setLevel(logging.DEBUG)
 
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro

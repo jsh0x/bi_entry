@@ -10,9 +10,10 @@ import psutil as _psutil
 import pyautogui as pag
 import pywinauto as pwn
 from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_wrapper, win32defines, mouse
-from pywinauto import win32structures as struct
+from pywinauto.timings import always_wait_until_passes
 import numpy as np
 log = logging.getLogger('devLog')
+ctrl_log = logging.getLogger('ctrlLog')
 
 
 def string2date(string: str):
@@ -116,15 +117,51 @@ class Coordinates:
 class Control:
 	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], wrapper, preinit, text: str=None):
 		#self.window = window.__getattribute__(self.name)
-		self.window = window.child_window(**criteria)
-		self.parent_window = window
+		self.window = None
+		self.parent_window = None
 		#self.text = text
+		self.ctrl = None
 		if not preinit:
-			self.ctrl = wrapper(self.window.element_info)
+			self.get_ctrl(window, criteria, wrapper)
+
 		#self.__name__ = self.ctrl.criteria['control_type']
 		props = self.ctrl.get_properties()
 		coord = props['rectangle']
 		self.coordinates = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
+		log_string = f"'{self.control_name}' {self.control_type_name}= "
+
+		try: log_string += f", class_name: '{props['class_name']}'"
+		except Exception: pass
+		try: log_string += f", parent: '{self.ctrl.parent()}'"
+		except Exception: pass
+		try: log_string += f", process: '{self.ctrl.process()}'"
+		except Exception: pass
+		try: log_string += f", title: '{self.ctrl.title()}'"
+		except Exception: pass
+		try: log_string += f", visible: '{props['is_visible']}'"
+		except Exception: pass
+		try: log_string += f", enabled: '{props['is_enabled']}'"
+		except Exception: pass
+		try: log_string += f", handle: '{self.ctrl.handle()}'"
+		except Exception: pass
+		try: log_string += f", active: '{props['is_active']}'"
+		except Exception: pass
+		try: log_string += f", control_id: '{self.ctrl.control_id()}'"
+		except Exception: pass
+		try: log_string += f", control_type: '{self.ctrl.control_type()}'"
+		except Exception: pass
+		try: log_string += f", auto_id: '{self.ctrl.auto_id()}'"
+		except Exception: pass
+		try: log_string += f", framework_id: '{self.ctrl.framework_id()}'"
+		except Exception: pass
+
+		ctrl_log.debug(log_string)
+
+	@always_wait_until_passes(5, 1)
+	def get_ctrl(self, window, criteria, wrapper):
+		self.window = window.child_window(**criteria)
+		self.parent_window = window
+		self.ctrl = wrapper(self.window.element_info)
 
 	def ready(self):
 		self.window.wait('ready')
@@ -218,15 +255,10 @@ class Button(Control):
 		super().__init__(window['uia'], criteria, ctrls.uia_controls.ButtonWrapper, preinit)
 		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
-	def click(self, quantity: int = 1, wait_string: str = 'ready'):
-		if wait_string == 'form':
+	@always_wait_until_passes(5, 1)
+	def click(self, quantity: int = 1):
+		for q in range(quantity):
 			self.ctrl.click()
-			_sleep(1)
-		else:
-			for q in range(quantity):
-				self.ctrl.click()
-			if wait_string:
-				self.window.wait(wait_string)
 
 
 class Checkbox(Button):
@@ -302,6 +334,7 @@ class Textbox(Control):
 	def text(self):
 		return self.ctrl.texts()[0]
 
+	@always_wait_until_passes(4, 1)
 	def texts(self):
 		return self.ctrl.texts()[1:]
 
@@ -441,28 +474,31 @@ class GridView(Control):
 		self._cell = None
 		self.header_dict = {}
 		self._win = window
-		try:
-			scrollbar_h = self.window.child_window(title_re='Horizontal*')
-			if scrollbar_h.exists():
-				self.scrollbar_h = HorizontalScrollbar(self.window, preinit)
-				self.hsb = True
-			else:
-				self.hsb = False
-		except Exception as ex:
-			# print(ex)
-			self.hsb = False
-		try:
-			scrollbar_v = self.window.child_window(title_re='Vertical*')
-			if scrollbar_v.exists():
-				self.scrollbar_v = VerticalScrollbar(self.window, preinit)
-				self.vsb = True
-			else:
-				self.vsb = False
-		except Exception as ex:
-			# print(ex)
-			self.vsb = False
+		# try:
+		# 	scrollbar_h = self.window.child_window(title_re='Horizontal*')
+		# 	if scrollbar_h.exists():
+		# 		self.scrollbar_h = HorizontalScrollbar(self.window, preinit)
+		# 		self.hsb = True
+		# 	else:
+		# 		self.hsb = False
+		# except Exception as ex:
+		# 	# print(ex)
+		# 	self.hsb = False
+		# try:
+		# 	scrollbar_v = self.window.child_window(title_re='Vertical*')
+		# 	if scrollbar_v.exists():
+		# 		self.scrollbar_v = VerticalScrollbar(self.window, preinit)
+		# 		self.vsb = True
+		# 	else:
+		# 		self.vsb = False
+		# except Exception as ex:
+		# 	# print(ex)
+		# 	self.vsb = False
 		if not preinit:
+			# log.debug("Looking for Top Row")
 			self._top_row = self.window.child_window(title='Top Row')
+			# log.debug("Found Top Row")
+			# log.debug("Getting column names")
 			texts = self._top_row.children_texts()
 			i = 0
 			for col in texts:
@@ -471,17 +507,21 @@ class GridView(Control):
 				self.header_dict[col.strip(' ')] = i
 				i += 1
 			column_count = len(self.header_dict.keys())
-
+			# log.debug(f"Got {column_count} column names")
+			# log.debug("Counting rows")
 			for ch in self.ctrl.children():
 				text = ch.texts()[0]
 				#print(text)
 				if "Row " in text:
 					try:
 						self.rows = max(self.rows, int(text.replace('Row ', '')))
+						# log.debug(f"Found Row {int(text.replace('Row ', ''))}")
 					except Exception:
 						pass
 			self.rows += 1
+			# log.debug("Creating reference grid")
 			self._grid = np.empty((self.rows, column_count, 2), dtype=np.object_)
+			# log.debug("Reference grid created")
 			#self._grid = np.empty((self.rows, column_count, 3), dtype=np.object_)
 			#self._grid[...,1] = False
 			self.header_dict_rev = {}
@@ -502,8 +542,10 @@ class GridView(Control):
 				print(x,y,cell.get_properties())
 
 	def populate(self, columns: _Union[str, _Tuple[str]]=None, rows: _Union[int, _Tuple[int]]=None, visible_only=False):
+		log.debug("Getting x_range")
 		if not columns:
 			x_range = np.arange(self._grid.shape[1], dtype=np.intp)
+			log.debug(f"x_range set to: {x_range}")
 		else:
 			x_range = []
 			if type(columns) is str:
@@ -511,8 +553,11 @@ class GridView(Control):
 			else:
 				for col in columns:
 					x_range.append(self.header_dict[col])
+			log.debug(f"x_range set to: {x_range}")
+		log.debug("Getting y_range")
 		if not rows:
 			y_range = np.arange(self._grid.shape[0], dtype=np.intp)
+			log.debug(f"y_range set to: {y_range}")
 		else:
 			y_range = []
 			if type(rows) is int:
@@ -520,11 +565,14 @@ class GridView(Control):
 			else:
 				for row in rows:
 					y_range.append(row-1)
+			log.debug(f"y_range set to: {y_range}")
 		log.debug("Populating grid reference")
 		for y in y_range:
 			for x in x_range:
 				cell_string = f"{self.header_dict_rev[x]} Row {y}"
+				log.debug(f"Looking for cell '{cell_string}'")
 				cell = self.window.child_window(title=cell_string, visible_only=visible_only)
+				log.debug(f"Cell '{cell_string}' found")
 				value = cell.legacy_properties()['Value'].strip(' ')
 				if (value == "True") or (value == "False"):
 					if value == "True":
@@ -576,7 +624,9 @@ class GridView(Control):
 					log.debug(f"({x}, {y}) -  '{value}'  as type: <class 'str'>")
 					self._grid[y, x] = value, str
 		c = 0
+		log.debug(f"Stage 2 populating started")
 		for i in np.arange(self._grid.shape[1], dtype=np.intp):
+			log.debug(f"Checking column {i}")
 			column = self._grid[:,i,1]
 			score_keep = _defaultdict(int)
 			for col in column:
@@ -597,12 +647,15 @@ class GridView(Control):
 				else:
 					log.error(err)
 			c += 1
+		log.debug("Grid population complete")
 
 	def select_cell(self, column: str, row: int):
 		# TODO: Select multiple, return ndarray
 		x = self.header_dict[column]
 		y = row - 1
+		log.debug(f"Attempting to select cell at ({x}, {y})")
 		self._cell = (x, y)
+		log.debug(f"Cell at ({x}, {y}) selected")
 
 	@property
 	def cell(self):
@@ -622,13 +675,18 @@ class GridView(Control):
 		x,y = self._cell
 		header = self.header_dict_rev[x]
 		cell_string = f"{header} Row {y}"
+		log.debug(f"Attempting to modify cell '{cell_string}'")
 		if self._grid.shape[0] == y:
 			temp = np.empty((1, self._grid.shape[1], self._grid.shape[2]), dtype=np.object_)
 			self._grid = np.vstack((self._grid, temp))
 		if (value is not None) and (self._grid[y,x,0] != value):
+			log.debug(f"Looking for cell '{cell_string}'")
 			cell = self.window.child_window(title=cell_string, visible_only=True)
+			log.debug(f"Cell '{cell_string}' found")
 			cell.set_focus()
+			log.debug(f"Cell '{cell_string}' focused")
 			cell.click_input()
+			log.debug(f"Cell '{cell_string}' clicked")
 			if self._grid[y,x,1] == str:
 				value = str(value)
 				log.debug(f"Setting cell@({x}, {y}) to string: {value}")
@@ -668,6 +726,7 @@ class GridView(Control):
 				keyboard.SendKeys("{DELETE}")
 				pag.typewrite(value)
 		self._grid[y,x,0] = value
+		log.debug(f"Reference grid updated")
 
 	def sort_with_header(self, column: str, order: str='desc'):
 		header = self.window.child_window(parent=self._top_row, title=column)
@@ -701,11 +760,14 @@ class GridView(Control):
 		x, y = self._cell
 		header = self.header_dict_rev[x]
 		cell_string = f"{header} Row {y}"
+		log.debug(f"Looking for cell '{cell_string}'(AGAIN???)")
 		if self._grid.shape[0] == y:
 			temp = np.empty((1,self._grid.shape[1],self._grid.shape[2]), dtype=np.object_)
 			self._grid = np.vstack((self._grid, temp))
 		cell = self.window.child_window(title=cell_string, visible_only=True)
+		log.debug(f"Cell '{cell_string}' found(AGAIN???)")
 		cell.set_focus()
+		log.debug(f"Cell '{cell_string}' focused(AGAIN???)")
 		cell.click_input()
 
 
