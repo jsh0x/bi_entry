@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 from collections import defaultdict
+import pywinauto as pwn
 from controls import *
 from matplotlib import pyplot as plt
 
@@ -181,5 +182,86 @@ class SROTransactionsForm(Form):
 		self.grid = GridView(window=window, criteria={'auto_id': "MatlGrid", 'control_type': "Table", 'top_level_only': False}, preinit=preinit, control_name='Transaction')
 
 		log.debug("'SRO Transactions' form intitialized")
+
+
+class MiscIssueForm(Form):
+	def __init__(self, window):
+		self.window = window
+		log.debug("Initializing 'Miscellaneous Issue' form")
+		super().__init__(name='Miscellaneous Issue', text='Miscellaneous Issue')
+		log.debug("'Miscellaneous Issue' form initialized")
+		self.window_uia = self.window['uia']
+		self.window_win32 = self.window['win32']
+
+		# # Define Textboxes
+		# self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit0"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), preinit=False, control_name='Item')
+		#
+		# # Define Buttons
+		# # self.unit_configuration = Button(window=window, criteria={'auto_id': "??????", 'control_type': 'Button', 'top_level_only': False})
+		# self.service_order_lines = Button(window=self.window, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, preinit=False,
+		#                                   control_name='Service Order Lines')
+		# view = {'class': Button,
+		#         'kwargs': {'window': self.window, 'criteria': {'auto_id': "BtnSROLineView", 'control_type': "Button", 'top_level_only': False}, 'preinit': False, 'control_name': 'View'}}
+		#
+		# # Define Checkboxes
+		# # self.warranty = Checkbox(name='WarrantyButton', text='Warranty', window=window)
+		#
+		# # Define Grid
+		# owner_history_grid = {'class': GridView, 'kwargs': {'window': self.window,
+		#                                                     'criteria': {'parent': self.window_uia.child_window(best_match='Alt. 6/7 Digit SN:GroupBox'), 'auto_id': "ConsumerHistoryGrid",
+		#                                                                  'control_type': "Table", 'top_level_only': False}, 'preinit': False, 'control_name': 'Owner History'}}
+		# service_history_grid = {'class': GridView, 'kwargs': {'window': self.window,
+		#                                                       'criteria': {'parent': self.window_uia.child_window(best_match='Resource:GroupBox'), 'auto_id': "fsTmpSROLineViewsGrid",
+		#                                                                    'control_type': "Table", 'top_level_only': False}, 'preinit': False, 'control_name': 'Service History'}}
+		#
+		# # Define Tabs
+		# self.owner_history_tab = Tab(window=self.window, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', controls={'grid': owner_history_grid}, preinit=False,
+		#                              control_name='Owner History')
+		# self.service_history_tab = Tab(window=self.window, criteria={'best_match': "Service HistoryTabControl"}, name='Service History', controls={'grid': service_history_grid, 'view': view},
+		#                                preinit=False, control_name='Service History')
+		# self.unit_data_tab = Tab(window=self.window, criteria={'best_match': "UNIT DATATabControl"}, name='UNIT DATA', controls={'esn': esn}, preinit=False, control_name='Unit Data')
+
+
+class Form2:
+	def __init__(self, name: str, text: str):
+		self.__name__ = name
+		self.text = text
+		self.is_open = False
+		self.is_visible = False
+
+	def initialize_controls(self):
+		log.debug(f"Initializing '{self.__name__}' controls")
+		self._controls()
+		log.debug(f"'{self.__name__}' controls initialized")
+
+	def __enter__(self):
+		# With Form(name) as blah
+		pass
+
+	def __exit__(self):
+		pass
+
+	def __contains__(self, item):
+		# If {Control} in {Form}
+		pass
+
+	def __call__(self, *args, **kwargs):
+		# Make sure form is focused
+		pass
+# class UnitsForm2(Form2):
+# 	def __init__(self, window):
+# 		self.window = window
+# 		log.debug("Initializing 'Miscellaneous Issue' form")
+# 		super().__init__(name='Miscellaneous Issue', text='Miscellaneous Issue')
+# 		log.debug("'Miscellaneous Issue' form initialized")
+#
+# 	def _controls(self):
+# 		self.window_uia = self.window['uia']
+# 		self.window_win32 = self.window['win32']
+#
+# 		# Define Textboxes
+# 		self._unit = Textbox(window=self.window, criteria={'best_match': "Unit:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Unit')
+# 		self.description = Textbox(window=self.window, criteria={'best_match': "Description:Edit"}, control_name='Description')
+# 		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
 
 __all__ = ['UnitsForm', 'ServiceOrderLinesForm', 'ServiceOrderOperationsForm', 'SROTransactionsForm']

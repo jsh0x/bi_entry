@@ -4,6 +4,7 @@ import logging
 import configparser
 import pathlib
 from string import ascii_letters as letters
+from collections import defaultdict
 import datetime
 import argparse
 import concurrent.futures as cf
@@ -14,6 +15,7 @@ import numpy as np
 from PIL import Image
 from matplotlib import pyplot as plt
 import pyautogui as pag
+from pywinauto import keyboard as kbd
 from pywinauto.timings import always_wait_until_passes
 
 from __init__ import find_file
@@ -42,6 +44,7 @@ mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _ke
 # transact parts
 # quick query
 # inputting reason codes
+# pyperclip.copy(u'\t1-61-00377-0\tZSVC-ETONE\t1.000\tNo Charge\t\r\n')
 
 file_list = os.listdir(os.getcwd())
 if 'dev.key' in file_list:
@@ -104,6 +107,8 @@ class Unit:
 		self.parts = kwargs.get('Parts', None)
 		self.datetime = kwargs.get('DateTime', None)
 		self.notes = kwargs.get('Notes', None)
+		self._whole_build = None
+		self._operator_initials = None
 		log.debug("Unit initialization complete")
 
 	@property
@@ -158,9 +163,54 @@ class Unit:
 		else:
 			self._datetime = value
 
+	@property
+	def whole_build(self):
+		if self._whole_build is None:
+			data = mssql.query(f"SELECT [ItemNumber],[Carrier],[Suffix] FROM UnitData WHERE [SerialNumber] = '{self.serial_number}'")
+			if not data:
+				raise ValueError
+			item,carrier,sfx = data['ItemNumber'],data['Carrier'],data['Suffix']
+			if carrier == 'None':
+				build = item
+			else:
+				if sfx == 'Direct':
+					build = f"{item}{carrier[0].upper()}"
+				else:
+					start, end = item.rsplit('-', 1)
+					build = f"{start}{carrier[0].upper()}-{end}"
+			self._whole_build = build
+		return self._whole_build
+
+	@whole_build.setter
+	def whole_build(self, value):
+		self._whole_build = value
+
+	@property
+	def operator_initials(self):
+		if self._operator_initials is None:
+			fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{self.operator}'")
+			first, last = fullname[0].split(' ')
+			self._operator_initials = first[0].upper()+last[0].upper()
+		return self._operator_initials
+
+	@operator_initials.setter
+	def operator_initials(self, value):
+		self._operator_initials = value
 #ErrorDialog
 #OKButton
 #Static2
+
+
+# or Default_Listionary
+class Default_Lictionary(defaultdict):
+	def __contains__(self, item):
+		items = []
+		for i in self.values():
+			items.extend(i)
+		if item in items:
+			return True
+		else:
+			return False
 
 
 def pre__init__(app: Application):
@@ -194,6 +244,33 @@ def _try_unit(unit: Unit, app: Application):
 		Units.serial_number = unit.serial_number_prefix + unit.serial_number
 		app.apply_filter.click()
 		if Units.serial_number != unit.serial_number_prefix + unit.serial_number:
+			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
+			raise SyteLineFilterInPlaceError("")
+	log.debug("Unit Started")
+
+
+def _try_serial(unit: Unit, app: Application):
+	# Assumes Serial Numbers form already open
+	SrlNum = app.SerialNumbersForm
+	if type(unit.serial_number_prefix) is tuple:
+		for pfx in unit.serial_number_prefix:
+			log.debug(f"Trying prefix '{pfx}'")
+			SrlNum.serial_number.set_text(pfx + unit.serial_number)
+			SrlNum.serial_number.send_keystrokes('{F4}')
+			if SrlNum.serial_number.texts() == pfx + unit.serial_number:
+				log.debug(f"Setting prefix to '{pfx}'")
+				unit.serial_number_prefix = pfx
+				break
+			SrlNum.serial_number.send_keystrokes('{F4}')
+			SrlNum.serial_number.send_keystrokes('{F5}')
+			timer.start()
+		else:
+			log.error(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
+			raise InvalidSerialNumberError(f"Cannot find correct prefix for serial number: '{unit.serial_number}'")
+	else:
+		SrlNum.serial_number.set_text(unit.serial_number_prefix + unit.serial_number)
+		app.apply_filter.click()
+		if SrlNum.serial_number.texts() != unit.serial_number_prefix + unit.serial_number:
 			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
 			raise SyteLineFilterInPlaceError("")
 	log.debug("Unit Started")
@@ -262,6 +339,13 @@ def _open_first_open_sro(unit: Unit, app: Application):
 	return sro_count
 
 
+def _group_units_by_build(units: List[Unit]) -> Dict[str, List[Unit]]:
+	retval = defaultdict(list)
+	for unit in units:
+		retval[unit.whole_build].append(unit)
+	return retval
+
+
 def transact(app: Application):
 	log.debug("Transaction script started")
 	log.debug("Opening Units form")
@@ -323,6 +407,11 @@ def transact(app: Application):
 		# unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
 		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] DESC")
 		unit = Unit(**unit_data)
+		if unit.operation == 'QC':
+			reason_check = mssql.query(f"SELECT * FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason'")
+			if reason_check:
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Paused Queue' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
+				continue
 		log.info("Unit data found:")
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
@@ -737,101 +826,137 @@ def reason(app: Application):
 		log.info("Unit data found:")
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
-		log.debug("Unit Started")
-		_try_unit(unit, app)
-		_open_first_open_sro(unit, app)
-		SRO_Operations = app.ServiceOrderOperationsForm
-		if 'Initial' in unit.operation:
-			SRO_Operations.general_tab.initiate_controls()
-			rc_d = SRO_Operations.general_tab.received_date
-			if not rc_d.text():
-				log.debug("No Received Date found")
-				now = datetime.datetime.now()
-				rc_d.set_text(now.strftime("%m/%d/%Y 12:00:00 AM"))
+		if not dev_mode:
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
+		try:
+			app.add_form('UnitsForm')
+			Units = app.UnitsForm
+			log.debug("Unit Started")
+			_try_unit(unit, app)
+			_open_first_open_sro(unit, app)
+			SRO_Operations = app.ServiceOrderOperationsForm
+			if 'Initial' in unit.operation:
+				SRO_Operations.general_tab.initiate_controls()
+				rc_d = SRO_Operations.general_tab.received_date
+				if not rc_d.text():
+					log.debug("No Received Date found")
+					now = datetime.datetime.now()
+					rc_d.set_text(now.strftime("%m/%d/%Y 12:00:00 AM"))
+				else:
+					log.debug(f"Received Date found: {rc_d}")
+				fl_d = SRO_Operations.general_tab.floor_date
+				if not fl_d.text():
+					log.debug("No Floor Date found")
+					fl_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+					fa_d = SRO_Operations.general_tab.fa_date
+					if not fa_d.text():
+						fa_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
+				else:
+					log.debug(f"Flood Date found: {fl_d.text()}")
+				if dev_mode:
+					app.cancel_close.click()
+				else:
+					app.save_close.click()
+				app.add_form('ServiceOrderLinesForm')
+				SRO_Lines = app.ServiceOrderLinesForm
+				log.debug("Waiting for Service Order Lines form...")
+				SRO_Lines.sro_operations.ready()
+				log.debug("Service Order Lines form opened")
+				log.debug("Opening Service Order Operations form")
+				SRO_Lines.sro_operations.click()
+				app.add_form('ServiceOrderOperationsForm')
+				log.debug("Waiting for Service Order Operations form...")
+				SRO_Operations.general_tab.ready()
+				log.debug("Service Order Operations form opened")
+			SRO_Operations.reasons_tab.select()
+			row = SRO_Operations.reasons_tab.grid.rows
+			SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution'), row-1)
+			SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
+			gen_rsn = SRO_Operations.reasons_tab.grid.cell
+			gen_rso, spec_rso = unit.notes.split(',')
+			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+			if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
+				# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
+				gen_rsn = str(gen_rsn).strip(' ')
+				spec_rsn = '20'
+				# spec_rsn = spec_rsn.strip(' ')
+				gen_rso = gen_rso.strip(' ')
+				spec_rso = spec_rso.strip(' ')
+				SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
+				SRO_Operations.reasons_tab.grid.cell = gen_rsn
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
+				SRO_Operations.reasons_tab.grid.cell = spec_rsn
+				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
+				SRO_Operations.reasons_tab.grid.cell = gen_rso
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
+				SRO_Operations.reasons_tab.grid.cell = spec_rso
+			else:  # Else, fill last row
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row-1)
+				if not SRO_Operations.reasons_tab.grid.cell:
+					spec_rsn = '20'
+					SRO_Operations.reasons_tab.grid.cell = spec_rsn
+				SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
+				SRO_Operations.reasons_tab.grid.cell = gen_rso
+				SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
+				SRO_Operations.reasons_tab.grid.cell = spec_rso
+
+			if int(gen_rso) == 10000 and int(spec_rso) == 100:
+				SRO_Operations.reasons_tab.reason_notes.set_focus()
+				SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[POWER UP OK]")
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[ACCEPTED]")
+
+				SRO_Operations.reasons_tab.resolution_notes.set_focus()
+				SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes("^{END}")
+				fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{unit.operator}'")
+				first,last = fullname[0].split(' ')
+				initials = first[0].upper()+last[0].upper()
+				SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+		except pag.FailSafeException:
+			log.error("Failsafe triggered!")
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'Reason' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			quit()
+		except UnitClosedError:
+			log.error("No open SROs found")
+			mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.open_form("Units")
+		except Exception:
+			log.exception("Something went horribly wrong")
+			if not dev_mode:
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			else:
-				log.debug(f"Received Date found: {rc_d}")
-			fl_d = SRO_Operations.general_tab.floor_date
-			if not fl_d.text():
-				log.debug("No Floor Date found")
-				fl_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
-				fa_d = SRO_Operations.general_tab.fa_date
-				if not fa_d.text():
-					fa_d.set_text(unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p"))
-			else:
-				log.debug(f"Flood Date found: {fl_d.text()}")
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				quit()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.cancel_close.click()
+			app.open_form("Units")
+		else:
 			if dev_mode:
+				app.cancel_close.click()
 				app.cancel_close.click()
 			else:
 				app.save_close.click()
-			app.add_form('ServiceOrderLinesForm')
-			SRO_Lines = app.ServiceOrderLinesForm
-			log.debug("Waiting for Service Order Lines form...")
-			SRO_Lines.sro_operations.ready()
-			log.debug("Service Order Lines form opened")
-			log.debug("Opening Service Order Operations form")
-			SRO_Lines.sro_operations.click()
-			app.add_form('ServiceOrderOperationsForm')
-			log.debug("Waiting for Service Order Operations form...")
-			SRO_Operations.general_tab.ready()
-			log.debug("Service Order Operations form opened")
-		SRO_Operations.reasons_tab.select()
-		row = SRO_Operations.reasons_tab.grid.rows
-		SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution'), row-1)
-		SRO_Operations.reasons_tab.grid.select_cell('General Reason', row-1)
-		gen_rsn = SRO_Operations.reasons_tab.grid.cell
-		gen_rso, spec_rso = unit.notes.split(',')
-		SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
-		if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
-			# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
-			gen_rsn = str(gen_rsn).strip(' ')
-			spec_rsn = '20'
-			# spec_rsn = spec_rsn.strip(' ')
-			gen_rso = gen_rso.strip(' ')
-			spec_rso = spec_rso.strip(' ')
-			SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
-			SRO_Operations.reasons_tab.grid.cell = gen_rsn
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
-			SRO_Operations.reasons_tab.grid.cell = spec_rsn
-			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
-			SRO_Operations.reasons_tab.grid.cell = gen_rso
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
-			SRO_Operations.reasons_tab.grid.cell = spec_rso
-		else:  # Else, fill last row
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row-1)
-			if not SRO_Operations.reasons_tab.grid.cell:
-				spec_rsn = '20'
-				SRO_Operations.reasons_tab.grid.cell = spec_rsn
-			SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row-1)
-			SRO_Operations.reasons_tab.grid.cell = gen_rso
-			SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row-1)
-			SRO_Operations.reasons_tab.grid.cell = spec_rso
-
-		if int(gen_rso) == 10000 and int(spec_rso) == 100:
-			SRO_Operations.reasons_tab.reason_notes.set_focus()
-			SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[POWER UP OK]")
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
-			SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[ACCEPTED]")
-
-			SRO_Operations.reasons_tab.resolution_notes.set_focus()
-			SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes("^{END}")
-			fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{unit.operator}'")
-			first,last = fullname[0].split(' ')
-			initials = first[0].upper()+last[0].upper()
-			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{initials} {unit.datetime.strftime('%m/%d/%Y')}]")
-		if not dev_mode:
-			app.save_close.click()
-			app.save_close.click()
-		# finally:
-		if not dev_mode:
-			Units._unit.set_focus()
-			Units._unit.set_keyboard_focus()
-			Units._unit.send_keystrokes('{F4}')
-			Units._unit.send_keystrokes('{F5}')
-			mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
-			log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
+				app.save_close.click()
+				Units._unit.set_focus()
+				Units._unit.set_keyboard_focus()
+				Units._unit.send_keystrokes('{F4}')
+				Units._unit.send_keystrokes('{F5}')
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Paused Queue'")
+				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
 
 
 def reason2(app: Application):
@@ -924,8 +1049,163 @@ def reason2(app: Application):
 
 
 def scrap(app: Application):
-	pass
+	log.debug("Scrap script started")
+	log.debug("Opening Units form")
+	app.open_form('Units')
+	Units = app.UnitsForm
+	log.debug("Unit form opened")
 
+	log.debug("Opening Miscellaneous Issue form")
+	app.open_form('MiscellaneousIssue')
+	MiscIssue = app.MiscellaneousIssueForm
+	log.debug("Miscellaneous Issue form opened")
+
+	log.debug("Opening Serial Numbers form")
+	app.open_form('SerialNumbers')
+	SrlNum = app.SerialNumbersForm
+	log.debug("Serial Numbers form opened")
+	while True:
+		log.debug("Checking queued scrap units")
+		all_unit_data = mssql.query("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
+		if not all_unit_data:
+			continue
+		log.debug("Receiving unit data")
+		all_units = list(map(lambda x: Unit(**x), all_unit_data))
+		log.info(f"Units data found: {len(all_units)}")
+		if not dev_mode:
+			for unit in all_units:
+				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
+		if True:
+		# try:
+			timer.start()
+			all_units_grouped = _group_units_by_build(all_units)
+			sorted_keys = sorted(all_units_grouped.keys(), key=lambda x: len(all_units_grouped[x]), reverse=True)
+			sorted_unit_groups = dict(zip(sorted_keys, map(lambda x: all_units_grouped[x], sorted_keys)))  # Sorts unit groups by quantity in ascending order
+			skipped_units = Default_Lictionary(list)
+			for build,units in sorted_unit_groups.items():
+				if build in cellular_unit_builds:
+					phone = True
+				else:
+					phone = False
+				unit_locations = defaultdict(list)
+				SrlNum.focus()
+				for unit in units:
+					_try_serial(unit, app)
+					status = SrlNum.status.texts()
+					if status == 'Out of Inventory':
+						raise ValueError
+					location = SrlNum.location.text()
+					unit_locations[location].append(unit)
+					SrlNum.serial_number.send_keystrokes('{F4}')
+					SrlNum.serial_number.send_keystrokes('{F5}')
+				MiscIssue.focus()
+				MiscIssue.item.set_text(build)
+				for location,units in unit_locations.items():
+					MiscIssue.detail_tab.select()
+					MiscIssue.detail_tab.location.set_text(location)
+					MiscIssue.detail_tab.quantity.set_text(len(units))
+					if build.count('-') < 2:  # If direct units
+						reason = "24"
+					else:
+						reason = "22"
+					MiscIssue.detail_tab.reason.set_text(reason)
+					MiscIssue.detail_tab.document_number.set_text(f"SCRAP {units[0].operator_initials}")
+					MiscIssue.serial_numbers_tab.select()
+					MiscIssue.serial_numbers_tab.generate_qty.set_text("9999999")
+					kbd.SendKeys("%g")  # Generate button
+					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
+						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
+						if app.popup.exists():
+							skipped_units[build].append(unit)
+							app.enter()
+							continue
+						sleep(0.2)
+						kbd.SendKeys("{LEFT}")
+						sleep(0.2)
+						kbd.SendKeys("{SPACE}")
+						sleep(0.2)
+					kbd.SendKeys("%r")  # Process button
+				Units.focus()
+				for unit in all_units:
+					if unit in skipped_units:
+						continue
+					Units.serial_number = unit.serial_number_prefix+unit.serial_number
+					kbd.SendKeys("{F4}")
+					Units.customer.set_text('302')
+					if phone:
+						ship_num = "2"
+					else:
+						ship_num = "1"
+					Units.ship_to.set_text(ship_num)
+
+
+
+	# If Out of Inventory then: ???
+	# Open Miscellaneous Issue Form
+	# For each group:
+
+	#   Input Build ('LC-800V-M', etc) into Item textbox
+	#           Click Generate button(also: alt+g)
+	#           For each serial number, in ascending order:
+	#               Find Value In Collection menu item(also: alt+e, v)
+	#               In Find window:
+	#                   If popup, unit doesn't exist
+	#       Click Process button(also: alt+r)
+	#       Any popups???
+
+	# Open Units Form
+	# For each serial number:
+	#   Input serial number into Unit textbox
+	#   Press 'F4'
+	#   Input "302" into Customer textbox
+	#   Input "1" for non-phone or "2" for phone into Ship To textbox
+
+	#   Click Change Status button
+	#   In Popup titled "hh4q0kfi":     ("Are you sure you want to change the unit status?" text)
+	#       Click Yes button
+	#   Input "SCRAPPED" for non-phone or "SCRAPPED1" for phone into Unit Status Code textbox
+	#   Save
+	#   In Service History Tab:
+	#       Find first open SRO
+	#       If there are none open: ???
+	#       Click View button
+	#       In Service Order Lines Form:
+	#           Click Service Order Operations button
+	#           In Service Order Operations Form:
+	#               In Reasons tab:
+	#                   Input General Resolution and Specific Resolution???
+	#                   Name1 = General Resolution Fault Code Name
+	#                   Name2 = Specific Resolution Fault Code Name(Usually "SCRAP")
+	#                   Input "{Name2} {Name1}\n{Initials} {datetime.date}"
+	#               Close Unit
+	#               Save Close Form
+	#   Click Notes button
+
+	#   In Notes Form:
+	#       Find Value In Collection menu item(also: alt+e, v)
+	#       In Find window:
+	#           Input "NOTES" into Find textbox
+	#           Input "Object Notes" into In Collection textbox
+	#           Input "Subject (DerDesc)" into In Property textbox
+	#           Click Case Sensitive checkbox to toggle from unchecked -> checked
+	#           Click OK button
+	#       If popup happends(NOTES doesn't exist):
+	#           Find Value In Collection menu item(also: alt+e, v)
+	#           In Find window:
+	#               Input "" into Find textbox
+	#               Input "Object Notes" into In Collection textbox
+	#               Input "Subject (DerDesc)" into In Property textbox
+	#               Click OK button
+	#           Typewrite "NOTES"
+	#       Input(append) "{Name2} {Name1}\n{Initials} {datetime.date}" into Note("A&ttach  File...Edit") textbox
+	#       Save Close Form
+	# TODO: Scrap report
+	pass
+cellular_unit_builds = {'ET1': ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
+								'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M'],
+						'HomeGuard': ['HG-2200-M', 'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M'],
+						'HomeBase': ['HB-110', 'HB-110-DEMO', 'HB-110-M', 'HB-110S-DEMO', 'HB-110S-M', 'HB-110S'],
+						'LOC8': ['LC-800V-M', 'LC-800S-M', 'LC-825S-M', 'LC-800V-DEMO', 'LC-825V-M', 'LC-825V-DEMO', 'LC-825V', 'LC-825S', 'LC-825S-DEMO', 'LC-800S-DEMO']}
 # Select s.items
 # from PyComm
 # Cross apply dbo.Split(Parts, ',') as s

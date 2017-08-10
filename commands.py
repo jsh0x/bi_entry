@@ -13,10 +13,11 @@ from PIL import ImageGrab
 import numpy as np
 import pywinauto as pwn
 from pywinauto import mouse, keyboard as kbd, clipboard as clp
+from pywinauto.clipboard import win32clipboard
 import pyautogui as pag
 from exceptions import *
 from controls import Button, Coordinates
-from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm
+from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm#, MiscIssueForm
 from concurrent.futures import ThreadPoolExecutor
 
 # Initial variables
@@ -117,6 +118,7 @@ class Application(subprocess.Popen):
 		self._hwnd = None
 		self._all_win = {'win32': self._win, 'uia': self._win2}
 		self.popup = self.app_win32['Infor ERP SL']
+		self._find_window = self.app_win32['Find']
 		self._error = self.app_win32['Error']
 		self._forms = []
 		self.logged_in = False
@@ -313,6 +315,18 @@ class Application(subprocess.Popen):
 
 	def _enter(self):
 		kbd.SendKeys('{ENTER}')
+
+	def find_value_in_collection(self, collection: str, property: str, value):
+		kbd.SendKeys('%e')
+		kbd.SendKeys('v')
+		find = self._find_window['Find:Edit']
+		clct = self._find_window['In Collection:Edit']
+		ppty = self._find_window['In Property:Edit']
+		ok_button = self._find_window['&OKButton']
+		find.set_text(str(value))
+		clct.set_text(collection)
+		ppty.set_text(property)
+		ok_button.Click()
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):
