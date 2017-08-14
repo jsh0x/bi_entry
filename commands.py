@@ -2,6 +2,7 @@ import os
 import subprocess
 import multiprocessing
 import threading
+import weakref
 
 import logging
 from typing import Union, Iterable, Dict, Any, Tuple, List
@@ -17,16 +18,16 @@ from pywinauto.clipboard import win32clipboard
 import pyautogui as pag
 from exceptions import *
 from controls import Button, Coordinates
-from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm#, MiscIssueForm
+from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm, MiscIssueForm, SerialNumbersForm
 from concurrent.futures import ThreadPoolExecutor
 
 # Initial variables
 screen_width = win32api.GetSystemMetrics(0)
 screen_height = win32api.GetSystemMetrics(1)
-log = logging.getLogger('devLog')
+log = logging.getLogger('root')
 pfx_dict = {'11': 'OT', '13': 'LC', '40': 'SL', '21': 'SL', '63': 'BE', '48': 'LCB'}
-_form_dict = {'UnitsForm': UnitsForm, 'ServiceOrderLinesForm': ServiceOrderLinesForm,
-             'ServiceOrderOperationsForm': ServiceOrderOperationsForm, 'SROTransactionsForm': SROTransactionsForm}
+_form_dict = {'UnitsForm': UnitsForm, 'ServiceOrderLinesForm': ServiceOrderLinesForm, 'MiscellaneousIssueForm': MiscIssueForm,
+             'ServiceOrderOperationsForm': ServiceOrderOperationsForm, 'SROTransactionsForm': SROTransactionsForm, 'SerialNumbersForm': SerialNumbersForm}
 #hwnd = win32gui.GetForegroundWindow()
 #win32gui.MoveWindow(hwnd, 0, 0, np.floor_divide(screen_width, 2), np.floor_divide(screen_height, 2), True)
 
@@ -126,6 +127,12 @@ class Application(subprocess.Popen):
 		self._popup_blocker_active = False
 		self._blocker = None
 		#self.db = shelve.open('forms')
+		self.UnitsForm = weakref.ref(UnitsForm)
+		self.ServiceOrderLinesForm = weakref.ref(ServiceOrderLinesForm)
+		self.ServiceOrderOperationsForm = weakref.ref(ServiceOrderOperationsForm)
+		self.SROTransactionsForm = weakref.ref(SROTransactionsForm)
+		self.SerialNumbersForm = weakref.ref(SerialNumbersForm)
+		self.MiscellaneousIssueForm = weakref.ref(MiscIssueForm)
 		log.debug("Application initialization successful")
 
 	def __enter__(self):

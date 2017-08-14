@@ -7,7 +7,7 @@ import pywinauto as pwn
 from controls import *
 from matplotlib import pyplot as plt
 
-log = logging.getLogger('devLog')
+log = logging.getLogger('root')
 
 
 def find_file(name, path="C:/"):
@@ -193,33 +193,32 @@ class MiscIssueForm(Form):
 		self.window_uia = self.window['uia']
 		self.window_win32 = self.window['win32']
 
-		# # Define Textboxes
-		# self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit0"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), preinit=False, control_name='Item')
-		#
-		# # Define Buttons
-		# # self.unit_configuration = Button(window=window, criteria={'auto_id': "??????", 'control_type': 'Button', 'top_level_only': False})
-		# self.service_order_lines = Button(window=self.window, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, preinit=False,
-		#                                   control_name='Service Order Lines')
-		# view = {'class': Button,
-		#         'kwargs': {'window': self.window, 'criteria': {'auto_id': "BtnSROLineView", 'control_type': "Button", 'top_level_only': False}, 'preinit': False, 'control_name': 'View'}}
-		#
-		# # Define Checkboxes
-		# # self.warranty = Checkbox(name='WarrantyButton', text='Warranty', window=window)
-		#
-		# # Define Grid
-		# owner_history_grid = {'class': GridView, 'kwargs': {'window': self.window,
-		#                                                     'criteria': {'parent': self.window_uia.child_window(best_match='Alt. 6/7 Digit SN:GroupBox'), 'auto_id': "ConsumerHistoryGrid",
-		#                                                                  'control_type': "Table", 'top_level_only': False}, 'preinit': False, 'control_name': 'Owner History'}}
-		# service_history_grid = {'class': GridView, 'kwargs': {'window': self.window,
-		#                                                       'criteria': {'parent': self.window_uia.child_window(best_match='Resource:GroupBox'), 'auto_id': "fsTmpSROLineViewsGrid",
-		#                                                                    'control_type': "Table", 'top_level_only': False}, 'preinit': False, 'control_name': 'Service History'}}
-		#
-		# # Define Tabs
-		# self.owner_history_tab = Tab(window=self.window, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', controls={'grid': owner_history_grid}, preinit=False,
-		#                              control_name='Owner History')
-		# self.service_history_tab = Tab(window=self.window, criteria={'best_match': "Service HistoryTabControl"}, name='Service History', controls={'grid': service_history_grid, 'view': view},
-		#                                preinit=False, control_name='Service History')
-		# self.unit_data_tab = Tab(window=self.window, criteria={'best_match': "UNIT DATATabControl"}, name='UNIT DATA', controls={'esn': esn}, preinit=False, control_name='Unit Data')
+		# Define Textboxes
+		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), preinit=False, control_name='Item')
+		location = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Location:Edit', 'top_level_only': False}, 'preinit': False, 'control_name': 'Location'}}
+		quantity = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Quantity:Edit', 'top_level_only': False}, 'preinit': False, 'control_name': 'Quantity'}}
+		reason = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Reason:Edit', 'top_level_only': False}, 'preinit': False, 'control_name': 'Reason'}}
+		document_number = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Document Number:Edit', 'top_level_only': False}, 'preinit': False, 'control_name': 'Document Number'}}
+		generate_qty = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Generate Qty:Edit', 'top_level_only': False}, 'preinit': False, 'control_name': 'Generate Qty'}}
+
+		# Define Tabs
+		self.detail_tab = Tab(window=self.window, criteria={'best_match': "DetailTabControl"}, name='Detail', controls={'location': location, 'quantity': quantity, 'reason': reason, 'document_number': document_number}, preinit=False, control_name='Detail')
+		self.serial_numbers_tab = Tab(window=self.window, criteria={'best_match': "Serial NumbersTabControl"}, name='Serial Numbers', controls={'generate_qty': generate_qty}, preinit=False, control_name='Serial Numbers')
+
+
+class SerialNumbersForm(Form):
+	def __init__(self, window):
+		self.window = window
+		log.debug("Initializing 'Miscellaneous Issue' form")
+		super().__init__(name='Miscellaneous Issue', text='Miscellaneous Issue')
+		log.debug("'Miscellaneous Issue' form initialized")
+		self.window_uia = self.window['uia']
+		self.window_win32 = self.window['win32']
+
+		# Define Textboxes
+		self.serial_number = Textbox(window=self.window, criteria={'best_match': "Serial Number:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), preinit=False, control_name='Serial Number')
+		self.status = Textbox(window=self.window, criteria={'best_match': "Status:Edit"}, preinit=False, control_name='Status')
+		self.location = Textbox(window=self.window, criteria={'best_match': 'Location:Edit'}, preinit=False, control_name='Location')
 
 
 class Form2:
@@ -231,7 +230,7 @@ class Form2:
 
 	def initialize_controls(self):
 		log.debug(f"Initializing '{self.__name__}' controls")
-		self._controls()
+		self._init_controls()
 		log.debug(f"'{self.__name__}' controls initialized")
 
 	def __enter__(self):
@@ -248,20 +247,33 @@ class Form2:
 	def __call__(self, *args, **kwargs):
 		# Make sure form is focused
 		pass
-# class UnitsForm2(Form2):
-# 	def __init__(self, window):
-# 		self.window = window
-# 		log.debug("Initializing 'Miscellaneous Issue' form")
-# 		super().__init__(name='Miscellaneous Issue', text='Miscellaneous Issue')
-# 		log.debug("'Miscellaneous Issue' form initialized")
-#
-# 	def _controls(self):
-# 		self.window_uia = self.window['uia']
-# 		self.window_win32 = self.window['win32']
-#
-# 		# Define Textboxes
-# 		self._unit = Textbox(window=self.window, criteria={'best_match': "Unit:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Unit')
-# 		self.description = Textbox(window=self.window, criteria={'best_match': "Description:Edit"}, control_name='Description')
-# 		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
+
+
+class UnitsForm2(Form2):
+	def __init__(self, window):
+		self.window = window
+		log.debug("Initializing 'Miscellaneous Issue' form")
+		super().__init__(name='Miscellaneous Issue', text='Miscellaneous Issue')
+		log.debug("'Miscellaneous Issue' form initialized")
+		self.window_uia = None
+		self.window_win32 = None
+		self.serial_number = None
+		self.item = None
+		self.customer = None
+
+	def _init_controls(self):
+		self.window_uia = self.window['uia']
+		self.window_win32 = self.window['win32']
+		# Define Textboxes
+		self.serial_number = Textbox(window=self.window, criteria={'best_match': "Unit:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Unit')
+		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
+		self.customer = Textbox()
+
+	def _de_init_controls(self):
+		self.window_uia = None
+		self.window_win32 = None
+		# Define Textboxes
+		self.serial_number = None
+		self.item = None
 
 __all__ = ['UnitsForm', 'ServiceOrderLinesForm', 'ServiceOrderOperationsForm', 'SROTransactionsForm']

@@ -1,6 +1,8 @@
+import logging
 from typing import Union, Dict, Tuple, Any
 import sqlite3
 # Try importing 3rd-party modules
+log = logging.getLogger('root')
 try:
 	missing_imports = []
 	try:
@@ -37,12 +39,16 @@ class SQL:
 	def query(self, cmd: str, fetchall=False) -> Union[Any, Dict[str, Any], Tuple[Dict[str, Any]]]:
 		c = self._conn.cursor()
 		try:
+			log.debug(f"Attempting to execute SQL command: {cmd}")
 			c.execute(cmd)
+			log.debug("Command successful")
 		except Exception:
 			raise ConnectionError(f"Command execution failed for command:\n'{cmd}'")
 		else:
 			if cmd.startswith('SELECT') and ('FROM' in cmd) and ('COUNT' in cmd.split('FROM', 1)[0]):
-					return int(c.fetchone()[0])
+				retval = int(c.fetchone()[0])
+				log.debug(f"Results: {retval}")
+				return retval
 			elif fetchall:
 				rows = c.fetchall()
 				if cmd.startswith('SELECT') and ('*' in cmd.split('FROM', 1)[0]):
@@ -56,8 +62,10 @@ class SQL:
 					retval = []
 					for row in rows:
 						retval.append(_label_columns(columns, row))
+					log.debug(f"Results: {tuple(retval)}")
 					return tuple(retval)
 				else:
+					log.debug(f"Results: {tuple(rows)}")
 					return tuple(rows)
 			else:
 				row = c.fetchone()
@@ -69,8 +77,11 @@ class SQL:
 				else:
 					columns = get_columns_from_command(cmd)
 				if len(columns) > 1 and row:
-					return _label_columns(columns, row)
+					retval = _label_columns(columns, row)
+					log.debug(f"Results: {retval}")
+					return retval
 				else:
+					log.debug(f"Results: {row}")
 					return row
 
 	def modify(self, cmd: str):

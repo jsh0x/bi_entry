@@ -14,8 +14,9 @@ import pywinauto as pwn
 from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_wrapper, win32defines, mouse
 from pywinauto.timings import always_wait_until_passes
 import numpy as np
-log = logging.getLogger('devLog')
-ctrl_log = logging.getLogger('ctrlLog')
+
+log = logging.getLogger('root')
+ctrl_log = logging.getLogger('logControl')
 
 # __name__
 # __annotations__
@@ -189,7 +190,6 @@ class Control:
 	def get_image(self):
 		return self.ctrl.capture_as_image()
 
-
 	"""	try:
 			val = self.ctrl.get_properties()
 			print(f"\n{name}\n{val}")
@@ -254,6 +254,27 @@ class Control:
 			return True
 		elif bg_white < bg_gray:
 			return False"""
+
+
+class Control2:
+	def __init__(self, window: pwn.WindowSpecification, criteria: _Dict[str, _Any], wrapper):
+		self.__name__ = ''
+		self.__type__ = ''
+		self.window = window.child_window(**criteria)
+		self.parent_window = window
+		self.ctrl = wrapper(self.window.element_info)
+		props = self.ctrl.get_properties()
+		coord = props['rectangle']
+		self.coordinates = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
+		log_string = f"'{self.control_name}' {self.control_type_name}= "
+
+	def ready(self):
+		self.window.wait('ready')
+		self.window.wait('exists')
+		self.window.wait('visible')
+
+	def exists(self):
+		return self.window.exists()
 
 
 class Button(Control):
@@ -377,6 +398,18 @@ class Textbox(Control):
 		# self.line_length()
 		line = self.get_line(index)
 		return len(line)
+
+
+class Textbox2(Control2):
+	def __init__(self, window, criteria, control_name, control_type_name=None):
+		self.control_name = control_name
+		if not control_type_name:
+			self.control_type_name = 'Textbox'
+		else:
+			self.control_type_name = control_type_name
+		log.debug(f"Initializing '{self.control_name}' {self.control_type_name}")
+		super().__init__(window['win32'], criteria, ctrls.win32_controls.EditWrapper)
+		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
 
 class Datebox(Textbox):
