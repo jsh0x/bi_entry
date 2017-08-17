@@ -14,6 +14,7 @@ from PIL import ImageGrab
 import numpy as np
 import pywinauto as pwn
 from pywinauto import mouse, keyboard as kbd, clipboard as clp
+from pywinauto import xml_helpers
 from pywinauto.clipboard import win32clipboard
 import pyautogui as pag
 from exceptions import *
@@ -108,11 +109,51 @@ def screenshot():
 
 
 class Application(subprocess.Popen):
+	# def __preinit__(self):
+	# 	xml_helpers.ReadPropertiesFromFile('Units.xml')
+	# 	xml_helpers.ReadPropertiesFromFile('SROLines.xml')
+	# 	xml_helpers.ReadPropertiesFromFile('SROOperations.xml')
+
+	def __preinit__(self, val):
+		if val == 1:
+			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_Units.pkl').connect(process=self.pid)
+			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_Units.pkl').connect(process=self.pid)
+			win = app_win32.window(title_re='Infor ERP SL (EM)*')
+			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+			all_win = {'win32': win, 'uia': win2}
+			self.UnitsForm = UnitsForm(all_win, False)
+		elif val == 2:
+			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROLines.pkl').connect(process=self.pid)
+			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROLines.pkl').connect(process=self.pid)
+			win = app_win32.window(title_re='Infor ERP SL (EM)*')
+			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+			all_win = {'win32': win, 'uia': win2}
+			self.ServiceOrderLinesForm = ServiceOrderLinesForm(all_win, False)
+		elif val == 3:
+			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROOperations.pkl').connect(process=self.pid)
+			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROOperations.pkl').connect(process=self.pid)
+			win = app_win32.window(title_re='Infor ERP SL (EM)*')
+			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+			all_win = {'win32': win, 'uia': win2}
+			self.ServiceOrderOperationsForm = ServiceOrderOperationsForm(all_win, False)
+		elif val == 4:
+			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROTransactions.pkl').connect(process=self.pid)
+			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROTransactions.pkl').connect(process=self.pid)
+			win = app_win32.window(title_re='Infor ERP SL (EM)*')
+			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+			all_win = {'win32': win, 'uia': win2}
+			self.SROTransactionsForm = SROTransactionsForm(all_win, False)
+
 	def __init__(self, args: Iterable[Union[bytes, str]]):
 		super().__init__(args)
 		log.debug("Application initialization started")
-		self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
-		self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
+		self.app_win32 = pwn.Application(backend='win32').connect(path=args)
+		self.app_uia = pwn.Application(backend='uia').connect(path=args)
+		# self.app_win32 = pwn.Application(backend='win32').connect(process=self.pid)
+		# self.app_uia = pwn.Application(backend='uia').connect(process=self.pid)
+
+		# self.app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROTransactions.pkl').connect(process=self.pid)
+		# self.app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROTransactions.pkl').connect(process=self.pid)
 		self._sign_in = self.app_win32['Sign In']
 		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
 		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
@@ -149,6 +190,11 @@ class Application(subprocess.Popen):
 		finally:
 			# self.wait()
 			self.kill()
+
+	def write_data(self, value):
+		pass
+		# self.app_uia.WriteAppData(f'app_uia_history_{value}.pkl')
+		# self.app_win32.WriteAppData(f'app_win32_history_{value}.pkl')
 
 	def _log_in(self, username: str = None, password: str = None):
 		log.debug("Attempting log in")
@@ -208,14 +254,15 @@ class Application(subprocess.Popen):
 		self.open_form = self._open_form
 		self.save = self._save
 		self.enter = self._enter
-		self.cancel_close = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Cancel CloseButton'}, preinit=False, control_name='Cancel Close')
-		self.save_close = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Save CloseButton'}, preinit=False, control_name='Save Close')
-		self.apply_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'FiPButton'}, preinit=False, control_name='Filter In Place')
-		self.refresh_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'RefreshButton'}, preinit=False, control_name='Refresh')
-		self.reload_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Refresh currentButton'}, preinit=False, control_name='Refresh Current')
+		self.cancel_close = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Cancel CloseButton'}, control_name='Cancel Close')
+		self.save_close = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Save CloseButton'}, control_name='Save Close')
+		self.apply_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'FiPButton'}, control_name='Filter In Place')
+		self.refresh_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'RefreshButton'}, control_name='Refresh')
+		self.reload_filter = Button(window=self._all_win, criteria={'parent': self._win2.child_window(best_match='GripToolbar'), 'best_match': 'Refresh currentButton'}, control_name='Refresh Current')
 		self.add_form = self._add_form
 		self.remove_form = self._remove_form
 		self.log_out = self._log_out
+		self.window_menu = self._win2.child_window(best_match='WindowMenuItem')
 		self.__delattr__('log_in')
 
 	# def apply_filter(self):
@@ -244,14 +291,15 @@ class Application(subprocess.Popen):
 		self.__delattr__('add_form')
 		self.__delattr__('remove_form')
 		self.__delattr__('log_out')
+		self.__delattr__('window_menu')
 		self.log_in = self._log_in
 
-	def _add_form(self, name: str, preinit=False):
+	def _add_form(self, name: str):
 		log.debug(f"Attempting to add form '{name}'")
 		# with ThreadPoolExecutor(max_workers=20) as ex:
-		# 	form = ex.submit(_form_dict[name], self._all_win, preinit)
+		# 	form = ex.submit(_form_dict[name], self._all_win)
 		# 	self.__setattr__(name, form.result(timeout=10))
-		self.__setattr__(name, _form_dict[name](self._all_win, preinit))
+		self.__setattr__(name, _form_dict[name](self._all_win))
 
 	def _remove_form(self, name: str):
 		log.debug(f"Attempting to remove form '{name}'")

@@ -127,3 +127,6 @@ class SQL_Lite(SQL):
 			raise ConnectionError("Connection to SQL Server failed!")
 		else:
 			super().__init__(conn=conn)
+
+# c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+# print(c.fetchall())
