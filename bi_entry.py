@@ -17,6 +17,7 @@ from matplotlib import pyplot as plt
 import pyautogui as pag
 from pywinauto import keyboard as kbd
 from pywinauto.timings import always_wait_until_passes
+from pywinauto import xml_helpers
 
 from __init__ import find_file
 from commands import Application, enumerate_screens, screenshot
@@ -325,7 +326,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			Units.service_history_tab.grid.select_row(row)
 			Units.service_history_tab.view.click()
 			log.debug("Opening Service Order Lines form")
-			app.add_form('ServiceOrderLinesForm')
+			# app.add_form('ServiceOrderLinesForm') #####
+			app.__preinit__(2)
 			SRO_Lines = app.ServiceOrderLinesForm
 			# log.debug("Waiting for Service Order Lines form...")
 			# SRO_Lines.sro_operations.ready()
@@ -333,9 +335,12 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			log.debug(f"Status found: {SRO_Lines.status}")
 			if SRO_Lines.status != 'Open':  # If Service Order Lines' status isn't open, go back and try next SRO
 				raise SROClosedWarning(data='SRO_Lines')
+			xml_helpers.WriteDialogToFile('SROLines.xml', app._win.wrapper_object())
+			app.write_data('SROLines')
 			SRO_Lines.sro_operations.click()
 			log.debug("Opening Service Order Operations form")
-			app.add_form('ServiceOrderOperationsForm')
+			app.__preinit__(3)
+			# app.add_form('ServiceOrderOperationsForm') ####
 			SRO_Operations = app.ServiceOrderOperationsForm
 			# log.debug("Waiting for Service Order Operations form...")
 			# SRO_Operations.general_tab.ready()
@@ -367,9 +372,9 @@ def transact(app: Application):
 	log.debug("Transaction script started")
 	log.debug("Opening Units form")
 	app.open_form('Units')
+	app.__preinit__(1)
 	Units = app.UnitsForm
 	log.debug("Unit form opened")
-	# pre__init__(app)
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
 	sleep_counter = 0
 	while True:
@@ -449,6 +454,7 @@ def transact(app: Application):
 			timer.start()
 			# Opens unit
 			_try_unit(unit, app)
+			app.write_data('Units')
 			Units.owner_history_tab.select()
 			Units.owner_history_tab.grid.sort_with_header('Eff Date')
 			Units.owner_history_tab.grid.populate('Eff Date', 1)
@@ -458,16 +464,19 @@ def transact(app: Application):
 			sro_count = _open_first_open_sro(unit, app)
 			SRO_Lines = app.ServiceOrderLinesForm
 			SRO_Operations = app.ServiceOrderOperationsForm
+			app.write_data('SROOperations')
 			part_count = 0
 			if unit.parts:
 				log.debug("Opening SRO Transactions form")
 				SRO_Operations.sro_transactions.click()
-				app.add_form('SROTransactionsForm')
+				# app.add_form('SROTransactionsForm') ####
+				app.__preinit__(4)
 				SRO_Transactions = app.SROTransactionsForm
 				log.debug("Waiting for SRO Transactions form...")
 				# SRO_Transactions.apply_filter.ready()
 				log.debug("SRO Transactions form opened")
 				log.debug("Setting Date Range Start")
+				app.write_data('SROTransactions')
 				SRO_Transactions.date_range_start.set_text(min_date)
 				SRO_Transactions.apply_filter.click()
 				max_rows = SRO_Transactions.grid.rows-1
@@ -618,8 +627,8 @@ def transact(app: Application):
 				if not value:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
-					value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-					value = value.strftime("%m/%d/%Y %I:%M:%S %p")
+					# value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")  ####???
+					value = value[0].strftime("%m/%d/%Y %I:%M:%S %p")
 				log.debug(f"Entering Floor Date: {value}")
 				SRO_Operations.general_tab.floor_date.set_text(value)
 			if unit.operation == 'QC' and not cp_d:
@@ -867,7 +876,9 @@ def reason(app: Application):
 			Units = app.UnitsForm
 			log.debug("Unit Started")
 			_try_unit(unit, app)
+			xml_helpers.WriteDialogToFile('Units.xml', app._win.wrapper_object())
 			_open_first_open_sro(unit, app)
+			xml_helpers.WriteDialogToFile('SROOperations.xml', app._win.wrapper_object())
 			SRO_Operations = app.ServiceOrderOperationsForm
 			if 'Initial' in unit.operation:
 				SRO_Operations.general_tab.initiate_controls()
@@ -1008,6 +1019,14 @@ def scrap(app: Application):
 	app.open_form('SerialNumbers')
 	SrlNum = app.SerialNumbersForm
 	log.debug("Serial Numbers form opened")
+	for item in app.window_menu.items():
+		text = item.text()[0]
+		if 'Units' in text:
+			UnitsFormFocus = item
+		elif 'Miscellaneous Issue' in text:
+			MiscIssueFormFocus = item
+		elif 'Serial Numbers' in text:
+			SrlNumFormFocus = item
 	while True:
 		log.debug("Checking queued scrap units")
 		all_unit_data = mssql.query("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
@@ -1019,12 +1038,15 @@ def scrap(app: Application):
 		if not dev_mode:
 			for unit in all_units:
 				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
-		if True:
-		# try:
+		try:
 			timer.start()
 			all_units_grouped = _group_units_by_build(all_units)
+			log.debug(f"Units split into {len(all_units_grouped.keys())} group(s)")
 			sorted_keys = sorted(all_units_grouped.keys(), key=lambda x: len(all_units_grouped[x]), reverse=True)
-			sorted_unit_groups = dict(zip(sorted_keys, map(lambda x: all_units_grouped[x], sorted_keys)))  # Sorts unit groups by quantity in ascending order
+			sorted_unit_groups = dict(zip(sorted_keys, map(lambda x: all_units_grouped[x], sorted_keys)))  # Sorts unit groups by quantity in descending order
+			log.debug("Units sorted by quantity in descending order")
+			for i,(key,group) in enumerate(sorted_unit_groups.items()):
+				log.debug(f"Group{i+1}: {key} build, {len(group)} unit(s)")
 			skipped_units = Default_Lictionary(list)
 			for build,units in sorted_unit_groups.items():
 				if build in cellular_unit_builds:
@@ -1032,7 +1054,7 @@ def scrap(app: Application):
 				else:
 					phone = False
 				unit_locations = defaultdict(list)
-				SrlNum.focus()
+				SrlNumFormFocus.select()
 				for unit in units:
 					_try_serial(unit, app)
 					status = SrlNum.status.texts()
@@ -1042,7 +1064,7 @@ def scrap(app: Application):
 					unit_locations[location].append(unit)
 					SrlNum.serial_number.send_keystrokes('{F4}')
 					SrlNum.serial_number.send_keystrokes('{F5}')
-				MiscIssue.focus()
+				MiscIssueFormFocus.select()
 				MiscIssue.item.set_text(build)
 				for location,units in unit_locations.items():
 					MiscIssue.detail_tab.select()
@@ -1056,7 +1078,7 @@ def scrap(app: Application):
 					MiscIssue.detail_tab.document_number.set_text(f"SCRAP {units[0].operator_initials}")
 					MiscIssue.serial_numbers_tab.select()
 					MiscIssue.serial_numbers_tab.generate_qty.set_text("9999999")
-					kbd.SendKeys("%g")  # Generate button
+					kbd.SendKeys("%g")  # Generate button, (ALT + G)
 					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
 						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
 						if app.popup.exists():
@@ -1068,8 +1090,12 @@ def scrap(app: Application):
 						sleep(0.2)
 						kbd.SendKeys("{SPACE}")
 						sleep(0.2)
-					kbd.SendKeys("%r")  # Process button
-				Units.focus()
+					if dev_mode:
+						app.cancel_close.click()
+						app.open_form('MiscellaneousIssue')
+					else:
+						kbd.SendKeys("%r")  # Process button, (ALT + R)
+				UnitsFormFocus.select()
 				for unit in all_units:
 					if unit in skipped_units:
 						continue
@@ -1081,6 +1107,21 @@ def scrap(app: Application):
 					else:
 						ship_num = "1"
 					Units.ship_to.set_text(ship_num)
+					Units.change_status.click()
+					kbd.SendKeys("%y")  # Yes button, (ALT + Y)
+					if phone:
+						scrap_code = 'SCRAPPED1'
+					else:
+						scrap_code = 'SCRAPPED'
+					Units.unit_status_code.set_text(scrap_code)
+					if not dev_mode:
+						app.save()
+
+		except Exception:
+			log.exception(f"Something went horribly wrong!")
+			if not dev_mode:
+				for unit in skipped_units:
+					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 
 
 	# If Out of Inventory then: ???
@@ -1105,7 +1146,7 @@ def scrap(app: Application):
 
 	#   Click Change Status button
 	#   In Popup titled "hh4q0kfi":     ("Are you sure you want to change the unit status?" text)
-	#       Click Yes button
+	#       Click Yes button (Alt + Y)
 	#   Input "SCRAPPED" for non-phone or "SCRAPPED1" for phone into Unit Status Code textbox
 	#   Save
 	#   In Service History Tab:
@@ -1143,7 +1184,6 @@ def scrap(app: Application):
 	#       Input(append) "{Name2} {Name1}\n{Initials} {datetime.date}" into Note("A&ttach  File...Edit") textbox
 	#       Save Close Form
 	# TODO: Scrap report
-	pass
 cellular_unit_builds = {'ET1': ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 								'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M'],
 						'HomeGuard': ['HG-2200-M', 'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M'],
@@ -1167,15 +1207,15 @@ def main(argv):
 	# 	log.error(f"Expected >4 cmd arguments, got {len(argv)}")
 	# 	raise ValueError(f"Expected >4 cmd arguments, got {len(argv)}")
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
-	cmd_all = {'transact': transact, 'query': query, 'reason': reason}
+	cmd_all = {'transact': transact, 'query': query, 'reason': reason, 'scrap': scrap}
 	opt_all = ('-fp', '-w', '-k', '-p', '-o')
 	long_opt_all = ('--filepath', '--workers', '--key', '--preference', '--override')
 	if len(argv) > 2:
 		cmd,usr,pwd = argv[1:4]
 	else:
 		cmd = argv[1]
-		usr = config.get('Log in', 'username')
-		pwd = config.get('Log in', 'password')
+		usr = config.get('Login', 'username')
+		pwd = config.get('Login', 'password')
 	# def_key = '6170319'
 	if len(argv) > 5:
 		opt = dict(zip(argv[4::2], argv[5::2]))

@@ -3,11 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="c22dcbfe-bd87-42fc-ab13-ae3fb9e95b85" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/_sql.py" afterPath="$PROJECT_DIR$/_sql.py" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/bi_entry.py" afterPath="$PROJECT_DIR$/bi_entry.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/commands.py" afterPath="$PROJECT_DIR$/commands.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/computer_vision.py" afterPath="$PROJECT_DIR$/computer_vision.py" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/controls.py" afterPath="$PROJECT_DIR$/controls.py" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/forms.py" afterPath="$PROJECT_DIR$/forms.py" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
@@ -894,7 +890,14 @@
       <option name="project" value="LOCAL" />
       <updated>1502743428085</updated>
     </task>
-    <option name="localTasksCounter" value="27" />
+    <task id="LOCAL-00027" summary="Computer vision dev">
+      <created>1502985587585</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1502985587585</updated>
+    </task>
+    <option name="localTasksCounter" value="28" />
     <servers />
   </component>
   <component name="TodoView">
@@ -1010,7 +1013,8 @@
     <MESSAGE value="Computer vision integration started" />
     <MESSAGE value="Scrap script started" />
     <MESSAGE value="Reason codes implemented" />
-    <option name="LAST_COMMIT_MESSAGE" value="Reason codes implemented" />
+    <MESSAGE value="Computer vision dev" />
+    <option name="LAST_COMMIT_MESSAGE" value="Computer vision dev" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
