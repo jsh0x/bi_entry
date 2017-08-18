@@ -207,6 +207,8 @@ class MiscIssueForm(Form):
 		self.detail_tab = Tab(window=self.window, criteria={'best_match': "DetailTabControl"}, name='Detail', controls={'location': location, 'quantity': quantity, 'reason': reason, 'document_number': document_number}, control_name='Detail')
 		self.serial_numbers_tab = Tab(window=self.window, criteria={'best_match': "Serial NumbersTabControl"}, name='Serial Numbers', controls={'generate_qty': generate_qty}, control_name='Serial Numbers')
 
+		# Define Buttons
+		self.process = Button(window=window, criteria={'best_match': "ProcessButton", 'control_type': "Button", 'top_level_only': False}, control_name='Process')
 
 class SerialNumbersForm(Form):
 	def __init__(self, window):

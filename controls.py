@@ -752,10 +752,14 @@ class GridView(Control):
 		if (value is not None) and (self._grid[y,x,0] != value):
 			log.debug(f"Looking for cell '{cell_string}'")
 			cell = self.window.child_window(title=cell_string, visible_only=True)
+			props = cell.get_properties()
+			coord = props['rectangle']
+			cell_coords = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
+			xy = cell_coords.center
 			log.debug(f"Cell '{cell_string}' found")
-			cell.set_focus()
-			log.debug(f"Cell '{cell_string}' focused")
-			cell.click_input()
+			# cell.set_focus()
+			# log.debug(f"Cell '{cell_string}' focused")
+			mouse.click(coords=xy)
 			log.debug(f"Cell '{cell_string}' clicked")
 			if self._grid[y,x,1] == str:
 				value = str(value)

@@ -182,10 +182,16 @@ class Unit:
 				build = item
 			else:
 				if sfx == 'Direct':
-					build = f"{item}{carrier[0].upper()}"
+					if not (item.endswith('S') or item.endswith('V')):
+						build = f"{item}{carrier[0].upper()}"
+					else:
+						build = item
 				else:
 					start, end = item.rsplit('-', 1)
-					build = f"{start}{carrier[0].upper()}-{end}"
+					if not (start.endswith('S') or start.endswith('V')):
+						build = f"{start}{carrier[0].upper()}-{end}"
+					else:
+						build = f"{start}-{end}"
 			self._whole_build = build
 		return self._whole_build
 
@@ -1041,7 +1047,7 @@ def scrap(app: Application):
 		if not all_unit_data:
 			continue
 		log.debug("Receiving unit data")
-		all_units = list(map(lambda x: Unit(**x), all_unit_data))
+		all_units = set(map(lambda x: Unit(**x), all_unit_data))
 		log.info(f"Units data found: {len(all_units)}")
 		if not dev_mode:
 			for unit in all_units:
@@ -1119,7 +1125,9 @@ def scrap(app: Application):
 						app.open_form('Miscellaneous Issue')
 						MiscIssue = app.MiscellaneousIssueForm
 					else:
-						kbd.SendKeys("%r")  # Process button, (ALT + R)
+						kbd.SendKeys("^s")
+						MiscIssue.process.click()
+						# kbd.SendKeys("%r")  # Process button, (ALT + R)
 				log.debug("Step 2 Complete")
 				UnitsFormFocus.select()
 				app.add_form('UnitsForm')
@@ -1140,12 +1148,6 @@ def scrap(app: Application):
 						Units = app.UnitsForm
 						Units.customer.set_text('302')
 						log.debug("Customer set to 302")
-						if phone:
-							ship_num = "2"
-						else:
-							ship_num = "1"
-						Units.ship_to.set_text(ship_num)
-						log.debug(f"Ship To set to {ship_num}")
 						moveTo(*Units.change_status.coordinates.center)
 						pag.click()
 						log.debug("Change status clicked")
@@ -1158,8 +1160,14 @@ def scrap(app: Application):
 							scrap_code = 'SCRAPPED'
 						Units.unit_status_code.set_text(scrap_code)
 						log.debug(f"Unit Status Code set to {scrap_code}")
+						if phone:
+							ship_num = "2"
+						else:
+							ship_num = "1"
+						Units.ship_to.set_text(ship_num)
+						log.debug(f"Ship To set to {ship_num}")
 						if not dev_mode:
-							app.save()
+							kbd.SendKeys("^s")
 						sro_count = _open_first_open_sro(unit, app)
 						SRO_Operations = app.ServiceOrderOperationsForm
 						SRO_Operations.reasons_tab.select()
@@ -1232,7 +1240,7 @@ def scrap(app: Application):
 						note_txt.click_input()
 						note_txt.type_keys('^{END}')
 						text = fr"{note_txt.legacy_properties()['Value'].strip(' ')}"
-						if not (text.endswith(r'\n') or text.endswith(r'\r')):
+						if not ((text.endswith(r'\n') or text.endswith(r'\r')) or (text == '')):
 							note_txt.type_keys('{ENTER}')
 						note_txt.type_keys(f"[{spec_rso_name} {gen_rso_name}]")
 						note_txt.type_keys("{ENTER}")
@@ -1248,8 +1256,10 @@ def scrap(app: Application):
 						if not dev_mode:
 							continue
 							# mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+						continue
 						kbd.SendKeys("{F4}")
 						kbd.SendKeys("{F5}")
+						kbd.SendKeys("%y")
 					else:
 						if not dev_mode:
 							mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
@@ -1320,11 +1330,11 @@ def scrap(app: Application):
 	#       Input(append) "{Name2} {Name1}\n{Initials} {datetime.date}" into Note("A&ttach  File...Edit") textbox
 	#       Save Close Form
 	# TODO: Scrap report
-cellular_unit_builds = {'ET1': ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
-								'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M'],
-						'HomeGuard': ['HG-2200-M', 'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M'],
-						'HomeBase': ['HB-110', 'HB-110-DEMO', 'HB-110-M', 'HB-110S-DEMO', 'HB-110S-M', 'HB-110S'],
-						'LOC8': ['LC-800V-M', 'LC-800S-M', 'LC-825S-M', 'LC-800V-DEMO', 'LC-825V-M', 'LC-825V-DEMO', 'LC-825V', 'LC-825S', 'LC-825S-DEMO', 'LC-800S-DEMO']}
+cellular_unit_builds = ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
+						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',
+						'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M', 'HB-110',
+						'HB-110-DEMO', 'HB-110-M', 'HB-110S-DEMO', 'HB-110S-M', 'HB-110S', 'LC-800V-M', 'LC-800S-M', 'LC-825S-M', 'LC-800V-DEMO',
+						'LC-825V-M', 'LC-825V-DEMO', 'LC-825V', 'LC-825S', 'LC-825S-DEMO', 'LC-800S-DEMO']
 # Select s.items
 # from PyComm
 # Cross apply dbo.Split(Parts, ',') as s

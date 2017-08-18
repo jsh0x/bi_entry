@@ -1,15 +1,9 @@
-import logging
-import tempfile
-from typing import Tuple, Union
-import sqlite3 as sql
+import logging, platform, sqlite3 as sql
+from typing import Union
 from collections import defaultdict, namedtuple
-import weakref
-import code
 from time import sleep
 
-import pyautogui as pag
-import pywinauto as pwn
-import numpy as np
+import pyautogui as pag, pywinauto as pwn, numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
@@ -95,6 +89,9 @@ class GlobalCoordinates(Coordinates):
 
 
 def array_splicer(a: Union[np.ndarray,str], mode: str='split'):
+	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
+	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
+	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
 	retval = None
 	if mode == 'split' and type(a) is np.ndarray:
 		if a.ndim == 3:
@@ -124,21 +121,92 @@ def array_splicer(a: Union[np.ndarray,str], mode: str='split'):
 		retval += f";{str(a.dtype)}"
 		return retval
 	elif mode == 'join' and type(a) is str:
+		a, d_str = a.split(';')
+		dtype = dtypes_dict.get(d_str, np.int)
+		list1 = []
 		if ',,,' in a:
-			pass
+			for string1 in a.split(',,,'):
+				list2 = []
+				for string2 in string1.split(',,'):
+					list3 = []
+					for string3 in string2.split(','):
+						list3.append(dtype(string3))
+					list2.append(list3)
+				list1.append(list2)
 		elif ',,' in a:
-			pass
+			for string1 in a.split(',,'):
+				list2 = []
+				for string2 in string1.split(','):
+					list2.append(dtype(string2))
+				list1.append(list2)
 		elif ',' in a:
-			pass
+			for string1 in a.split(','):
+				list1.append(dtype(string1))
+		retval = np.array(list1, dtype=dtype)
+		return retval
 	else:
 		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
 
 
-a = np.arange(27, dtype=np.uint32).reshape((3,3,3))
+def array_splicer2(a: Union[np.ndarray,str], mode: str='split', retval=None):
+	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
+	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
+	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
+	if mode == 'split' and type(a) is np.ndarray:
+		sep = ',' * a.ndim
+		if a.ndim > 1:
+			string1 = ""
+			for val1 in a:
+				array_splicer2(a, mode, retval)
+				string2 = ""
+				for val2 in val1:
+					string2 += f"{val2},"
+				string1 += f"{string2[:-1]},,"
+			retval = string1[:-2]
+		elif a.ndim == 1:
+			string1 = ""
+			for val1 in a:
+				string1 += f"{val1},"
+			retval = string1[:-1]
+		retval += f";{str(a.dtype)}"
+		return retval
+	elif mode == 'join' and type(a) is str:
+		a, d_str = a.split(';')
+		dtype = dtypes_dict.get(d_str, np.int)
+		list1 = []
+		if ',,,' in a:
+			for string1 in a.split(',,,'):
+				list2 = []
+				for string2 in string1.split(',,'):
+					list3 = []
+					for string3 in string2.split(','):
+						list3.append(dtype(string3))
+					list2.append(list3)
+				list1.append(list2)
+		elif ',,' in a:
+			for string1 in a.split(',,'):
+				list2 = []
+				for string2 in string1.split(','):
+					list2.append(dtype(string2))
+				list1.append(list2)
+		elif ',' in a:
+			for string1 in a.split(','):
+				list1.append(dtype(string1))
+		retval = np.array(list1, dtype=dtype)
+		return retval
+	else:
+		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
+
+
+a = np.arange(192, dtype=np.uint32).reshape((8,8,3))
 b = array_splicer(a)
 list_b = []
-print(a)
+print(a, a.shape)
 print(b)
+
+c = array_splicer(b, 'join')
+print(c, c.shape)
+quit()
 string, dt = b.split(';')
 list1 = []
 for val1 in string.split(',,,'):
