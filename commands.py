@@ -115,34 +115,35 @@ class Application(subprocess.Popen):
 	# 	xml_helpers.ReadPropertiesFromFile('SROOperations.xml')
 
 	def __preinit__(self, val):
-		if val == 1:
-			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_Units.pkl').connect(process=self.pid)
-			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_Units.pkl').connect(process=self.pid)
-			win = app_win32.window(title_re='Infor ERP SL (EM)*')
-			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-			all_win = {'win32': win, 'uia': win2}
-			self.UnitsForm = UnitsForm(all_win, False)
-		elif val == 2:
-			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROLines.pkl').connect(process=self.pid)
-			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROLines.pkl').connect(process=self.pid)
-			win = app_win32.window(title_re='Infor ERP SL (EM)*')
-			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-			all_win = {'win32': win, 'uia': win2}
-			self.ServiceOrderLinesForm = ServiceOrderLinesForm(all_win, False)
-		elif val == 3:
-			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROOperations.pkl').connect(process=self.pid)
-			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROOperations.pkl').connect(process=self.pid)
-			win = app_win32.window(title_re='Infor ERP SL (EM)*')
-			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-			all_win = {'win32': win, 'uia': win2}
-			self.ServiceOrderOperationsForm = ServiceOrderOperationsForm(all_win, False)
-		elif val == 4:
-			app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROTransactions.pkl').connect(process=self.pid)
-			app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROTransactions.pkl').connect(process=self.pid)
-			win = app_win32.window(title_re='Infor ERP SL (EM)*')
-			win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-			all_win = {'win32': win, 'uia': win2}
-			self.SROTransactionsForm = SROTransactionsForm(all_win, False)
+		pass
+		# if val == 1:
+		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_Units.pkl').connect(process=self.pid)
+		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_Units.pkl').connect(process=self.pid)
+		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
+		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		# 	all_win = {'win32': win, 'uia': win2}
+		# 	self.UnitsForm = UnitsForm(all_win, False)
+		# elif val == 2:
+		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROLines.pkl').connect(process=self.pid)
+		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROLines.pkl').connect(process=self.pid)
+		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
+		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		# 	all_win = {'win32': win, 'uia': win2}
+		# 	self.ServiceOrderLinesForm = ServiceOrderLinesForm(all_win, False)
+		# elif val == 3:
+		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROOperations.pkl').connect(process=self.pid)
+		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROOperations.pkl').connect(process=self.pid)
+		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
+		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		# 	all_win = {'win32': win, 'uia': win2}
+		# 	self.ServiceOrderOperationsForm = ServiceOrderOperationsForm(all_win, False)
+		# elif val == 4:
+		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROTransactions.pkl').connect(process=self.pid)
+		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROTransactions.pkl').connect(process=self.pid)
+		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
+		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		# 	all_win = {'win32': win, 'uia': win2}
+		# 	self.SROTransactionsForm = SROTransactionsForm(all_win, False)
 
 	def __init__(self, args: Iterable[Union[bytes, str]]):
 		super().__init__(args)
@@ -263,6 +264,7 @@ class Application(subprocess.Popen):
 		self.remove_form = self._remove_form
 		self.log_out = self._log_out
 		self.window_menu = self._win2.child_window(best_match='WindowMenuItem')
+		self.actions_menu = self._win2.child_window(best_match='ActionsMenuItem')
 		self.__delattr__('log_in')
 
 	# def apply_filter(self):
@@ -292,6 +294,7 @@ class Application(subprocess.Popen):
 		self.__delattr__('remove_form')
 		self.__delattr__('log_out')
 		self.__delattr__('window_menu')
+		self.__delattr__('actions_menu')
 		self.log_in = self._log_in
 
 	def _add_form(self, name: str):
@@ -358,11 +361,32 @@ class Application(subprocess.Popen):
 			# else:
 			# 	raise ValueError("Popup blocker already off")
 
-	def _open_form(self, name: str):
+	def _open_form(self, name: str, name_instead_of_caption=False):
 		kbd.SendKeys('^o')
+		if name_instead_of_caption:
+			kbd.SendKeys('%n')
 		kbd.SendKeys(name)
+		win = self._win2.child_window(title='Select Form')
+		lb = win.child_window(auto_id='formsListView')
+		selection = lb.get_selection()[0]
+		if selection.name != name:
+			start = selection.name
+			current = None
+			char = name[0]
+			limit = 10
+			count = 0
+			while current != start and count < limit:
+				count += 1
+				kbd.SendKeys(f'{char}')
+				selection = lb.get_selection()[0]
+				if selection.name == name:
+					break
+				current = selection.name
+			else:
+				raise ValueError(f"Could not find form '{name}'")
 		kbd.SendKeys('{ENTER}')
 		# self.wait('ready')
+		name = name.replace(' ', '')
 		self.add_form(name+'Form')
 
 	def _save(self):
@@ -371,17 +395,27 @@ class Application(subprocess.Popen):
 	def _enter(self):
 		kbd.SendKeys('{ENTER}')
 
-	def find_value_in_collection(self, collection: str, property: str, value):
+	def find_value_in_collection(self, collection: str, property: str, value, case_sensitive=False):
 		kbd.SendKeys('%e')
 		kbd.SendKeys('v')
 		find = self._find_window['Find:Edit']
 		clct = self._find_window['In Collection:Edit']
 		ppty = self._find_window['In Property:Edit']
 		ok_button = self._find_window['&OKButton']
+		# clct.set_text('')
+		# sleep(0.2)
+		clct.click()
+		kbd.SendKeys('%{DOWN}')
+		lb = self._find_window['In CollectionListBox']
+		lb.select(collection)
+		ppty.click()
+		kbd.SendKeys('%{DOWN}')
+		lb = self._find_window['In PropertyListBox']
+		lb.select(property)
 		find.set_text(str(value))
-		clct.set_text(collection)
-		ppty.set_text(property)
-		ok_button.Click()
+		if case_sensitive:
+			kbd.SendKeys('%a')
+		ok_button.click()
 
 '''class Unit:
 	def __init__(self, app: cmd.Application, open_forms: List[str]=None):

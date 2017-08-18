@@ -7,7 +7,7 @@ import pywinauto as pwn
 from controls import *
 from matplotlib import pyplot as plt
 
-log = logging.getLogger('rooy')
+log = logging.getLogger('root')
 
 
 def find_file(name, path="C:/"):
@@ -38,9 +38,10 @@ class UnitsForm(Form):
 		# Define Textboxes
 		self._unit = Textbox(window=window, criteria={'best_match': "Unit:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Unit')
 		self.description = Textbox(window=window, criteria={'best_match': "Description:Edit"}, control_name='Description')
-		self.item = Textbox(window=window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
-		# self.customer_item = Textbox(name='Customer Item:Edit', text='Customer Item', window=window)
+		self.item = Textbox(window=window, criteria={'best_match': "Item:Edit", 'visible_only': True, 'enabled_only': True}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
+		self.customer = Textbox(window=window, criteria={'best_match': 'Customer:Edit1'}, control_name='Customer')
 		self.unit_status_code = Textbox(window=window, criteria={'best_match': 'Unit Status Code:Edit'}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Unit Status Code')
+		self.ship_to = Textbox(window=window, criteria={'best_match': 'Ship To:Edit1'}, control_name='Ship To')
 		esn = {'class': Textbox, 'kwargs': {'window': window, 'criteria': {'best_match': "ESN:Edit"}, 'fmt': ('alphabetic', 'numeric', 'upper'), 'control_name': 'ESN'}}
 
 		# Define Buttons
@@ -195,12 +196,12 @@ class MiscIssueForm(Form):
 		self.window_win32 = self.window['win32']
 
 		# Define Textboxes
-		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit"}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
+		self.item = Textbox(window=self.window, criteria={'best_match': "Item:Edit0", 'visible_only': True}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='Item')
 		location = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Location:Edit', 'top_level_only': False}, 'control_name': 'Location'}}
 		quantity = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Quantity:Edit', 'top_level_only': False}, 'control_name': 'Quantity'}}
 		reason = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Reason:Edit', 'top_level_only': False}, 'control_name': 'Reason'}}
 		document_number = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Document Number:Edit', 'top_level_only': False}, 'control_name': 'Document Number'}}
-		generate_qty = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Generate Qty:Edit', 'top_level_only': False}, 'control_name': 'Generate Qty'}}
+		generate_qty = {'class': Textbox, 'kwargs': {'window': self.window, 'criteria': {'best_match': 'Generate Qty:Edit', 'visible_only': True}, 'control_name': 'Generate Qty'}}
 
 		# Define Tabs
 		self.detail_tab = Tab(window=self.window, criteria={'best_match': "DetailTabControl"}, name='Detail', controls={'location': location, 'quantity': quantity, 'reason': reason, 'document_number': document_number}, control_name='Detail')
@@ -217,7 +218,7 @@ class SerialNumbersForm(Form):
 		self.window_win32 = self.window['win32']
 
 		# Define Textboxes
-		self.serial_number = Textbox(window=self.window, criteria={'best_match': "Serial Number:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Serial Number')
+		self.serial_number = Textbox(window=self.window, criteria={'best_match': "S/N:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='Serial Number')
 		self.status = Textbox(window=self.window, criteria={'best_match': "Status:Edit"}, control_name='Status')
 		self.location = Textbox(window=self.window, criteria={'best_match': 'Location:Edit'}, control_name='Location')
 

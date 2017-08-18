@@ -20,7 +20,7 @@ from pywinauto.timings import always_wait_until_passes
 from pywinauto import xml_helpers
 
 from __init__ import find_file
-from commands import Application, enumerate_screens, screenshot
+from commands import Application, enumerate_screens, screenshot, moveTo
 from _sql import MS_SQL, SQL_Lite
 from _crypt import decrypt
 from exceptions import *
@@ -55,6 +55,9 @@ if 'dev.key' in file_list:
 	dev_mode = True
 else:
 	dev_mode = False
+
+gen_rso_codes = {}
+spec_rso_codes = {}
 
 class TestTimer:
 	def __init__(self):
@@ -288,10 +291,13 @@ def _try_serial(unit: Unit, app: Application):
 	else:
 		SrlNum.serial_number.set_text(unit.serial_number_prefix + unit.serial_number)
 		app.apply_filter.click()
-		if SrlNum.serial_number.texts() != unit.serial_number_prefix + unit.serial_number:
+		# log.debug(f"{SrlNum.serial_number.text()}")
+		# log.debug(f"{unit.serial_number_prefix + unit.serial_number}")
+
+		if SrlNum.serial_number.text() != unit.serial_number_prefix + unit.serial_number:
 			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
 			raise SyteLineFilterInPlaceError("")
-	log.debug("Unit Started")
+	log.debug(f"Unit {unit.serial_number_prefix + unit.serial_number} Checked")
 
 
 def _open_first_open_sro(unit: Unit, app: Application):
@@ -326,8 +332,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			Units.service_history_tab.grid.select_row(row)
 			Units.service_history_tab.view.click()
 			log.debug("Opening Service Order Lines form")
-			# app.add_form('ServiceOrderLinesForm') #####
-			app.__preinit__(2)
+			app.add_form('ServiceOrderLinesForm')
+			# app.__preinit__(2)
 			SRO_Lines = app.ServiceOrderLinesForm
 			# log.debug("Waiting for Service Order Lines form...")
 			# SRO_Lines.sro_operations.ready()
@@ -339,8 +345,8 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			app.write_data('SROLines')
 			SRO_Lines.sro_operations.click()
 			log.debug("Opening Service Order Operations form")
-			app.__preinit__(3)
-			# app.add_form('ServiceOrderOperationsForm') ####
+			# app.__preinit__(3)
+			app.add_form('ServiceOrderOperationsForm')
 			SRO_Operations = app.ServiceOrderOperationsForm
 			# log.debug("Waiting for Service Order Operations form...")
 			# SRO_Operations.general_tab.ready()
@@ -372,7 +378,7 @@ def transact(app: Application):
 	log.debug("Transaction script started")
 	log.debug("Opening Units form")
 	app.open_form('Units')
-	app.__preinit__(1)
+	# app.__preinit__(1)
 	Units = app.UnitsForm
 	log.debug("Unit form opened")
 	sfx_dict = {'Direct': 1, 'RTS': 2, 'Demo': 3, 'Refurb': 4, 'Monitoring': 5}
@@ -469,8 +475,8 @@ def transact(app: Application):
 			if unit.parts:
 				log.debug("Opening SRO Transactions form")
 				SRO_Operations.sro_transactions.click()
-				# app.add_form('SROTransactionsForm') ####
-				app.__preinit__(4)
+				app.add_form('SROTransactionsForm')
+				# app.__preinit__(4)
 				SRO_Transactions = app.SROTransactionsForm
 				log.debug("Waiting for SRO Transactions form...")
 				# SRO_Transactions.apply_filter.ready()
@@ -953,7 +959,7 @@ def reason(app: Application):
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[ACCEPTED]")
 			else:
-				failure = mssql.query(f"SELECT [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}' AND [Operation] = '{unit.operation}'")[0]
+				failure = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")[0]
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{failure}]")
 			SRO_Operations.reasons_tab.resolution_notes.set_focus()
 			SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
@@ -1005,28 +1011,30 @@ def reason(app: Application):
 
 def scrap(app: Application):
 	log.debug("Scrap script started")
+
+	log.debug("Opening Miscellaneous Issue form")
+	app.open_form('Miscellaneous Issue')
+	MiscIssue = app.MiscellaneousIssueForm
+	log.debug("Miscellaneous Issue form opened")
+	sleep(0.5)
 	log.debug("Opening Units form")
 	app.open_form('Units')
 	Units = app.UnitsForm
 	log.debug("Unit form opened")
 
-	log.debug("Opening Miscellaneous Issue form")
-	app.open_form('MiscellaneousIssue')
-	MiscIssue = app.MiscellaneousIssueForm
-	log.debug("Miscellaneous Issue form opened")
-
 	log.debug("Opening Serial Numbers form")
-	app.open_form('SerialNumbers')
+	app.open_form('Serial Numbers')
 	SrlNum = app.SerialNumbersForm
 	log.debug("Serial Numbers form opened")
 	for item in app.window_menu.items():
-		text = item.text()[0]
+		text = item.texts()[0]
 		if 'Units' in text:
 			UnitsFormFocus = item
 		elif 'Miscellaneous Issue' in text:
 			MiscIssueFormFocus = item
 		elif 'Serial Numbers' in text:
 			SrlNumFormFocus = item
+	# NotesFormFocus = None
 	while True:
 		log.debug("Checking queued scrap units")
 		all_unit_data = mssql.query("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
@@ -1046,7 +1054,7 @@ def scrap(app: Application):
 			sorted_unit_groups = dict(zip(sorted_keys, map(lambda x: all_units_grouped[x], sorted_keys)))  # Sorts unit groups by quantity in descending order
 			log.debug("Units sorted by quantity in descending order")
 			for i,(key,group) in enumerate(sorted_unit_groups.items()):
-				log.debug(f"Group{i+1}: {key} build, {len(group)} unit(s)")
+				log.debug(f"Group {i+1}: {key} build, {len(group)} unit(s)")
 			skipped_units = Default_Lictionary(list)
 			for build,units in sorted_unit_groups.items():
 				if build in cellular_unit_builds:
@@ -1055,6 +1063,8 @@ def scrap(app: Application):
 					phone = False
 				unit_locations = defaultdict(list)
 				SrlNumFormFocus.select()
+				app.add_form('SerialNumbersForm')
+				SrlNum = app.SerialNumbersForm
 				for unit in units:
 					_try_serial(unit, app)
 					status = SrlNum.status.texts()
@@ -1062,67 +1072,193 @@ def scrap(app: Application):
 						raise ValueError
 					location = SrlNum.location.text()
 					unit_locations[location].append(unit)
+					log.debug(f"Unit location '{location}' found for unit {unit.serial_number_prefix + unit.serial_number}")
+					sleep(0.1)
 					SrlNum.serial_number.send_keystrokes('{F4}')
 					SrlNum.serial_number.send_keystrokes('{F5}')
+					sleep(0.1)
 				MiscIssueFormFocus.select()
+				app.add_form('MiscellaneousIssueForm')
+				MiscIssue = app.MiscellaneousIssueForm
 				MiscIssue.item.set_text(build)
 				for location,units in unit_locations.items():
 					MiscIssue.detail_tab.select()
 					MiscIssue.detail_tab.location.set_text(location)
-					MiscIssue.detail_tab.quantity.set_text(len(units))
+					MiscIssue.detail_tab.quantity.set_text(float(len(units)))
+					sleep(0.5)
+					kbd.SendKeys('{TAB}')
+					sleep(0.5)
 					if build.count('-') < 2:  # If direct units
 						reason = "24"
 					else:
 						reason = "22"
 					MiscIssue.detail_tab.reason.set_text(reason)
 					MiscIssue.detail_tab.document_number.set_text(f"SCRAP {units[0].operator_initials}")
+					sleep(0.5)
 					MiscIssue.serial_numbers_tab.select()
+					sleep(0.5)
 					MiscIssue.serial_numbers_tab.generate_qty.set_text("9999999")
 					kbd.SendKeys("%g")  # Generate button, (ALT + G)
+					kbd.SendKeys("{RIGHT}")
 					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
 						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
-						if app.popup.exists():
+						if app.popup.exists(1, 2):
 							skipped_units[build].append(unit)
 							app.enter()
+							log.debug(f"Added unit {unit.serial_number_prefix + unit.serial_number} to skipped list")
 							continue
 						sleep(0.2)
 						kbd.SendKeys("{LEFT}")
 						sleep(0.2)
 						kbd.SendKeys("{SPACE}")
 						sleep(0.2)
+						kbd.SendKeys("{RIGHT}")
+						sleep(0.2)
 					if dev_mode:
 						app.cancel_close.click()
-						app.open_form('MiscellaneousIssue')
+						app.open_form('Miscellaneous Issue')
+						MiscIssue = app.MiscellaneousIssueForm
 					else:
 						kbd.SendKeys("%r")  # Process button, (ALT + R)
+				log.debug("Step 2 Complete")
 				UnitsFormFocus.select()
+				app.add_form('UnitsForm')
+				Units = app.UnitsForm
+				log.debug("Step 3 Started")
 				for unit in all_units:
-					if unit in skipped_units:
-						continue
-					Units.serial_number = unit.serial_number_prefix+unit.serial_number
-					kbd.SendKeys("{F4}")
-					Units.customer.set_text('302')
-					if phone:
-						ship_num = "2"
+					try:
+						log.debug(f"Running Step 3 on unit {unit.serial_number_prefix + unit.serial_number}")
+						if unit in skipped_units:
+							log.debug(f"Skipping Step 3 on unit {unit.serial_number_prefix + unit.serial_number}, it's in the skipped list")
+							continue
+						Units._unit.set_focus()
+						Units._unit.set_keyboard_focus()
+						Units._unit.send_keystrokes(unit.serial_number_prefix+unit.serial_number)
+						log.debug(f"Serial number {unit.serial_number_prefix+unit.serial_number} entered")
+						kbd.SendKeys("{F4}")
+						app.add_form('UnitsForm')
+						Units = app.UnitsForm
+						Units.customer.set_text('302')
+						log.debug("Customer set to 302")
+						if phone:
+							ship_num = "2"
+						else:
+							ship_num = "1"
+						Units.ship_to.set_text(ship_num)
+						log.debug(f"Ship To set to {ship_num}")
+						moveTo(*Units.change_status.coordinates.center)
+						pag.click()
+						log.debug("Change status clicked")
+						sleep(0.5)
+						kbd.SendKeys("%y")  # Yes button, (ALT + Y)
+						log.debug("4")
+						if phone:
+							scrap_code = 'SCRAPPED1'
+						else:
+							scrap_code = 'SCRAPPED'
+						Units.unit_status_code.set_text(scrap_code)
+						log.debug(f"Unit Status Code set to {scrap_code}")
+						if not dev_mode:
+							app.save()
+						sro_count = _open_first_open_sro(unit, app)
+						SRO_Operations = app.ServiceOrderOperationsForm
+						SRO_Operations.reasons_tab.select()
+						row = SRO_Operations.reasons_tab.grid.rows
+						SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution'), row - 1)
+						SRO_Operations.reasons_tab.grid.select_cell('General Reason', row - 1)
+						gen_rsn = SRO_Operations.reasons_tab.grid.cell
+						gen_rso, spec_rso = unit.notes.split(',')
+						SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row - 1)
+						if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
+							# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
+							gen_rsn = str(gen_rsn).strip(' ')
+							spec_rsn = '20'
+							# spec_rsn = spec_rsn.strip(' ')
+							gen_rso = gen_rso.strip(' ')
+							spec_rso = spec_rso.strip(' ')
+							SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
+							SRO_Operations.reasons_tab.grid.cell = gen_rsn
+							SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
+							SRO_Operations.reasons_tab.grid.cell = spec_rsn
+							SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
+							SRO_Operations.reasons_tab.grid.cell = gen_rso
+							SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
+							SRO_Operations.reasons_tab.grid.cell = spec_rso
+						else:  # Else, fill last row
+							SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row - 1)
+							if not SRO_Operations.reasons_tab.grid.cell:
+								spec_rsn = '20'
+								SRO_Operations.reasons_tab.grid.cell = spec_rsn
+							SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row - 1)
+							SRO_Operations.reasons_tab.grid.cell = gen_rso
+							SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row - 1)
+							SRO_Operations.reasons_tab.grid.cell = spec_rso
+						spec_rso_name = spec_rso_codes.get(spec_rso, 'SCRAP')
+						gen_rso_name = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")[0]
+						SRO_Operations.reasons_tab.reason_notes.set_focus()
+						SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
+						SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
+						if SRO_Operations.reasons_tab.reason_notes.texts()[-1] != '':
+							SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
+						SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{spec_rso_name.upper()} {gen_rso_name.upper()}]")
+						SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
+						SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+						SRO_Operations.status = 'Closed'
+						is_closed_status = ''
+						if dev_mode:
+							app.cancel_close.click()
+							app.cancel_close.click()
+						else:
+							app.save_close.click()
+							app.save_close.click()
+						# if NotesButton is None:
+						# 	for item in app.actions_menu.items():
+						# 		text = item.text()[0]
+						# 		if 'Notes for Current' in text:
+						# 			NotesButton = item
+						# NotesFormFocus.select()
+						sleep(0.5)
+						kbd.SendKeys('%s')  # Actions Menu, (ALT + S)
+						sleep(0.2)
+						kbd.SendKeys('o')  # Notes For Current, (O)
+						sleep(0.5)
+						app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='NOTES', case_sensitive=True)
+						while app.popup.exists():
+							app.popup.close_alt_f4()
+							app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='')
+							kbd.SendKeys('NOTES')
+						note_txt = app._win2.child_window(auto_id='DerContentEdit')
+						note_txt.set_focus()
+						note_txt.click_input()
+						note_txt.type_keys('^{END}')
+						text = fr"{note_txt.legacy_properties()['Value'].strip(' ')}"
+						if not (text.endswith(r'\n') or text.endswith(r'\r')):
+							note_txt.type_keys('{ENTER}')
+						note_txt.type_keys(f"[{spec_rso_name} {gen_rso_name}]")
+						note_txt.type_keys("{ENTER}")
+						note_txt.type_keys(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+						if dev_mode:
+							app.cancel_close.click()
+						else:
+							app.save_close.click()
+						kbd.SendKeys("{F4}")
+						kbd.SendKeys("{F5}")
+					except UnitClosedError:
+						log.exception("No open SROs")
+						if not dev_mode:
+							continue
+							# mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+						kbd.SendKeys("{F4}")
+						kbd.SendKeys("{F5}")
 					else:
-						ship_num = "1"
-					Units.ship_to.set_text(ship_num)
-					Units.change_status.click()
-					kbd.SendKeys("%y")  # Yes button, (ALT + Y)
-					if phone:
-						scrap_code = 'SCRAPPED1'
-					else:
-						scrap_code = 'SCRAPPED'
-					Units.unit_status_code.set_text(scrap_code)
-					if not dev_mode:
-						app.save()
-
+						if not dev_mode:
+							mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
 		except Exception:
 			log.exception(f"Something went horribly wrong!")
 			if not dev_mode:
-				for unit in skipped_units:
-					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
-
+				for unit in all_units:
+					mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			quit()
 
 	# If Out of Inventory then: ???
 	# Open Miscellaneous Issue Form
@@ -1173,7 +1309,7 @@ def scrap(app: Application):
 	#           Input "Subject (DerDesc)" into In Property textbox
 	#           Click Case Sensitive checkbox to toggle from unchecked -> checked
 	#           Click OK button
-	#       If popup happends(NOTES doesn't exist):
+	#       If popup happens(NOTES doesn't exist):
 	#           Find Value In Collection menu item(also: alt+e, v)
 	#           In Find window:
 	#               Input "" into Find textbox

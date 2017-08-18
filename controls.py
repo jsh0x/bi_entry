@@ -306,7 +306,7 @@ class Button(Control):
 		super().__init__(window['uia'], criteria, ctrls.uia_controls.ButtonWrapper)
 		log.debug(f"'{self.control_name}' {self.control_type_name} initialized")
 
-	@always_wait_until_passes(5, 1)
+	# @always_wait_until_passes(5, 1)
 	def click(self, quantity: int = 1):
 		for q in range(quantity):
 			self.ctrl.click()
@@ -391,6 +391,7 @@ class Textbox(Control):
 	def texts(self):
 		return self.ctrl.texts()[1:]
 
+	@always_wait_until_passes(2, 1)
 	def set_text(self, text: str):
 		if self.fmt != ('alphabetic','punctuation','numeric','mixed'):
 			text = self.filter_text(text)
