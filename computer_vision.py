@@ -1,235 +1,220 @@
-import logging, platform, sqlite3 as sql
-from typing import Union
-from collections import defaultdict, namedtuple
+import logging, sqlite3 as sql
+from typing import Union, Dict, List, NamedTuple, Set
+from platform import uname
+from collections import defaultdict
 from time import sleep
 
 import pyautogui as pag, pywinauto as pwn, numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from controls import Coordinates, Control, Button, Checkbox, Textbox, Datebox, VerticalScrollbar, HorizontalScrollbar, GridView, Tab
+from controls import Control, Button, Checkbox, Textbox, Datebox, VerticalScrollbar, HorizontalScrollbar, GridView, Tab
 from commands import screenshot, Application
+from .math import get_total_reliability
+from .types import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, NestedUniqueListionary as NUL, UniqueList
 
 
-class GlobalCoordinates(Coordinates):
-	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
-		super().__init__(left=left, top=top, right=right, bottom=bottom)
-		self._original_left = left
-		self._original_top = top
-		self._original_right = right
-		self._original_bottom = bottom
-		self._locals = []
+# class ControlInfo(NamedTuple):
+# 	Id: int
+# 	Type: str
+# 	Name: str
+# 	Form: str
+# 	Position: Coordinates
+# 	Image: np.ndarray
+# 	Reliability: int
+#
+#
+# class ControlConfig(NamedTuple):
+# 	Id: int
+# 	Name: str
+# 	IDs: Set[int]
+# 	Total_Reliability: int
+#
+#
+# class GlobalCoordinates(Coordinates):
+# 	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
+# 		super().__init__(left=left, top=top, right=right, bottom=bottom)
+# 		self._original_left = left
+# 		self._original_top = top
+# 		self._original_right = right
+# 		self._original_bottom = bottom
+# 		self._locals = []
+#
+#
+# class _LocalCoordinates(Coordinates):
+# 	def __init__(self, global_container: GlobalCoordinates, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0):
+# 		self.global_left = left
+# 		self.global_top = top
+# 		self.global_right = right
+# 		self.global_bottom = bottom
+# 		width = np.subtract(right, left)
+# 		height = np.subtract(bottom, top)
+# 		left = np.subtract(left, global_container.left)
+# 		top = np.subtract(top, global_container.top)
+# 		right = np.add(left, width)
+# 		bottom = np.add(top, height)
+# 		super().__init__(left=left, top=top, right=right, bottom=bottom)
+# 	# def update(self, global_container: GlobalCoordinates):
+# 	# 	width = np.subtract(self.right, self.left)
+# 	# 	height = np.subtract(self.bottom, self.top)
+# 	# 	left = np.add(self.left, global_container.left)
+# 	# 	top = np.add(self.top, global_container.top)
+# 	# 	right = np.add(left, width)
+# 	# 	bottom = np.add(top, height)
+# 	# 	self.global_left, self.global_top, self.global_right, self.global_bottom = left, top, right, bottom
+#
+#
+# class GlobalCoordinates(Coordinates):
+# 	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
+# 		super().__init__(left=left, top=top, right=right, bottom=bottom)
+# 		self._original_left = left
+# 		self._original_top = top
+# 		self._original_right = right
+# 		self._original_bottom = bottom
+# 		self._locals = []
+#
+# 	def add_local(self, name: str, left: int=0, top: int=0, right: int=0, bottom: int=0):
+# 		local_coord = _LocalCoordinates(left=left, top=top, right=right, bottom=bottom, global_container=self)
+# 		self.__setattr__(name, local_coord)
+# 		self._locals.append(name)
+#
+# 	def __contains__(self, item: _LocalCoordinates):
+# 		if self.left > item.left:
+# 			return False
+# 		elif self.right < item.right:
+# 			return False
+# 		elif self.top > item.top:
+# 			return False
+# 		elif self.bottom < item.bottom:
+# 			return False
+# 		else:
+# 			return True
+#
+# 	# def adjust_coords(self):
+# 	# 	for name in self._locals:
+# 	# 		old_local = self.__getattribute__(name)
+# 	# 		new_local = _LocalCoordinates(global_container=self, left=old_local.left+self.left, top=old_local.top+self.top, right=old_local.right, bottom=old_local.bottom)
+# 	# 		self.__delattr__(name)
+# 	# 		self.__setattr__(name, new_local)
+# 	#
+# 	# def coords_changed(self):
+# 	# 	if (self._original_left, self._original_top, self._original_right, self._original_bottom) != (self.left, self.top, self.right, self.bottom):
+# 	# 		return True
+# 	# 	else:
+# 	# 		return False
+# 	#
+# 	# def check_coords(self):
+# 	# 	if self.coords_changed():
+# 	# 		self.adjust_coords()
 
 
-class _LocalCoordinates(Coordinates):
-	def __init__(self, global_container: GlobalCoordinates, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0):
-		self.global_left = left
-		self.global_top = top
-		self.global_right = right
-		self.global_bottom = bottom
-		width = np.subtract(right, left)
-		height = np.subtract(bottom, top)
-		left = np.subtract(left, global_container.left)
-		top = np.subtract(top, global_container.top)
-		right = np.add(left, width)
-		bottom = np.add(top, height)
-		super().__init__(left=left, top=top, right=right, bottom=bottom)
-	# def update(self, global_container: GlobalCoordinates):
-	# 	width = np.subtract(self.right, self.left)
-	# 	height = np.subtract(self.bottom, self.top)
-	# 	left = np.add(self.left, global_container.left)
-	# 	top = np.add(self.top, global_container.top)
-	# 	right = np.add(left, width)
-	# 	bottom = np.add(top, height)
-	# 	self.global_left, self.global_top, self.global_right, self.global_bottom = left, top, right, bottom
-
-
-class GlobalCoordinates(Coordinates):
-	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
-		super().__init__(left=left, top=top, right=right, bottom=bottom)
-		self._original_left = left
-		self._original_top = top
-		self._original_right = right
-		self._original_bottom = bottom
-		self._locals = []
-
-	def add_local(self, name: str, left: int=0, top: int=0, right: int=0, bottom: int=0):
-		local_coord = _LocalCoordinates(left=left, top=top, right=right, bottom=bottom, global_container=self)
-		self.__setattr__(name, local_coord)
-		self._locals.append(name)
-
-	def __contains__(self, item: _LocalCoordinates):
-		if self.left > item.left:
-			return False
-		elif self.right < item.right:
-			return False
-		elif self.top > item.top:
-			return False
-		elif self.bottom < item.bottom:
-			return False
-		else:
-			return True
-
-	# def adjust_coords(self):
-	# 	for name in self._locals:
-	# 		old_local = self.__getattribute__(name)
-	# 		new_local = _LocalCoordinates(global_container=self, left=old_local.left+self.left, top=old_local.top+self.top, right=old_local.right, bottom=old_local.bottom)
-	# 		self.__delattr__(name)
-	# 		self.__setattr__(name, new_local)
-	#
-	# def coords_changed(self):
-	# 	if (self._original_left, self._original_top, self._original_right, self._original_bottom) != (self.left, self.top, self.right, self.bottom):
-	# 		return True
-	# 	else:
-	# 		return False
-	#
-	# def check_coords(self):
-	# 	if self.coords_changed():
-	# 		self.adjust_coords()
-
-
-def array_splicer(a: Union[np.ndarray,str], mode: str='split'):
-	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
-	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
-	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
-	retval = None
-	if mode == 'split' and type(a) is np.ndarray:
-		if a.ndim == 3:
-			string1 = ""
-			for val1 in a:
-				string2 = ""
-				for val2 in val1:
-					string3 = ""
-					for val3 in val2:
-						string3 += f"{val3},"
-					string2 += f"{string3[:-1]},,"
-				string1 += f"{string2[:-2]},,,"
-			retval = string1[:-3]
-		elif a.ndim == 2:
-			string1 = ""
-			for val1 in a:
-				string2 = ""
-				for val2 in val1:
-					string2 += f"{val2},"
-				string1 += f"{string2[:-1]},,"
-			retval = string1[:-2]
-		elif a.ndim == 1:
-			string1 = ""
-			for val1 in a:
-				string1 += f"{val1},"
-			retval = string1[:-1]
-		retval += f";{str(a.dtype)}"
-		return retval
-	elif mode == 'join' and type(a) is str:
-		a, d_str = a.split(';')
-		dtype = dtypes_dict.get(d_str, np.int)
-		list1 = []
-		if ',,,' in a:
-			for string1 in a.split(',,,'):
-				list2 = []
-				for string2 in string1.split(',,'):
-					list3 = []
-					for string3 in string2.split(','):
-						list3.append(dtype(string3))
-					list2.append(list3)
-				list1.append(list2)
-		elif ',,' in a:
-			for string1 in a.split(',,'):
-				list2 = []
-				for string2 in string1.split(','):
-					list2.append(dtype(string2))
-				list1.append(list2)
-		elif ',' in a:
-			for string1 in a.split(','):
-				list1.append(dtype(string1))
-		retval = np.array(list1, dtype=dtype)
-		return retval
-	else:
-		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
-
-
-def array_splicer2(a: Union[np.ndarray,str], mode: str='split', retval=None):
+# def array_splicer_OLD(a: Union[np.ndarray,str], mode: str='split'):
+# 	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
+# 	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
+# 	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
+# 	retval = None
+# 	if mode == 'split' and type(a) is np.ndarray:
+# 		if a.ndim == 3:
+# 			string1 = ""
+# 			for val1 in a:
+# 				string2 = ""
+# 				for val2 in val1:
+# 					string3 = ""
+# 					for val3 in val2:
+# 						string3 += f"{val3},"
+# 					string2 += f"{string3[:-1]},,"
+# 				string1 += f"{string2[:-2]},,,"
+# 			retval = string1[:-3]
+# 		elif a.ndim == 2:
+# 			string1 = ""
+# 			for val1 in a:
+# 				string2 = ""
+# 				for val2 in val1:
+# 					string2 += f"{val2},"
+# 				string1 += f"{string2[:-1]},,"
+# 			retval = string1[:-2]
+# 		elif a.ndim == 1:
+# 			string1 = ""
+# 			for val1 in a:
+# 				string1 += f"{val1},"
+# 			retval = string1[:-1]
+# 		retval += f";{str(a.dtype)}"
+# 		return retval
+# 	elif mode == 'join' and type(a) is str:
+# 		a, d_str = a.split(';')
+# 		dtype = dtypes_dict.get(d_str, np.int)
+# 		list1 = []
+# 		if ',,,' in a:
+# 			for string1 in a.split(',,,'):
+# 				list2 = []
+# 				for string2 in string1.split(',,'):
+# 					list3 = []
+# 					for string3 in string2.split(','):
+# 						list3.append(dtype(string3))
+# 					list2.append(list3)
+# 				list1.append(list2)
+# 		elif ',,' in a:
+# 			for string1 in a.split(',,'):
+# 				list2 = []
+# 				for string2 in string1.split(','):
+# 					list2.append(dtype(string2))
+# 				list1.append(list2)
+# 		elif ',' in a:
+# 			for string1 in a.split(','):
+# 				list1.append(dtype(string1))
+# 		retval = np.array(list1, dtype=dtype)
+# 		return retval
+# 	else:
+# 		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings"
+def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _original=True, dtype=None):
 	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
 	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
 	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
 	if mode == 'split' and type(a) is np.ndarray:
 		sep = ',' * a.ndim
+		string1 = ""
 		if a.ndim > 1:
-			string1 = ""
 			for val1 in a:
-				array_splicer2(a, mode, retval)
-				string2 = ""
-				for val2 in val1:
-					string2 += f"{val2},"
-				string1 += f"{string2[:-1]},,"
-			retval = string1[:-2]
+				val2 = array_splicer(val1, mode, retval=retval, _original=False)
+				string1 += f"{val2}{sep}"
 		elif a.ndim == 1:
-			string1 = ""
 			for val1 in a:
-				string1 += f"{val1},"
-			retval = string1[:-1]
-		retval += f";{str(a.dtype)}"
+				string1 += f"{val1}{sep}"
+		retval = string1[:-a.ndim]
+		if _original:
+			retval += f";{str(a.dtype)}"
 		return retval
 	elif mode == 'join' and type(a) is str:
-		a, d_str = a.split(';')
-		dtype = dtypes_dict.get(d_str, np.int)
+		if _original:
+			a, d_str = a.split(';')
+			dtype = dtypes_dict.get(d_str, np.int)
+		sep = ','
+		while sep in a:
+			sep += ','
+		else:
+			sep = sep[:-1]
 		list1 = []
-		if ',,,' in a:
-			for string1 in a.split(',,,'):
-				list2 = []
-				for string2 in string1.split(',,'):
-					list3 = []
-					for string3 in string2.split(','):
-						list3.append(dtype(string3))
-					list2.append(list3)
-				list1.append(list2)
-		elif ',,' in a:
-			for string1 in a.split(',,'):
-				list2 = []
-				for string2 in string1.split(','):
-					list2.append(dtype(string2))
-				list1.append(list2)
-		elif ',' in a:
-			for string1 in a.split(','):
+		if len(sep) > 1:
+			for string1 in a.split(sep):
+				val1 = array_splicer(string1, mode, retval=retval, _original=False, dtype=dtype)
+				list1.append(val1)
+		else:
+			for string1 in a.split(sep):
 				list1.append(dtype(string1))
-		retval = np.array(list1, dtype=dtype)
+		retval = list1
+		if _original:
+			retval = np.array(list1, dtype=dtype)
 		return retval
 	else:
 		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
 
 
-a = np.arange(192, dtype=np.uint32).reshape((8,8,3))
-b = array_splicer(a)
-list_b = []
-print(a, a.shape)
-print(b)
-
-c = array_splicer(b, 'join')
-print(c, c.shape)
-quit()
-string, dt = b.split(';')
-list1 = []
-for val1 in string.split(',,,'):
-	list2 = []
-	for val2 in val1.split(',,'):
-		list3 = []
-		for val3 in val2.split(','):
-			list3.append(np.uint32(val3))
-		list2.append(list3)
-	list1.append(list2)
-b = np.array(list1, dtype=np.uint32)
-print(b)
-print(np.array_equal(a, b))
-quit()
-
 def convert_array(value: bytes) -> np.ndarray:
-	retval = array_splicer(value, dtype=np.uint16)
-	return retval
+	return array_splicer(bytes.decode(value, encoding='utf-8'), mode='join')
 
 
 def adapt_array(value: np.ndarray) -> bytes:
-	array_splicer()
-	return value.tobytes()
+	return bytes(array_splicer(value, mode='split'), encoding='utf-8')
 
 
 def convert_coordinates(value: bytes) -> Coordinates:
@@ -257,20 +242,31 @@ c = conn.cursor()
 # c.execute("SELECT name FROM sqlite_master WHERE type='table'")
 # tables = map(lambda x: x[0], c.fetchall())
 
-# c.execute("DROP TABLE cv_data")
-# c.execute("DROP TABLE cv_configs")
-# conn.commit()
-# quit()
+c.execute("DROP TABLE cv_data")
+c.execute("DROP TABLE cv_configs")
+conn.commit()
+quit()
 
-# if 'cv_data' not in tables:
-# 	c.execute("CREATE TABLE cv_data(id integer, name text, form text, position coordinates, image array, reliability integer)")
-# 	conn.commit()
-# if 'cv_configs' not in tables:
-# 	c.execute("CREATE TABLE cv_configs(id integer, name text, cv_config array)")
-# 	conn.commit()
-
-c.execute("CREATE TABLE IF NOT EXISTS cv_data(id INTEGER PRIMARY KEY, name TEXT, form TEXT, position COORDINATES, image ARRAY, reliability INTEGER DEFAULT 0)")
-c.execute("CREATE TABLE IF NOT EXISTS cv_configs(id INTEGER PRIMARY KEY, name TEXT, config ARRAY)")
+c.execute("CREATE TABLE IF NOT EXISTS cv_data("
+          "Id INTEGER PRIMARY KEY, "
+          "Type TEXT, "
+          "Name TEXT, "
+          "Form TEXT, "
+          "Position COORDINATES, "
+          "Image ARRAY, "
+          "Reliability INTEGER DEFAULT 0, "
+          "OS_Name TEXT, "
+          "OS_General_Version TEXT, "
+          "OS_Specific_Version TEXT, "
+          "Computer_Name TEXT, "
+          "Username TEXT"
+          ")")
+c.execute("CREATE TABLE IF NOT EXISTS cv_configs("
+          "Id INTEGER PRIMARY KEY, "
+          "Name TEXT, "
+          "Config ARRAY, "
+          "Total_Reliability REAL"
+          ")")
 conn.commit()
 # values = [('Name1', np.arange(9, dtype=np.uint16).reshape((3,3))), ('Name2', np.arange(16, dtype=np.uint16).reshape((4,4))), ('Name3', np.arange(4, dtype=np.uint16).reshape((2,2))), ('Name4', np.arange(16384, dtype=np.uint16).reshape((128,128)))]
 # c.executemany("INSERT INTO cv_configs(name,config) VALUES (?, ?)", values)
@@ -291,8 +287,9 @@ class CV_Config:
 			self._window_gc = GlobalCoordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
 			self.scrn = np.array(screenshot())
 			self.window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
-			self.controls = defaultdict(dict)
-			self.config = set()
+			self.controls = NUL()
+			self._control_ids = UniqueList()
+			self._config = None
 		# elif 'coord' in kwargs.keys():
 		# 	coord = kwargs['coord']
 		# 	self.window_gc = GlobalCoordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
@@ -317,13 +314,38 @@ class CV_Config:
 	def window_gc(self, value):
 		self._window_gc = value
 
-	def check_control(self, ctrl: Control):
+	@property
+	def config(self):
+		return self._config
+
+	@config.setter
+	def config(self, value):
+		if type(value) is ControlConfig:
+			self.controls.clear()
+			self._control_ids.clear()
+			for name in self.window_gc._locals:
+				self._window_gc.__delattr__(name)
+			self.window_gc._locals.clear()
+			self._add_control(*value.IDs)
+			self._config = value
+		else:
+			raise TypeError(f"Type 'ControlConfig' expected, got '{type(value)}' instead")
+
+	@property
+	def _total_reliability(self):
+		return get_total_reliability(np.array(list(map(lambda x: x.Reliability, self.controls.all_values())), np.uint32))
+
+	def check_control(self, ctrl: Union[Control, ControlInfo]):
 		"""Checks if the given control still exists at its previous known location"""
-		ctrl = self.window_gc.__getattribute__(ctrl.__name__)
-		ctrl_image = self.window_image[ctrl.top:ctrl.bottom, ctrl.left:ctrl.right].view()
+		if type(ctrl) is Control:
+			ctrl = self.window_gc.__getattribute__(ctrl.__name__)
+			ctrl_image = self.window_image[ctrl.top:ctrl.bottom, ctrl.left:ctrl.right].view()
+		elif type(ctrl) is ControlInfo:
+			ctrl_image = self.controls[ctrl.Form][ctrl.Type][ctrl.Name].Image
+			ctrl = ctrl.Position
 		coords = pag.locate(needleImage=Image.fromarray(ctrl_image), haystackImage=Image.fromarray(self.window_image), grayscale=True)
 		if coords:
-			val = np.subtract(np.array([ctrl.left, ctrl.top, ctrl.right, ctrl.bottom], dtype=np.int16), np.array([coords[0], coords[1], coords[0] + coords[2], coords[1] + coords[3]], dtype=np.int16)).sum().sum()
+			val = np.subtract(np.array(ctrl.coords(), dtype=np.int16), np.array([coords[0], coords[1], coords[0] + coords[2], coords[1] + coords[3]], dtype=np.int16)).sum().sum()
 			if val < 4:
 				return True
 			else:
@@ -331,36 +353,72 @@ class CV_Config:
 		else:
 			return False
 
-	def add_control(self, *args):
+	def add_control(self, form, username, *args):
+		_sysinfo = uname()
 		for ctrl in args:
-			self.window_gc.add_local(ctrl.__name__, ctrl.coordinates.left, ctrl.coordinates.top, ctrl.coordinates.right, ctrl.coordinates.bottom)
-			self.controls[ctrl.__class__.__name__][ctrl.__name__] = (ctrl.__class__, ctrl._kwargs)
+			self.window_gc.add_local(ctrl.__name__, *ctrl.coordinates.coords())
+			img = self.window_image[ctrl.coordinates.top:ctrl.coordinates.bottom, ctrl.coordinates.left:ctrl.coordinates.right].view()
+			c.execute(f"SELECT [Id] FROM cv_data WHERE "
+			          f"[Type] = '{ctrl.__class__.__name__}' AND "
+			          f"[Name] = '{ctrl.__name__}' AND "
+			          f"[Form] = '{form}' AND "
+			          f"[Position] = {ctrl.coordinates} AND "
+			          f"[Image] = {img}")
+			val = c.fetchone()
+			if not val:
+				c.execute(f"INSERT INTO cv_data (Type,Name,Form,Position,Image,OS_Name,OS_General_Version,OS_Specific_Version,Computer_Name,Username) "
+				          f"VALUES ('{ctrl.__class__.__name__}','{ctrl.__name__}','{form}',{ctrl.coordinates},{img},'{_sysinfo['system']}','{_sysinfo['release']}','{_sysinfo['version']}','{_sysinfo['node']}','{username}')")
+				conn.commit()
+				c.execute(f"SELECT [Id] FROM cv_data WHERE [Type] = '{ctrl.__class__.__name__}' AND "
+				          f"[Name] = '{ctrl.__name__}' AND "
+				          f"[Form] = '{form}' AND "
+				          f"[Position] = {ctrl.coordinates} AND "
+				          f"[Image] = {img}")
+				val = c.fetchone()
+			c.execute(f"SELECT [Id],[Type],[Name],[Form],[Position],[Image],[Reliability] FROM cv_data WHERE [Id] = {ctrl_id}")
+			ctrl = ControlInfo(*val[0])
+			self.controls[ctrl.Form][ctrl.Type][ctrl.Name] = ctrl
+			self._control_ids.add(ctrl.Id)
+			# self.controls[ctrl.__class__.__name__][ctrl.__name__] = (val, ctrl._kwargs)
 			# self._controls[ctrl.__class__.__name__][ctrl.__name__] = SkeletonClass(ctrl.__class__, ctrl.criteria)
 
-	def set_config(self, config: dict):
-		self.controls.clear()
-		for name in self.window_gc._locals:
-			self._window_gc.__delattr__(name)
-		self.window_gc._locals.clear()
-		self.add_control(*config)
+	def _add_control(self, *args):
+		for ctrl_id in args:
+			c.execute(f"SELECT [Id],[Type],[Name],[Form],[Position],[Image],[Reliability] FROM cv_data WHERE [Id] = {ctrl_id}")
+			try:
+				ctrl = ControlInfo(*c.fetchone()[0])
+			except IndexError:
+				raise ValueError(f"Invalid ID: {ctrl_id}")
+			self.window_gc.add_local(ctrl.Name, *ctrl.Position.coords())
+			self.controls[ctrl.Form][ctrl.Type][ctrl.Name] = ctrl
+			self._control_ids.add(ctrl_id)
 
 	def load_previous_configuration(self, name: str):
-		c.execute(f"SELECT cv_config FROM cv_configs WHERE name = '{name}'")
+		c.execute(f"SELECT * FROM cv_configs WHERE [Name] = '{name}'")
 		exists = c.fetchone()
 		if exists:
-			self.set_config(exists[0])
+			self.config = ControlConfig(*exists[0].to_list())
 		else:
 			raise ValueError(f"Config with name '{name}' does not exist")
 
-	def save_current_configuration(self, name: str):
-		c.execute(f"SELECT cv_config FROM cv_configs WHERE name = '{name}'")
-		exists = c.fetchone()
-		adapt_configs(self.controls.copy())
-		if exists:
-			c.execute(f"UPDATE cv_configs SET cv_config = '{dict(self.controls.copy())}' WHERE name = '{name}')")
+	def save_current_configuration(self, name: str=None):
+		if name is not None:
+			c.execute(f"SELECT * FROM cv_configs WHERE [Name] = '{name}'")
+			exists = c.fetchone()
+			if exists:
+				c.execute(f"UPDATE cv_configs SET [Config] = {np.array(list(self._control_ids), dtype=np.uint16)},[Total_Reliability] = {self._total_reliability} WHERE [Name] = '{name}'")
+			else:
+				c.execute(f"INSERT INTO cv_configs ([Name],[Config],[Total_Reliability]) VALUES ('{name}',{np.array(list(self._control_ids), dtype=np.uint16)},{self._total_reliability})")
+			conn.commit()
+		elif self.config is None:
+			raise ValueError("Name required if not using saved/loaded config")
 		else:
-			c.execute(f"INSERT INTO cv_configs (name,cv_config) VALUES ('{name}','{dict(self.controls.copy())}')")
-		conn.commit()
+			c.execute(f"UPDATE cv_configs SET [Config] = {np.array(list(self._control_ids), dtype=np.uint16)},[Total_Reliability] = {self._total_reliability} WHERE [Name] = '{self.config.Name}'")
+			conn.commit()
+
+	def get_configs(self):
+		c.execute("SELECT [Id],[Name],[Config] FROM cv_configs")
+		return c.fetchall()
 
 	# TODO: Maybe change to 'control_equal', and just supply db record as second argument
 	def control_equal_to_db(self, ctrl: Control):

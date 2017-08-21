@@ -210,6 +210,7 @@ class MiscIssueForm(Form):
 		# Define Buttons
 		self.process = Button(window=window, criteria={'best_match': "ProcessButton", 'control_type': "Button", 'top_level_only': False}, control_name='Process')
 
+
 class SerialNumbersForm(Form):
 	def __init__(self, window):
 		self.window = window

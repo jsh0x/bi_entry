@@ -15,6 +15,8 @@ from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_
 from pywinauto.timings import always_wait_until_passes
 import numpy as np
 
+from .types import Coordinates
+
 log = logging.getLogger('root')
 ctrl_log = logging.getLogger('logControl')
 
@@ -42,104 +44,6 @@ def string2datetime(string: str):
 
 def constant_factory(value):
 	return lambda: value
-
-
-class Coordinates:
-	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
-		self._left = None
-		self._top = None
-		self._right = None
-		self._bottom = None
-		#
-		self.left = np.uint32(left)
-		self.top = np.uint32(top)
-		self.right = np.uint32(right)
-		self.bottom = np.uint32(bottom)
-
-	@property
-	def left(self):
-		return self._left
-
-	@left.setter
-	def left(self, value):
-		if self._right and value >= self._right:
-			raise ValueError
-		else:
-			self._left = value
-
-	@property
-	def top(self):
-		return self._top
-
-	@top.setter
-	def top(self, value):
-		if self._bottom and value >= self._bottom:
-			raise ValueError
-		else:
-			self._top = value
-
-	@property
-	def right(self):
-		return self._right
-
-	@right.setter
-	def right(self, value):
-		if self._left and value <= self._left:
-			raise ValueError
-		else:
-			self._right = value
-
-	@property
-	def bottom(self):
-		return self._bottom
-
-	@bottom.setter
-	def bottom(self, value):
-		if self._top and value <= self._top:
-			raise ValueError
-		else:
-			self._bottom = value
-
-	@property
-	def width(self):
-		return np.subtract(self.right, self.left)
-
-	@property
-	def height(self):
-		return np.subtract(self.bottom, self.top)
-
-	@property
-	def center(self):
-		x = np.add(self.left, np.floor_divide(self.width, 2))
-		y = np.add(self.top, np.floor_divide(self.height, 2))
-		return x, y
-
-	def __str__(self):
-		return f"({self.left}, {self.top}, {self.right}, {self.bottom})"
-
-	def __repr__(self):
-		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
-
-	def __bytes__(self):
-		return bytes(f"{self.left},{self.top},{self.right},{self.down}", encoding="utf-8")
-
-	def update(self, *args, **kwargs):
-		if len(args) == 4:
-			left, top, right, bottom = args
-		else:
-			left = np.uint32(kwargs.get('left', 0))
-			top = np.uint32(kwargs.get('top', 0))
-			right = np.uint32(kwargs.get('right', 0))
-			bottom = np.uint32(kwargs.get('bottom', 0))
-		self._left = left
-		self._top = top
-		self._right = right
-		self._bottom = bottom
-		# Checks for any conflicting coords
-		self.left = left
-		self.top = top
-		self.right = right
-		self.bottom = bottom
 
 
 class Control:

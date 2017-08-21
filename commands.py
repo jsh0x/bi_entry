@@ -17,8 +17,10 @@ from pywinauto import mouse, keyboard as kbd, clipboard as clp
 from pywinauto import xml_helpers
 from pywinauto.clipboard import win32clipboard
 import pyautogui as pag
+
 from exceptions import *
-from controls import Button, Coordinates
+from .types import Coordinates
+from controls import Button
 from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm, MiscIssueForm, SerialNumbersForm
 from concurrent.futures import ThreadPoolExecutor
 

@@ -4,7 +4,7 @@ import logging
 import configparser
 import pathlib
 from string import ascii_letters as letters
-from collections import defaultdict
+from collections import defaultdict, UserDict
 import datetime
 import argparse
 import concurrent.futures as cf
@@ -29,6 +29,7 @@ pag.FAILSAFE = True
 
 LabeledDataRow = Dict[str, Any]
 SRO_Row = Dict[str, Any]
+# TODO: LabeledDataRow -> NamedTuple
 Date_Dict = Dict[str, datetime.datetime]
 pfx_dict = {'11': 'OT', '13': 'LC', '40': 'SL', '21': 'SL', '63': ('BE', 'ACB'), '48': 'LCB'}
 
@@ -229,15 +230,6 @@ class Unit:
 
 
 # or Default_Listionary
-class Default_Lictionary(defaultdict):
-	def __contains__(self, item):
-		items = []
-		for i in self.values():
-			items.extend(i)
-		if item in items:
-			return True
-		else:
-			return False
 
 
 def pre__init__(app: Application):
@@ -1073,12 +1065,12 @@ def scrap(app: Application):
 				SrlNum = app.SerialNumbersForm
 				for unit in units:
 					_try_serial(unit, app)
-					status = SrlNum.status.texts()
-					if status == 'Out of Inventory':
-						raise ValueError
-					location = SrlNum.location.text()
-					unit_locations[location].append(unit)
-					log.debug(f"Unit location '{location}' found for unit {unit.serial_number_prefix + unit.serial_number}")
+					status = SrlNum.status.texts()[0]
+					log.debug(f"Unit location status '{status}' found for unit {unit.serial_number_prefix + unit.serial_number}")
+					if status != 'Out of Inventory':  # OR   status == 'In Inventory' ???
+						location = SrlNum.location.text()
+						unit_locations[location].append(unit)
+						log.debug(f"Unit location '{location}' found for unit {unit.serial_number_prefix + unit.serial_number}")
 					sleep(0.1)
 					SrlNum.serial_number.send_keystrokes('{F4}')
 					SrlNum.serial_number.send_keystrokes('{F5}')
@@ -1125,9 +1117,12 @@ def scrap(app: Application):
 						app.open_form('Miscellaneous Issue')
 						MiscIssue = app.MiscellaneousIssueForm
 					else:
-						kbd.SendKeys("^s")
-						MiscIssue.process.click()
+						pag.hotkey('alt', 'r')
+						pag.press('enter')
 						# kbd.SendKeys("%r")  # Process button, (ALT + R)
+				pag.keyUp('ctrlleft')
+				pag.keyUp('ctrlright')
+				pag.keyUp('ctrl')
 				log.debug("Step 2 Complete")
 				UnitsFormFocus.select()
 				app.add_form('UnitsForm')
@@ -1138,7 +1133,7 @@ def scrap(app: Application):
 						log.debug(f"Running Step 3 on unit {unit.serial_number_prefix + unit.serial_number}")
 						if unit in skipped_units:
 							log.debug(f"Skipping Step 3 on unit {unit.serial_number_prefix + unit.serial_number}, it's in the skipped list")
-							continue
+							# continue
 						Units._unit.set_focus()
 						Units._unit.set_keyboard_focus()
 						Units._unit.send_keystrokes(unit.serial_number_prefix+unit.serial_number)
@@ -1168,6 +1163,10 @@ def scrap(app: Application):
 						log.debug(f"Ship To set to {ship_num}")
 						if not dev_mode:
 							kbd.SendKeys("^s")
+						pag.keyUp('ctrlleft')
+						pag.keyUp('ctrlright')
+						pag.keyUp('ctrl')
+						sleep(1)
 						sro_count = _open_first_open_sro(unit, app)
 						SRO_Operations = app.ServiceOrderOperationsForm
 						SRO_Operations.reasons_tab.select()
@@ -1186,6 +1185,7 @@ def scrap(app: Application):
 							spec_rso = spec_rso.strip(' ')
 							SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
 							SRO_Operations.reasons_tab.grid.cell = gen_rsn
+							sleep(10)
 							SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
 							SRO_Operations.reasons_tab.grid.cell = spec_rsn
 							SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
@@ -1242,9 +1242,13 @@ def scrap(app: Application):
 						text = fr"{note_txt.legacy_properties()['Value'].strip(' ')}"
 						if not ((text.endswith(r'\n') or text.endswith(r'\r')) or (text == '')):
 							note_txt.type_keys('{ENTER}')
-						note_txt.type_keys(f"[{spec_rso_name} {gen_rso_name}]")
+						note_txt.type_keys(f"[{spec_rso_name}")
+						note_txt.type_keys("[{SPACE}]")
+						note_txt.type_keys(f"{gen_rso_name}]")
 						note_txt.type_keys("{ENTER}")
-						note_txt.type_keys(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+						note_txt.type_keys(f"[{unit.operator_initials}")
+						note_txt.type_keys("[{SPACE}]")
+						note_txt.type_keys(f"{unit.datetime.strftime('%m/%d/%Y')}]")
 						if dev_mode:
 							app.cancel_close.click()
 						else:
@@ -1263,12 +1267,37 @@ def scrap(app: Application):
 					else:
 						if not dev_mode:
 							mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
+							mssql.modify(f"DELETE * FROM PyComm WHERE [Id] = {unit.id} AND [SerialNumber] = '{unit.serial_number}' AND [Status] = 'Started'")
 		except Exception:
 			log.exception(f"Something went horribly wrong!")
 			if not dev_mode:
 				for unit in all_units:
-					mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			quit()
+		else:
+			end_time = timer.stop()
+			sro_string = part_string = ""
+			if sro_count > 1:
+				sro_string = f" {sro_count} SROs tried,"
+			if part_count < len(unit.parts):
+				part_string = f" {part_count} out of {len(unit.parts)} parts transacted,"
+			elif part_count > 0:
+				part_string = f" {part_count} parts transacted,"
+
+
+			if len(unit_locations.keys()) > 0:
+				total = 0
+				for u in unit_locations.values():
+					total += len(u)
+				begin_string = f"{total} unit(s) processed through Miscellaneous Issue, "
+				if len(all_units_grouped.keys()) > 1:
+					begin_string += f"seperated into {len(all_units_grouped.keys())} different groups by build, "
+				if len(unit_locations.keys()) > 1:
+					begin_string += f"from {len(unit_locations.keys())} different locations, "
+				begin_string += f"and {len(all_units)} units fully scrapped through the Units form."
+			else:
+				begin_string = f"{len(all_units)} units fully scrapped through the Units form."
+			time_log.info(f"{begin_string} Total time {end_time}")
 
 	# If Out of Inventory then: ???
 	# Open Miscellaneous Issue Form
