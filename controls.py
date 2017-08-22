@@ -15,7 +15,7 @@ from pywinauto import Application, keyboard, controls as ctrls, clipboard, base_
 from pywinauto.timings import always_wait_until_passes
 import numpy as np
 
-from .types import Coordinates
+from types_ import Coordinates
 
 log = logging.getLogger('root')
 ctrl_log = logging.getLogger('logControl')

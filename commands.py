@@ -19,7 +19,7 @@ from pywinauto.clipboard import win32clipboard
 import pyautogui as pag
 
 from exceptions import *
-from .types import Coordinates
+from types_ import Coordinates
 from controls import Button
 from forms import UnitsForm, ServiceOrderLinesForm, ServiceOrderOperationsForm, SROTransactionsForm, MiscIssueForm, SerialNumbersForm
 from concurrent.futures import ThreadPoolExecutor
@@ -102,9 +102,8 @@ def enumerate_screens() -> Dict[int, Coordinates]:
 
 
 def screenshot():
-	clp.EmptyClipboard()
 	kbd.SendKeys('{PRTSC}')
-	sleep(0.02)
+	sleep(0.05)
 	im = ImageGrab.grabclipboard()
 	clp.EmptyClipboard()
 	return im

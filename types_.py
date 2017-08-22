@@ -1,7 +1,49 @@
 from collections import UserDict, UserList
-from typing import NamedTuple, MutableSet
+from typing import NamedTuple, MutableSet, Union
 
 import numpy as np
+
+def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _original=True, dtype=None):
+	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
+	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
+	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
+	if mode == 'split' and type(a) is np.ndarray:
+		sep = ',' * a.ndim
+		string1 = ""
+		if a.ndim > 1:
+			for val1 in a[:]:
+				val2 = array_splicer(val1, mode, retval=retval, _original=False)
+				string1 += f"{val2}{sep}"
+		elif a.ndim == 1:
+			for val1 in a:
+				string1 += f"{val1}{sep}"
+		retval = string1[:-a.ndim]
+		if _original:
+			retval += f";{str(a.dtype)}"
+		return retval
+	elif mode == 'join' and type(a) is str:
+		if _original:
+			a, d_str = a.split(';')
+			dtype = dtypes_dict.get(d_str, np.int)
+		sep = ','
+		while sep in a:
+			sep += ','
+		else:
+			sep = sep[:-1]
+		list1 = []
+		if len(sep) > 1:
+			for string1 in a.split(sep):
+				val1 = array_splicer(string1, mode, retval=retval, _original=False, dtype=dtype)
+				list1.append(val1)
+		else:
+			for string1 in a.split(sep):
+				list1.append(dtype(string1))
+		retval = list1
+		if _original:
+			retval = np.array(list1, dtype=dtype)
+		return retval
+	else:
+		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
 
 
 class Coordinates:
@@ -75,7 +117,7 @@ class Coordinates:
 		return x, y
 
 	def __str__(self):
-		return f"({self.left}, {self.top}, {self.right}, {self.bottom})"
+		return f"{self.left},{self.top},{self.right},{self.bottom}"
 
 	def __repr__(self):
 		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
@@ -130,14 +172,51 @@ class _LocalCoordinates(Coordinates):
 		super().__init__(left=left, top=top, right=right, bottom=bottom)
 
 
+class GlobalCoordinates(Coordinates):
+	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
+		super().__init__(left=left, top=top, right=right, bottom=bottom)
+		self._original_left = left
+		self._original_top = top
+		self._original_right = right
+		self._original_bottom = bottom
+		self._locals = []
+
+	def add_local(self, name: str, left: int=0, top: int=0, right: int=0, bottom: int=0):
+		local_coord = _LocalCoordinates(left=left, top=top, right=right, bottom=bottom, global_container=self)
+		self.__setattr__(name, local_coord)
+		self._locals.append(name)
+
+	def __contains__(self, item: _LocalCoordinates):
+		if self.left > item.left:
+			return False
+		elif self.right < item.right:
+			return False
+		elif self.top > item.top:
+			return False
+		elif self.bottom < item.bottom:
+			return False
+		else:
+			return True
+
+
 class ControlInfo(NamedTuple):
 	Id: int
 	Type: str
 	Name: str
 	Form: str
 	Position: Coordinates
-	Image: np.ndarray
+	Image2: np.ndarray
 	Reliability: int
+	
+	@property
+	def Image(self):
+		return array_splicer(self.Image2, mode='split')
+
+	@Image.setter
+	def Image(self, value):
+		if type(value) is np.ndarray:
+			value = array_splicer(value, mode='join')
+		self.Image2 = value
 
 
 class UniqueList(UserList):
@@ -219,7 +298,7 @@ class UniqueList(UserList):
 class Listionary(UserDict):
 	def __init__(self, *args):
 		self._all_values = []
-		super().__init__(self, *args)
+		super().__init__(self)
 
 	def __getitem__(self, key):
 		return self.data.__getitem__(key)
@@ -246,7 +325,7 @@ class Listionary(UserDict):
 class UniqueListionary(Listionary):
 	def __init__(self, *args):
 		self._all_values = UniqueList()
-		super().__init__(self, *args)
+		super().__init__(self)
 
 	def __setitem__(self, key, val):
 		self.data.__setitem__(key, val)
@@ -264,14 +343,37 @@ class NestedListionary(Listionary):
 			return self.data.__getitem__(key)
 
 
-class NestedUniqueListionary(UniqueListionary):
+class NestedUniqueListionary(UserDict):
+	def __init__(self, *args):
+		self._all_values = UniqueList()
+		super().__init__(self)
+
+	def __setitem__(self, key, val):
+		print(key, val)
+		self.data.__setitem__(key, val)
+		if type(val) is not dict and val not in self._all_values:
+			self._all_values.append(val)
+
 	def __getitem__(self, key):
 		try:
 			self.data.__getitem__(key)
 		except KeyError:
-			self.data.__setitem__(key, UniqueListionary())
+			self.data.__setitem__(key, NestedUniqueListionary())
 		finally:
 			return self.data.__getitem__(key)
+
+	def __contains__(self, item):
+		return item in self._all_values
+
+	def __len__(self):
+		return len(self._all_values)
+
+	def clear(self):
+		self.data.clear()
+		self._all_values.clear()
+
+	def all_values(self):
+		return self._all_values
 
 
 class ControlConfig(NamedTuple):
