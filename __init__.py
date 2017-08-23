@@ -13,9 +13,9 @@ import logging.handlers
 import pathlib
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 			'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
-
-logging.config.fileConfig("config.ini")
-
+loggers = ['root', 'logTime', 'logControl']
+handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler', 'timeHandler', 'controlHandler']
+formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter', 'timeFormatter']
 log_dir = pathlib.WindowsPath.cwd()/'logs'
 log_dir.mkdir(exist_ok=True)
 time_dir = pathlib.WindowsPath.cwd()/'time_logs'
@@ -27,19 +27,6 @@ info_log_dir = str(log_dir/'info.log').replace('\\', '/')
 debug_log_dir = str(log_dir/'dbg.log').replace('\\', '/')
 time_log_dir = str(time_dir/'completed.log').replace('\\', '/')
 control_log_dir = str(ctrl_dir/'controls.log').replace('\\', '/')
-
-# print(logger, type(logger))
-# print(log, type(log))
-#
-# quit()
-
-loggers = ['root', 'logTime', 'logControl']
-handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler', 'timeHandler', 'controlHandler']
-formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter', 'timeFormatter']
-
-bit = 8*struct.calcsize("P")
-major, minor, micro = version.major, version.minor, version.micro
-
 
 def list_to_string(iterable: Sequence, sep: str=','):
 	retval = ''
@@ -139,6 +126,25 @@ def write_config():
 								   'qualname': 'logControl'}
 	with open('config.ini', 'w') as configfile:
 		config.write(configfile)
+
+
+if 'config.ini' not in os.listdir(os.getcwd()):
+	write_config()
+
+logging.config.fileConfig("config.ini")
+
+
+
+# print(logger, type(logger))
+# print(log, type(log))
+#
+# quit()
+
+
+bit = 8*struct.calcsize("P")
+major, minor, micro = version.major, version.minor, version.micro
+
+
 
 #      %(sl_exe)
 try:

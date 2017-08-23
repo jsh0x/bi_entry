@@ -4,6 +4,7 @@ from platform import uname
 from collections import defaultdict
 from time import sleep
 import threading
+from random import sample, choice
 
 import pyautogui as pag, pywinauto as pwn, numpy as np
 from matplotlib import pyplot as plt
@@ -12,7 +13,7 @@ from PIL import Image
 from controls import Control, Button, Checkbox, Textbox, Datebox, VerticalScrollbar, HorizontalScrollbar, GridView, Tab
 from commands import screenshot, Application
 from math_ import get_total_reliability
-from types_ import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, NestedUniqueListionary as NUL, UniqueList
+from types_ import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, NestedUniqueListionary as NUL, UniqueList, ExtendedImage
 
 
 # class ControlInfo(NamedTuple):
@@ -211,8 +212,7 @@ def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _ori
 
 
 def convert_array(value: bytes) -> np.ndarray:
-	# return array_splicer(bytes.decode(value, encoding='utf-8'), mode='join')
-	return bytes.decode(value, encoding='utf-8')
+	return array_splicer(bytes.decode(value, encoding='utf-8'), mode='join')
 
 
 def adapt_array(value: np.ndarray) -> bytes:
@@ -225,13 +225,23 @@ def convert_coordinates(value: bytes) -> Coordinates:
 
 def adapt_coordinates(value: Coordinates) -> bytes:
 	# return bytes(value)
-	value = np.array(value.coords(), dtype=np.uint32)
+	value = np.array(value.to_list(), dtype=np.uint32)
 	return bytes(array_splicer(value, mode='split'), encoding='utf-8')
+
+
+def convert_image(value: bytes) -> Image:
+	return ExtendedImage(array_splicer(bytes.decode(value, encoding='utf-8'), mode='join'))
+
+
+def adapt_image(value: ExtendedImage) -> bytes:
+	return bytes(value)
 
 sql.register_adapter(np.ndarray, adapt_array)
 sql.register_adapter(Coordinates, adapt_coordinates)
+sql.register_adapter(ExtendedImage, adapt_image)
 sql.register_converter('ARRAY', convert_array)
 sql.register_converter('COORDINATES', convert_coordinates)
+sql.register_converter('IMAGE', convert_image)
 
 
 # Initial Variables
@@ -240,6 +250,8 @@ ctrl_dict = {'Button': Button, 'Checkbox': Checkbox, 'Textbox': Textbox, 'Datebo
 			 'VerticalScrollBar': VerticalScrollbar, 'HorizontalScrollBar': HorizontalScrollbar,
 			 'GridView': GridView, 'Tab': Tab}
 log = logging.getLogger("root")
+colors = [np.array([255, 000, 000], dtype=np.uint8), np.array([000, 255, 000], dtype=np.uint8), np.array([000, 000, 255], dtype=np.uint8), np.array([255, 128, 000], dtype=np.uint8),
+			          np.array([128, 000, 255], dtype=np.uint8), np.array([000, 128, 000], dtype=np.uint8), np.array([000, 220, 128], dtype=np.uint8), np.array([255, 000, 255], dtype=np.uint8)]
 
 
 conn = sql.connect(database='vision.db', detect_types=sql.PARSE_DECLTYPES)
@@ -258,7 +270,7 @@ c.execute("CREATE TABLE IF NOT EXISTS cv_data("
           "Name TEXT, "
           "Form TEXT, "
           "Position COORDINATES, "
-          "Image ARRAY, "
+          "Image IMAGE, "
           "Reliability INTEGER DEFAULT 0, "
           "OS_Name TEXT, "
           "OS_General_Version TEXT, "
@@ -293,8 +305,10 @@ class CV_Config:
 			self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
 			self._cropped_window_image = self.window_image[7:748, 8:1015].copy()
 			self.controls = NUL()
+			self._controls = UniqueList()
 			self._control_ids = UniqueList()
 			self._config = None
+			self._worker = DisplayThread(0.2, self.window_image)
 		# elif 'coord' in kwargs.keys():
 		# 	coord = kwargs['coord']
 		# 	self.window_gc = GlobalCoordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
@@ -365,16 +379,15 @@ class CV_Config:
 	def add_control(self, form, username, *args):
 		_sysinfo = uname()
 		for ctrl in args:
-			self.window_gc.add_local(ctrl.__name__, *ctrl.coordinates.coords())
-			img = self.window_image[ctrl.coordinates.top:ctrl.coordinates.bottom, ctrl.coordinates.left:ctrl.coordinates.right] # TODO: Fix to use local coordinates
-			img = self.scrn.copy()
-			z = np.array([255, 0, 0], dtype=np.uint8)
-			img[ctrl.coordinates.top+6:ctrl.coordinates.bottom+6, ctrl.coordinates.left] = z
-			img[ctrl.coordinates.top+6:ctrl.coordinates.bottom+6, ctrl.coordinates.right] = z
-			img[ctrl.coordinates.top+6, ctrl.coordinates.left:ctrl.coordinates.right] = z
-			img[ctrl.coordinates.bottom+6, ctrl.coordinates.left:ctrl.coordinates.right] = z
-			plt.imshow(img)
-			plt.show()
+			if ctrl.__class__.__name__ == 'Tab':
+				self.window_gc.add_local(name=ctrl.__name__, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 5, right=ctrl.coordinates.right, bottom=ctrl.coordinates.bottom + 7)
+			else:
+				self.window_gc.add_local(name=ctrl.__name__, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 6, right=ctrl.coordinates.right - 1, bottom=ctrl.coordinates.bottom + 5)
+			coord = self.window_gc.__getattribute__(ctrl.__name__)
+			img = ExtendedImage(self.window_image[coord.top:coord.bottom, coord.left:coord.right])
+			# plt.imshow(img.array)
+			# plt.show()
+			ctrl.coordinates = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
 			c.execute("SELECT [Id] FROM cv_data WHERE [Type] = ? AND [Name] = ? AND [Form] = ? AND [Position] = ? AND [Image] = ?",
 			          (ctrl.__class__.__name__, ctrl.__name__, form, ctrl.coordinates, img))
 			val = c.fetchone()
@@ -387,10 +400,13 @@ class CV_Config:
 				val = c.fetchone()
 			c.execute("SELECT [Id],[Type],[Name],[Form],[Position],[Image],[Reliability] FROM cv_data WHERE [Id] = ?", (val[0],))
 			val = c.fetchone()
-			print(val)
+			# print(val)
 			ctrl = ControlInfo(*val)
 			self.controls[ctrl.Form][ctrl.Type][ctrl.Name] = ctrl
+			self._controls.append(ctrl)
+			self._worker._val = choice(colors), ctrl.Position.left, ctrl.Position.top, ctrl.Position.right, ctrl.Position.bottom
 			self._control_ids.append(ctrl.Id)
+			sleep(1)
 			# self.controls[ctrl.__class__.__name__][ctrl.__name__] = (val, ctrl._kwargs)
 			# self._controls[ctrl.__class__.__name__][ctrl.__name__] = SkeletonClass(ctrl.__class__, ctrl.criteria)
 
@@ -403,6 +419,7 @@ class CV_Config:
 				raise ValueError(f"Invalid ID: {ctrl_id}")
 			self.window_gc.add_local(ctrl.Name, *ctrl.Position.coords())
 			self.controls[ctrl.Form][ctrl.Type][ctrl.Name] = ctrl
+			self._controls.append(ctrl)
 			self._control_ids.add(ctrl_id)
 
 	def load_previous_configuration(self, name: str):
@@ -555,16 +572,22 @@ class CV_Config:
 class DisplayThread(object):
 	def __init__(self, interval=1, *args):
 		self.interval = interval
+		self._val = None
 		thread = threading.Thread(target=self.run, args=args)
 		thread.daemon = True                            # Daemonize thread
 		thread.start()                                  # Start the execution
 
-	def run(self, cv):
+	def run(self, img):
 		""" Method that runs forever """
-		plt.imshow(cv.window_image)
-		plt.show()
 		while True:
-			plt.imshow(cv.window_image)
+			if self._val is not None:
+				clr, left, top, right, bottom = self._val
+				img[top:bottom + 1, left] = clr
+				img[top:bottom + 1, right] = clr
+				img[top, left:right + 1] = clr
+				img[bottom, left:right + 1] = clr
+				self._val = None
+			plt.imshow(img)
 			plt.draw()
 
 def main():
@@ -575,22 +598,39 @@ def main():
 			app.log_in(usr, pwd)
 			cv = CV_Config(window=app._win)
 			app.open_form("Units")
-			# worker = DisplayThread(0.2, cv)
 			unit_txt = Textbox(window=app._all_win, criteria={'best_match': "Unit:Edit"}, control_name='Unit')
 			item_txt = Textbox(window=app._all_win, criteria={'best_match': "Item:Edit"}, control_name='Item')
 			srol_btn = Button(window=app._all_win, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, control_name='Service Order Lines')
 			ownhist_tab = Tab(window=app._all_win, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', control_name='Owner History', controls={})
 			cv.add_control('Units', 'jredding', unit_txt, item_txt, srol_btn, ownhist_tab)
-			for ctrl,names in cv.controls.items():
-				for name in names:
-					print(name, ctrl, cv.controls[ctrl][name][0](**cv.controls[ctrl][name][1]))
-			for ctrl in cv.controls:
-				left, top, right, bottom = ctrl.Position.coords
-				cv.window_image[top:bottom, left] = np.array([255, 0, 0])
-				cv.window_image[top:bottom, right]
-				cv.window_image[top, left:right]
-				cv.window_image[bottom, left:right]
+			# for ctrl,names in cv.controls.items():
+			# 	for name in names:
+			# 		print(name, ctrl, cv.controls[ctrl][name][0](**cv.controls[ctrl][name][1]))
 
+			# c_i = sample(colors, k=len(cv._controls))
+			# for i in range(4):
+			# 	img = cv.window_image.copy()
+			# 	for clr,ctrl in zip(c_i, cv._controls):
+			# 		left, top, right, bottom = ctrl.Position.coords()
+			# 		if i == 0:
+			# 			img[top:bottom, left] = clr
+			# 		elif i == 1:
+			# 			img[top:bottom, right] = clr
+			# 		elif i == 2:
+			# 			img[top, left:right] = clr
+			# 		elif i == 3:
+			# 			img[bottom, left:right] = clr
+			# 	plt.imshow(img)
+			# 	plt.show()
+			# img = cv.window_image.copy()
+			# for clr, ctrl in zip(c_i, cv._controls):
+			# 	left, top, right, bottom = ctrl.Position.coords()
+			# 	img[top:bottom+1, left] = clr
+			# 	img[top:bottom+1, right] = clr
+			# 	img[top, left:right+1] = clr
+			# 	img[bottom, left:right+1] = clr
+			# plt.imshow(img)
+			# plt.show()
 			# cv.save_current_configuration('TEST')
 
 			# cfg.load_previous_configuration('TEST')

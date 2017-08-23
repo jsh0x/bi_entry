@@ -1,7 +1,8 @@
 from collections import UserDict, UserList
-from typing import NamedTuple, MutableSet, Union
+from typing import NamedTuple, MutableSet, Union, SupportsBytes
 
 import numpy as np
+import PIL.Image
 
 def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _original=True, dtype=None):
 	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
@@ -44,6 +45,34 @@ def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _ori
 		return retval
 	else:
 		raise ValueError(f"Invalid mode specification: '{mode}', must be either 'split' for ndarrays or 'join' for strings")
+
+
+class ExtendedImage(object):
+	def __init__(self, img: Union[PIL.Image.Image, np.ndarray]):
+		if type(img) is np.ndarray:
+			if img.ndim > 2:
+				if img.shape[2] == 1:
+					img = PIL.Image.fromarray(img, mode='L')
+				elif img.shape[2] == 3:
+					img = PIL.Image.fromarray(img, mode='RGB')
+				elif img.shape[2] == 4:
+					img = PIL.Image.fromarray(img, mode='RGBA')
+			elif img.ndim == 2:
+				img = PIL.Image.fromarray(img.reshape((img.shape[0], img.shape[1], 1)), mode='L')
+		self._img = img
+
+	@property
+	def array(self):
+		return np.array(self._img, dtype=np.uint8)
+
+	def __bytes__(self):
+		return bytes(array_splicer(self.array, mode='split'), encoding='utf-8')
+
+	def __getattr__(self, item):
+		return self.__getattribute__('_img').__getattr__(item)
+
+	def __repr__(self):
+		return f'<ExtendedImage object resolution={self._img.size[0]}x{self._img.size[1]}, mode={self._img.mode}>'
 
 
 class Coordinates:
@@ -117,7 +146,7 @@ class Coordinates:
 		return x, y
 
 	def __str__(self):
-		return f"{self.left},{self.top},{self.right},{self.bottom}"
+		return f"({self.left}, {self.top}, {self.right}, {self.bottom})"
 
 	def __repr__(self):
 		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
@@ -145,6 +174,9 @@ class Coordinates:
 
 	def coords(self):
 		return self.left, self.top, self.right, self.bottom
+
+	def to_list(self):
+		return [self.left, self.top, self.right, self.bottom]
 
 
 class GlobalCoordinates(Coordinates):
@@ -205,23 +237,14 @@ class ControlInfo(NamedTuple):
 	Name: str
 	Form: str
 	Position: Coordinates
-	Image2: np.ndarray
+	Image: ExtendedImage
 	Reliability: int
-	
-	@property
-	def Image(self):
-		return array_splicer(self.Image2, mode='split')
-
-	@Image.setter
-	def Image(self, value):
-		if type(value) is np.ndarray:
-			value = array_splicer(value, mode='join')
-		self.Image2 = value
 
 
 class UniqueList(UserList):
 	def __init__(self, iterable: list=None):
-		super().__init__(iterable)
+		super().__init__()
+		self._current = 0
 		self._set = set(self.data)
 
 	def __contains__(self, item):
@@ -263,6 +286,9 @@ class UniqueList(UserList):
 	def __imul__(self, other):
 		pass
 
+	def __len__(self):
+		return len(self._set)
+
 	def append(self, item):
 		if item not in self._set:
 			self.data.append(item)
@@ -293,6 +319,10 @@ class UniqueList(UserList):
 	def clear(self):
 		self.data.clear()
 		self._set.clear()
+
+	@property
+	def _high(self):
+		return len(self.data)
 
 
 class Listionary(UserDict):
@@ -344,12 +374,14 @@ class NestedListionary(Listionary):
 
 
 class NestedUniqueListionary(UserDict):
-	def __init__(self, *args):
-		self._all_values = UniqueList()
-		super().__init__(self)
+	def __init__(self, preset=None):
+		if preset is None:
+			self._all_values = UniqueList()
+		else:
+			self._all_values = preset
+		super().__init__()
 
 	def __setitem__(self, key, val):
-		print(key, val)
 		self.data.__setitem__(key, val)
 		if type(val) is not dict and val not in self._all_values:
 			self._all_values.append(val)
@@ -358,7 +390,7 @@ class NestedUniqueListionary(UserDict):
 		try:
 			self.data.__getitem__(key)
 		except KeyError:
-			self.data.__setitem__(key, NestedUniqueListionary())
+			self.data.__setitem__(key, NestedUniqueListionary(self._all_values))
 		finally:
 			return self.data.__getitem__(key)
 

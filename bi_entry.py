@@ -295,7 +295,7 @@ def _try_serial(unit: Unit, app: Application):
 		if SrlNum.serial_number.text() != unit.serial_number_prefix + unit.serial_number:
 			log.error(f"SyteLine had some major issues with serial number: '{unit.serial_number}'")
 			raise SyteLineFilterInPlaceError("")
-	log.debug(f"Unit {unit.serial_number_prefix + unit.serial_number} Checked")
+	log.info(f"Unit {unit.serial_number_prefix + unit.serial_number} Checked")
 
 
 def _open_first_open_sro(unit: Unit, app: Application):
@@ -1053,7 +1053,7 @@ def scrap(app: Application):
 			log.debug("Units sorted by quantity in descending order")
 			for i,(key,group) in enumerate(sorted_unit_groups.items()):
 				log.debug(f"Group {i+1}: {key} build, {len(group)} unit(s)")
-			skipped_units = Default_Lictionary(list)
+			# skipped_units = Default_Lictionary(list)
 			for build,units in sorted_unit_groups.items():
 				if build in cellular_unit_builds:
 					phone = True
@@ -1101,7 +1101,7 @@ def scrap(app: Application):
 					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
 						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
 						if app.popup.exists(1, 2):
-							skipped_units[build].append(unit)
+							# skipped_units[build].append(unit)
 							app.enter()
 							log.debug(f"Added unit {unit.serial_number_prefix + unit.serial_number} to skipped list")
 							continue
@@ -1131,8 +1131,8 @@ def scrap(app: Application):
 				for unit in all_units:
 					try:
 						log.debug(f"Running Step 3 on unit {unit.serial_number_prefix + unit.serial_number}")
-						if unit in skipped_units:
-							log.debug(f"Skipping Step 3 on unit {unit.serial_number_prefix + unit.serial_number}, it's in the skipped list")
+						# if unit in skipped_units:
+						# 	log.debug(f"Skipping Step 3 on unit {unit.serial_number_prefix + unit.serial_number}, it's in the skipped list")
 							# continue
 						Units._unit.set_focus()
 						Units._unit.set_keyboard_focus()
@@ -1267,7 +1267,7 @@ def scrap(app: Application):
 					else:
 						if not dev_mode:
 							mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
-							mssql.modify(f"DELETE * FROM PyComm WHERE [Id] = {unit.id} AND [SerialNumber] = '{unit.serial_number}' AND [Status] = 'Started'")
+							mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
 		except Exception:
 			log.exception(f"Something went horribly wrong!")
 			if not dev_mode:
@@ -1276,14 +1276,6 @@ def scrap(app: Application):
 			quit()
 		else:
 			end_time = timer.stop()
-			sro_string = part_string = ""
-			if sro_count > 1:
-				sro_string = f" {sro_count} SROs tried,"
-			if part_count < len(unit.parts):
-				part_string = f" {part_count} out of {len(unit.parts)} parts transacted,"
-			elif part_count > 0:
-				part_string = f" {part_count} parts transacted,"
-
 
 			if len(unit_locations.keys()) > 0:
 				total = 0
