@@ -1,7 +1,11 @@
 import datetime
+from collections import UserList
+from typing import Tuple, Sequence, Iterable
+from colorsys import hsv_to_rgb
 
 import numpy as np
 from matplotlib import pyplot as plt
+
 
 class Timer:
 	def __init__(self):
@@ -97,3 +101,27 @@ def LEARN_TEST():
 	plt.show()
 
 # LEARN_TEST()
+
+
+def rgb_float_to_int(rgb: Sequence[float]) -> Tuple[int, int, int]:
+	assert (isinstance(rgb[0], float) and isinstance(rgb[1], float) and isinstance(rgb[2], float) and min(rgb) >= 0. and max(rgb) <= 1.)
+	return tuple(np.asarray(np.multiply(np.array(rgb, dtype=np.float), 255), dtype=np.uint8).tolist())
+
+
+def rgb_int_to_float(rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
+	assert (isinstance(rgb[0], int) and isinstance(rgb[1], int) and isinstance(rgb[2], int) and min(rgb) >= 0 and max(rgb) <= 255)
+	return tuple(np.true_divide(np.array(rgb, dtype=np.float), 255).tolist())
+
+
+def colorspace_iterator(num: int) -> Iterable[Tuple[int, int, int]]:
+	hue = np.linspace(0., 1., num, dtype=np.float)
+	# hue = np.array([np.float(str(x)) for x in np.linspace(0., 1., num, dtype=np.float)])
+	return map(rgb_float_to_int, map(hsv_to_rgb, *np.vstack((hue, np.ones_like(hue), np.ones_like(hue)))))
+
+
+def colorspace_transition(start: float, stop: float, num: int):
+	assert (isinstance(start, float) and isinstance(stop, float) and isinstance(num, int) and start < stop)
+	np.linspace(start, stop, num, dtype=np.float)
+
+
+colorspace_iterator(16)

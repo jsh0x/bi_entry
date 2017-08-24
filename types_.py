@@ -1,10 +1,63 @@
 from collections import UserDict, UserList
-from typing import NamedTuple, MutableSet, Union, SupportsBytes
+from typing import NamedTuple, Iterable, Union
 
 import numpy as np
 import PIL.Image
 
-def array_splicer(a: Union[np.ndarray,str], mode: str='split', retval=None, _original=True, dtype=None):
+
+class ColorValue:
+	__slots__ = ['_int_value', '_float_value']
+
+	def __init__(self, x: Union[int, float]):
+		assert ((isinstance(x, float) and 0. <= x <= 1.) or (isinstance(x, int) and 0 <= x <= 255) or isinstance(x, ColorValue))
+		if isinstance(x, float):
+			self._int_value = np.uint8(np.multiply(np.float64(x), 255))
+			self._float_value = np.float64(x)
+		elif isinstance(x, int):
+			self._int_value = np.uint8(x)
+			self._float_value = np.true_divide(np.float64(x), 255)
+		elif isinstance(x, ColorValue):
+			self._int_value = int(x)
+			self._float_value = float(x)
+
+	def __int__(self):
+		return self._int_value
+
+	def __float__(self):
+		return float(self._float_value)
+
+	def __invert__(self):
+		return ColorValue(np.add(self._int_value, 255, dtype=np.uint8))
+
+	def __repr__(self):
+		return f"<ColorValue object int={self._int_value}, float={self._float_value}>"
+
+
+class RGB(UserList):
+	__slots__ = ['red', 'green', 'blue', '_data']
+
+	def __init__(self, *args, **kwargs):
+		if len(kwargs.keys()) == 3:
+			self.red = ColorValue(kwargs['red'])
+			self.green = ColorValue(kwargs['green'])
+			self.blue = ColorValue(kwargs['blue'])
+		elif len(args) == 3:
+			self.red, self.green, self.blue = map(ColorValue, args)
+		else:
+			raise ValueError()
+		super().__init__([self.red, self.green, self.blue])
+
+	def __int__(self):
+		return tuple(map(int, self.data))
+
+	def __float__(self):
+		return tuple(map(float, self.data))
+
+	def __invert__(self):
+		return tuple(map(lambda x: ~x, self.data))
+
+
+def array_splicer(a: Union[np.ndarray, str], mode: str='split', retval=None, _original=True, dtype=None):
 	dtypes_dict = {'uint8': np.uint8, 'uint16': np.uint16, 'uint32': np.uint32,
 	          'int8': np.int8, 'int16': np.int16, 'int32': np.int32,
 	          'float16': np.float16, 'float32': np.float32, 'float64': np.float64}
@@ -413,3 +466,11 @@ class ControlConfig(NamedTuple):
 	Name: str
 	IDs: UniqueList
 	Total_Reliability: float
+
+
+class Form:
+	def __init__(self):
+		pass
+
+	def test(self):
+		print("TEST")

@@ -12,8 +12,8 @@ from PIL import Image
 
 from controls import Control, Button, Checkbox, Textbox, Datebox, VerticalScrollbar, HorizontalScrollbar, GridView, Tab
 from commands import screenshot, Application
-from math_ import get_total_reliability
-from types_ import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, NestedUniqueListionary as NUL, UniqueList, ExtendedImage
+from math_ import get_total_reliability, colorspace_iterator
+from types_ import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, Form, UniqueList, ExtendedImage
 
 
 # class ControlInfo(NamedTuple):
@@ -246,9 +246,25 @@ sql.register_converter('IMAGE', convert_image)
 
 # Initial Variables
 # SkeletonClass = namedtuple('SkeletonClass', ['control', 'criteria'])
+# TODO: improve shorthand dictionary for "common" terms (Serial = srl, Number = num, etc)
+shorthand_dict = {'serial': 'srl', 'number': 'num', 'miscellaneous': 'misc', 'form': 'frm',
+                  'quantity': 'qty', 'quality': 'qlty', 'reason': 'rsn', 'location': 'loc',
+                  'generate': 'gen', 'process': 'proc', 'detail': 'dtl', 'window': 'win',
+                  'button': 'btn', 'checkbox': 'chk', 'textbox': 'txt', 'datebox': 'dte',
+                  'verticalscrollbar': 'vsb', 'gridview': 'grd', 'tab': 'tab', 'customer': 'cust',
+                  'horizontalscrollbar': 'hsb', 'combobox': 'cmb',  'line': 'ln', 'service': 'svc',
+                  'order': 'ord', 'description': 'desc', 'history': 'hist', 'operation': 'optn',
+                  'operator': 'optr', 'floor': 'flr', 'recieved': 'rcvd', 'resolution': 'res',
+                  'complete': 'cmplt', 'repair': 'rpr', 'statement': 'stmnt', 'transaction': 'trnctn',
+                  'clear': 'clr', 'filter': 'fltr', 'include': 'incl', 'debug': 'dbg',
+                  'document': 'doc'}
+vowels = {'a', 'e', 'i', 'o', 'u', 'y'}
 ctrl_dict = {'Button': Button, 'Checkbox': Checkbox, 'Textbox': Textbox, 'Datebox': Datebox,
 			 'VerticalScrollBar': VerticalScrollbar, 'HorizontalScrollBar': HorizontalScrollbar,
 			 'GridView': GridView, 'Tab': Tab}
+ctrl_pfx_dict = {'Button': 'btn', 'Checkbox': 'chk', 'Textbox': 'txt', 'Datebox': 'dte',
+				 'VerticalScrollBar': 'vsb', 'HorizontalScrollBar': 'hsb',
+				 'GridView': 'grd', 'Tab': 'tab'}
 log = logging.getLogger("root")
 colors = [np.array([255, 000, 000], dtype=np.uint8), np.array([000, 255, 000], dtype=np.uint8), np.array([000, 000, 255], dtype=np.uint8), np.array([255, 128, 000], dtype=np.uint8),
 			          np.array([128, 000, 255], dtype=np.uint8), np.array([000, 128, 000], dtype=np.uint8), np.array([000, 220, 128], dtype=np.uint8), np.array([255, 000, 255], dtype=np.uint8)]
@@ -294,6 +310,9 @@ for val in c.fetchall():
 
 
 class CV_Config:
+	__slots__ = ['_window', '_username', '_window_gc', '_window_image',
+	             '_cropped_window_image', 'forms', 'controls', '_control_ids',
+	             '_config', '__dict__']
 	def __init__(self, **kwargs):
 		"""Sets the global coordinates to that of the window"""
 		if 'window' in kwargs.keys():
@@ -304,11 +323,12 @@ class CV_Config:
 			self._window_gc = GlobalCoordinates(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
 			self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
 			self._cropped_window_image = self.window_image[7:748, 8:1015].copy()
-			self.controls = NUL()
-			self._controls = UniqueList()
+			self.forms = set([])
+			self.controls = set([])
 			self._control_ids = UniqueList()
 			self._config = None
-			self._worker = DisplayThread(0.2, self.window_image)
+			# TODO: Iterable forms/controls initlist
+			# self._worker = DisplayThread(1, self.window_image)
 		# elif 'coord' in kwargs.keys():
 		# 	coord = kwargs['coord']
 		# 	self.window_gc = GlobalCoordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
@@ -376,37 +396,98 @@ class CV_Config:
 		else:
 			return False
 
+	def add_form(self, name: str):
+		name = name.strip()
+		if name.startswith('frm_'): #and name.split('_', 1)[1].isupper():
+			pass
+		else:
+			if ' ' in name:
+				names = name.split(' ')
+				name = 'frm_'
+				last = None
+				for n in names:
+					if n.isupper():
+						value = n+'_'
+						current = 'upper'
+					elif n.istitle():
+						value = n[0]
+						current = 'title'
+					else:
+						continue
+					if last is not None and (current == 'upper' and last == 'title'):
+						name += '_'+value
+					else:
+						name += value
+					last = current
+			else:
+				name2 = ''
+				for char in name:
+					if char.isupper():
+						name += char
+				name = name2
+		name = name.strip('_')
+		if name not in self.forms:
+			self.__setattr__(name, Form)
+			self.forms.add(name)
+
 	def add_control(self, form, username, *args):
 		_sysinfo = uname()
+		if form not in self.forms:
+			self.forms.add(form)
+			# raise ValueError()
 		for ctrl in args:
+			pfx = ctrl_pfx_dict[ctrl.__class__.__name__]
+			sfx = ctrl.__name__.strip()
+			# sfx2 = ''
+			# if ' ' in sfx:
+			# 	sfxs = sfx.split(' ')
+			# else:
+			# 	sfxs = [sfx]
+			# for sfx in sfxs:
+			# 	if len(sfx) > 3:
+			# 		chars = []
+			# 		for char in sfx[1:-1]:
+			# 			if char not in vowels:
+			# 				chars.append(char)
+			# 		print(chars)
+			# 		if len(chars) % 2 != 0 and len(chars) > 1:
+			# 			char = chars[(len(chars) // 2) + 1]
+			# 		else:
+			# 			char = chars[len(chars) // 2]
+			# 		sfx2 += sfx[0]+char+sfx[-1]
+			# 	else:
+			# 		sfx2 += sfx
+			# sfx = sfx2.strip('_')
+			control_name = pfx+'_'+sfx.lower()
+
 			if ctrl.__class__.__name__ == 'Tab':
-				self.window_gc.add_local(name=ctrl.__name__, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 5, right=ctrl.coordinates.right, bottom=ctrl.coordinates.bottom + 7)
+				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 5, right=ctrl.coordinates.right, bottom=ctrl.coordinates.bottom + 7)
 			else:
-				self.window_gc.add_local(name=ctrl.__name__, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 6, right=ctrl.coordinates.right - 1, bottom=ctrl.coordinates.bottom + 5)
-			coord = self.window_gc.__getattribute__(ctrl.__name__)
+				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 6, right=ctrl.coordinates.right - 1, bottom=ctrl.coordinates.bottom + 5)
+			coord = self.window_gc.__getattribute__(control_name)
 			img = ExtendedImage(self.window_image[coord.top:coord.bottom, coord.left:coord.right])
 			# plt.imshow(img.array)
 			# plt.show()
 			ctrl.coordinates = Coordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
 			c.execute("SELECT [Id] FROM cv_data WHERE [Type] = ? AND [Name] = ? AND [Form] = ? AND [Position] = ? AND [Image] = ?",
-			          (ctrl.__class__.__name__, ctrl.__name__, form, ctrl.coordinates, img))
+			          (ctrl.__class__.__name__, control_name, form, ctrl.coordinates, img))
 			val = c.fetchone()
 			if not val:
 				c.execute("INSERT INTO cv_data (Type,Name,Form,Position,Image,OS_Name,OS_General_Version,OS_Specific_Version,Computer_Name,Username) VALUES (?,?,?,?,?,?,?,?,?,?)",
-				          (ctrl.__class__.__name__, ctrl.__name__, form, ctrl.coordinates, img, _sysinfo.system, _sysinfo.release, _sysinfo.version, _sysinfo.node, username))
+				          (ctrl.__class__.__name__, control_name, form, ctrl.coordinates, img, _sysinfo.system, _sysinfo.release, _sysinfo.version, _sysinfo.node, username))
 				conn.commit()
 				c.execute("SELECT [Id] FROM cv_data WHERE [Type] = ? AND [Name] = ? AND [Form] = ? AND [Position] = ? AND [Image] = ?",
-				          (ctrl.__class__.__name__, ctrl.__name__, form, ctrl.coordinates, img))
+				          (ctrl.__class__.__name__, control_name, form, ctrl.coordinates, img))
 				val = c.fetchone()
 			c.execute("SELECT [Id],[Type],[Name],[Form],[Position],[Image],[Reliability] FROM cv_data WHERE [Id] = ?", (val[0],))
 			val = c.fetchone()
 			# print(val)
 			ctrl = ControlInfo(*val)
-			self.controls[ctrl.Form][ctrl.Type][ctrl.Name] = ctrl
-			self._controls.append(ctrl)
-			self._worker._val = choice(colors), ctrl.Position.left, ctrl.Position.top, ctrl.Position.right, ctrl.Position.bottom
-			self._control_ids.append(ctrl.Id)
-			sleep(1)
+			if ctrl not in self.controls:
+				self.controls.add(ctrl.Name)
+				self.__getattribute__(ctrl.Form).__setattr__(self, ctrl.Name, ctrl)
+			# self._worker._val = choice(colors), ctrl.Position.left, ctrl.Position.top, ctrl.Position.right, ctrl.Position.bottom
+				self._control_ids.append(ctrl.Id)
 			# self.controls[ctrl.__class__.__name__][ctrl.__name__] = (val, ctrl._kwargs)
 			# self._controls[ctrl.__class__.__name__][ctrl.__name__] = SkeletonClass(ctrl.__class__, ctrl.criteria)
 
@@ -597,12 +678,61 @@ def main():
 			pwd = "JRJul17!"
 			app.log_in(usr, pwd)
 			cv = CV_Config(window=app._win)
-			app.open_form("Units")
-			unit_txt = Textbox(window=app._all_win, criteria={'best_match': "Unit:Edit"}, control_name='Unit')
-			item_txt = Textbox(window=app._all_win, criteria={'best_match': "Item:Edit"}, control_name='Item')
-			srol_btn = Button(window=app._all_win, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, control_name='Service Order Lines')
-			ownhist_tab = Tab(window=app._all_win, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', control_name='Owner History', controls={})
-			cv.add_control('Units', 'jredding', unit_txt, item_txt, srol_btn, ownhist_tab)
+
+			app.open_form('Miscellaneous Issue')
+			cv.add_control('frm_MiscIssue', usr,
+			               Button(window=app._all_win, criteria={'best_match': "ProcessButton", 'control_type': "Button", 'top_level_only': False}, control_name='proc'),
+			               Textbox(window=app._all_win, criteria={'best_match': "Item:Edit0", 'visible_only': True}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='item'),
+						   Tab(window=app._all_win, criteria={'best_match': "DetailTabControl"}, name='Detail', controls={
+							   'txt_loc': {'class': Textbox, 'kwargs': {'window': app._all_win, 'criteria': {'best_match': 'Location:Edit', 'top_level_only': False}, 'control_name': 'txt_loc'}},
+							   'txt_qty': {'class': Textbox, 'kwargs': {'window': app._all_win, 'criteria': {'best_match': 'Quantity:Edit', 'top_level_only': False}, 'control_name': 'txt_qty'}},
+							   'txt_rsn': {'class': Textbox, 'kwargs': {'window': app._all_win, 'criteria': {'best_match': 'Reason:Edit', 'top_level_only': False}, 'control_name': 'txt_rsn'}},
+							   'txt_doc_num': {'class': Textbox, 'kwargs': {'window': app._all_win, 'criteria': {'best_match': 'Document Number:Edit', 'top_level_only': False}, 'control_name': 'txt_doc_num'}}
+						        }, control_name='dtl'),
+						   Tab(window=app._all_win, criteria={'best_match': "Serial NumbersTabControl"}, name='Serial Numbers', controls={
+							   'txt_gen_qty': {'class': Textbox, 'kwargs': {'window': app._all_win, 'criteria': {'best_match': 'Generate Qty:Edit', 'visible_only': True}, 'control_name': 'txt_gen_qty'}}
+						        }, control_name='Serial Numbers'))
+			cv.save_current_configuration('TEST')
+
+			app.open_form('Units')
+			cv.add_control('frm_Units', usr,
+			               Textbox(window=app._win, criteria={'best_match': "Unit:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='unit'),
+			               Textbox(window=app._win, criteria={'best_match': "Description:Edit"}, control_name='desc'),
+			               Textbox(window=app._win, criteria={'best_match': "Item:Edit", 'visible_only': True, 'enabled_only': True}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='item'),
+			               Textbox(window=app._win, criteria={'best_match': 'Customer:Edit1'}, control_name='cust'),
+			               Textbox(window=app._win, criteria={'best_match': 'Unit Status Code:Edit'}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='unit_status_code'),
+			               Textbox(window=app._win, criteria={'best_match': 'Ship To:Edit1'}, control_name='ship_to'),
+			               Button(window=app._win, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, control_name='svc_order_lines'),
+			               Button(window=app._win, criteria={'auto_id': 'uf_OverrideStatusBtn', 'control_type': "Button", 'top_level_only': False}, control_name='change_status'),
+			               Tab(window=app._win, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', controls={
+				               'grd_owner_history': {'class': GridView, 'kwargs': {'window': app._win, 'criteria': {'parent': app._win2.child_window(best_match='Alt. 6/7 Digit SN:GroupBox'), 'auto_id': "ConsumerHistoryGrid", 'control_type': "Table", 'top_level_only': False}, 'control_name': 'grd_owner_history'}}
+				               }, control_name='owner_history'),
+				           Tab(window=app._win, criteria={'best_match': "Service HistoryTabControl"}, name='Service History', controls={
+					           'grid': {'class': GridView, 'kwargs': {'window': app._win, 'criteria': {'parent': app._win2.window_uia.child_window(best_match='Resource:GroupBox'), 'auto_id': "fsTmpSROLineViewsGrid", 'control_type': "Table", 'top_level_only': False}, 'control_name': 'grd_svc_history'}},
+					           'view': {'class': Button, 'kwargs': {'window': app._win, 'criteria': {'auto_id': "BtnSROLineView", 'control_type': "Button", 'top_level_only': False}, 'control_name': 'btn_view'}}
+					           }, control_name='svc_history'),
+				           Tab(window=app._win, criteria={'best_match': "UNIT DATATabControl"}, name='UNIT DATA', controls={
+					           'txt_esn': {'class': Textbox, 'kwargs': {'window': app._win, 'criteria': {'best_match': "ESN:Edit"}, 'fmt': ('alphabetic', 'numeric', 'upper'), 'control_name': 'txt_esn'}}
+					           }, control_name='unit_data'))
+
+			app.open_form('Service Order Lines')
+			cv.add_control('frm_SRO_Lines', usr,
+			               Textbox(window=app._win, criteria={'best_match': "Status:Edit2"}, control_name='status'),
+			               Button(window=app._win, criteria={'auto_id': "SROOpersButton", 'control_type': "Button", 'top_level_only': False}, control_name='sro_oprtns'))
+
+			app.open_form('Service Order Operations')
+			cv.add_control('frm_SRO_Operations', usr,
+			               Textbox(window=app._win, criteria={'best_match': "Status:Edit3"}, control_name='status'),
+			               Button(window=window, criteria={'auto_id': "TransactionsButton", 'control_type': "Button", 'top_level_only': False}, control_name='sro_transactions'),
+			               )
+
+			app.open_form('Serial Numbers')
+			cv.add_control('frm_SerNums', usr,
+			               Textbox(window=app._all_win, criteria={'best_match': "S/N:Edit"}, fmt=('alphabetic', 'numeric', 'upper'), control_name='sn'),
+			               Textbox(window=app._all_win, criteria={'best_match': "Status:Edit"}, control_name='status'),
+			               Textbox(window=app._all_win, criteria={'best_match': 'Location:Edit'}, control_name='loc'))
+
+			colorspace_iterator()
 			# for ctrl,names in cv.controls.items():
 			# 	for name in names:
 			# 		print(name, ctrl, cv.controls[ctrl][name][0](**cv.controls[ctrl][name][1]))
