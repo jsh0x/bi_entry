@@ -147,7 +147,7 @@ class Coordinates:
 	@left.setter
 	def left(self, value):
 		if self._right and value >= self._right:
-			raise ValueError
+			raise ValueError(f"Value left {value} >= value right {self._right}")
 		else:
 			self._left = value
 
@@ -158,7 +158,7 @@ class Coordinates:
 	@top.setter
 	def top(self, value):
 		if self._bottom and value >= self._bottom:
-			raise ValueError
+			raise ValueError(f"Value top {value} >= value bottom {self._bottom}")
 		else:
 			self._top = value
 
@@ -169,7 +169,7 @@ class Coordinates:
 	@right.setter
 	def right(self, value):
 		if self._left and value <= self._left:
-			raise ValueError
+			raise ValueError(f"Value right {value} <= value left {self._left}")
 		else:
 			self._right = value
 
@@ -180,7 +180,7 @@ class Coordinates:
 	@bottom.setter
 	def bottom(self, value):
 		if self._top and value <= self._top:
-			raise ValueError
+			raise ValueError(f"Value bottom {value} <= value top {self._top}")
 		else:
 			self._bottom = value
 
@@ -257,6 +257,15 @@ class _LocalCoordinates(Coordinates):
 		super().__init__(left=left, top=top, right=right, bottom=bottom)
 
 
+class _LocalCoordinates2(Coordinates):
+	def __init__(self, global_container: GlobalCoordinates, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0):
+		self.global_left = global_container.left
+		self.global_top = global_container.top
+		self.global_right = global_container.right
+		self.global_bottom = global_container.bottom
+		super().__init__(left=left, top=top, right=right, bottom=bottom)
+
+
 class GlobalCoordinates(Coordinates):
 	def __init__(self, left: int=0, top: int=0, right: int=0, bottom: int=0):
 		super().__init__(left=left, top=top, right=right, bottom=bottom)
@@ -268,6 +277,11 @@ class GlobalCoordinates(Coordinates):
 
 	def add_local(self, name: str, left: int=0, top: int=0, right: int=0, bottom: int=0):
 		local_coord = _LocalCoordinates(left=left, top=top, right=right, bottom=bottom, global_container=self)
+		self.__setattr__(name, local_coord)
+		self._locals.append(name)
+
+	def _add_local(self, name: str, left: int=0, top: int=0, right: int=0, bottom: int=0):
+		local_coord = _LocalCoordinates2(left=left, top=top, right=right, bottom=bottom, global_container=self)
 		self.__setattr__(name, local_coord)
 		self._locals.append(name)
 
@@ -469,8 +483,12 @@ class ControlConfig(NamedTuple):
 
 
 class Form:
-	def __init__(self):
-		pass
+	attr_dict = {}
+	def __init__(self, *args, **kwargs):
+		self.attr_dict = {}
+		for k,v in kwargs.items():
+			self.__setattr__(k, v)
+			self.attr_dict[k] = v
 
-	def test(self):
-		print("TEST")
+	def list_attr(self):
+		return self.attr_dict

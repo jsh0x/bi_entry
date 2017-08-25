@@ -25,10 +25,14 @@ class Timer:
 
 def get_total_reliability(a: np.ndarray) -> float:
 	"""Calculates the total reliability as:  Sum(a) * ( Average(a) / StandardDeviation(a) )"""
-	x = a.std(dtype=np.float32)
+	x = a.std(dtype=np.float)
 	y = a.sum()
-	z = a.mean(dtype=np.float32)
-	return float(np.round(np.multiply(np.true_divide(z, x), y), decimals=3))
+	z = a.mean(dtype=np.float)
+	if y > 0:
+		# print(f'x: {x}\ny: {y}\nz: {z}\nz/x: {np.true_divide(z, x)}\ny*(z/x): {np.multiply(np.true_divide(z, x), y)}')
+		return float(np.round(np.multiply(np.true_divide(z, x), y), decimals=3))
+	else:
+		return 0.000
 
 
 def power(x1, x2):
@@ -124,4 +128,4 @@ def colorspace_transition(start: float, stop: float, num: int):
 	np.linspace(start, stop, num, dtype=np.float)
 
 
-colorspace_iterator(16)
+# colorspace_iterator(16)
