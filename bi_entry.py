@@ -1400,6 +1400,7 @@ cellular_unit_builds = ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M
 # where [Serial Number] = '1234567'
 # and [Status] = 'Reason'
 
+
 def scrap2(app: Application):
 	cv = CV_Config(window=app._win)
 	log.debug("Scrap script started")
@@ -1440,6 +1441,9 @@ def scrap2(app: Application):
 				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
 		try:
 			timer.start()
+			count1 = 0
+			count2 = 0
+			count3 = 0
 			all_units_grouped = _group_units_by_build(all_units)
 			log.debug(f"Units split into {len(all_units_grouped.keys())} group(s)")
 			sorted_keys = sorted(all_units_grouped.keys(), key=lambda x: len(all_units_grouped[x]), reverse=True)
@@ -1457,6 +1461,7 @@ def scrap2(app: Application):
 
 				cv.load_previous_configuration('frm_SerNums')
 				for unit in units:
+					count1 += 1
 					_try_serial2(unit, app, cv)
 
 					status = SrlNum.status.texts()[0]
@@ -1525,6 +1530,7 @@ def scrap2(app: Application):
 					pag.press('right')
 					sleep(1)
 					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
+						count2 += 1
 						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
 						if app.popup.exists(1, 2):
 							# skipped_units[build].append(unit)
@@ -1544,17 +1550,31 @@ def scrap2(app: Application):
 						app.open_form('Miscellaneous Issue')
 						MiscIssue = app.MiscellaneousIssueForm
 					else:
-						pag.hotkey('alt', 'r')
+						pag.click(*cv.window_gc.btn_proc.global_center)
 						pag.press('enter')
-					sleep(10)
+						sleep(5)
+						pag.press('esc')
+						sleep(0.5)
 				pag.keyUp('ctrlleft')
 				pag.keyUp('ctrlright')
 				pag.keyUp('ctrl')
 				log.debug("Step 2 Complete")
+			end_time = timer.stop()
+
+			begin_string = ""
+			if count1 > 0:
+				begin_string += f"{count1} unit(s) checked through Serial Numbers"
+			if count1 > 0 and count2 > 0:
+				begin_string += " and "
+			if count2 > 0:
+				begin_string += f"{count2} unit(s) processed through Miscellaneous Issue"
+			begin_string += ", "
+			time_log.info(f"{begin_string} Total time {end_time}")
 			UnitsFormFocus.select()
 			app.add_form('UnitsForm')
 			Units = app.UnitsForm
 			log.debug("Step 3 Started")
+			timer.start()
 			for unit in all_units:
 				try:
 					cv.load_previous_configuration('frm_Units')
@@ -1697,8 +1717,8 @@ def scrap2(app: Application):
 					app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='NOTES', case_sensitive=True)
 					while app.popup.exists():
 						app.popup.close_alt_f4()
-						app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='')
-						kbd.SendKeys('NOTES')
+						pag.press('f8', 10)
+						pag.typewrite('NOTES')
 					note_txt = app._win2.child_window(auto_id='DerContentEdit')
 					note_txt.set_focus()
 					note_txt.click_input()
@@ -1729,14 +1749,15 @@ def scrap2(app: Application):
 						pag.press('f4')
 						pag.press('f5')
 						pag.hotkey('alt', 'y')
+						mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 						continue
-						# mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 					continue
 					pag.press('f4')
 					pag.press('f5')
 					pag.hotkey('alt', 'y')
 				else:
 					if not dev_mode:
+						count3 += 1
 						mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
 						mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
 		except Exception:
@@ -1744,10 +1765,15 @@ def scrap2(app: Application):
 			if not dev_mode:
 				for unit in all_units:
 					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			if count3 > 0:
+				end_time = timer.stop()
+				begin_string = f"{count3} units fully scrapped through the Units form."
+				time_log.info(f"{begin_string} Total time {end_time}")
 			quit()
 		else:
 			end_time = timer.stop()
-
+			begin_string = f"{count3} units fully scrapped through the Units form."
+			time_log.info(f"{begin_string} Total time {end_time}")
 			# if len(unit_locations.keys()) > 0:
 			# 	total = 0
 			# 	for u in unit_locations.values():
