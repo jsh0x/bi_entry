@@ -259,10 +259,13 @@ class _LocalCoordinates(Coordinates):
 
 class _LocalCoordinates2(Coordinates):
 	def __init__(self, global_container: GlobalCoordinates, left: int = 0, top: int = 0, right: int = 0, bottom: int = 0):
-		self.global_left = global_container.left
-		self.global_top = global_container.top
-		self.global_right = global_container.right
-		self.global_bottom = global_container.bottom
+		width = np.subtract(right, left)
+		height = np.subtract(bottom, top)
+		self.global_left = global_container.left+left
+		self.global_top = global_container.top+top
+		self.global_right = self.global_left+width
+		self.global_bottom = self.global_top+height
+		self.global_center = np.add(self.global_left, np.floor_divide(width, 2)), np.add(self.global_top, np.floor_divide(height, 2))
 		super().__init__(left=left, top=top, right=right, bottom=bottom)
 
 

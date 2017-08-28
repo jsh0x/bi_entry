@@ -12,7 +12,7 @@ from PIL import Image
 
 from controls import Control, Button, Checkbox, Textbox, Datebox, VerticalScrollbar, HorizontalScrollbar, GridView, Tab
 from commands import screenshot, Application
-from math_ import get_total_reliability, colorspace_iterator
+from math_ import get_total_reliability, colorspace_iterator, get_line
 from types_ import Coordinates, ControlInfo, ControlConfig, GlobalCoordinates, Form, UniqueList, ExtendedImage
 
 
@@ -306,6 +306,12 @@ conn.commit()
 # conn.commit()
 
 
+
+# 271, 354, 340, 366
+# ctrl = Coordinates(left=445, top=354, right=514, bottom=366)
+# c.execute("UPDATE cv_data SET Position = ? WHERE Id = ?", (ctrl,35))
+# conn.commit()
+# quit()
 class CV_Config:
 	__slots__ = ['_window', '_username', '_window_gc', '_window_image',
 	             '_cropped_window_image', 'forms', 'controls', '_control_ids',
@@ -794,6 +800,9 @@ if print_it:
 else:
 	print_db_simple()
 
+# TODO: Instead of re-loading configs over and over, load once and switch through active/inactive
+# TODO: Record last focused control in order to avoid redundant focuses
+
 def main():
 	filepath = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
 	with Application(filepath) as app:
@@ -891,24 +900,56 @@ def main():
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Location:Edit'}, control_name='loc'))
 			# cv.save_current_configuration('frm_SerNums')
 			# quit()
+			app.open_form('Miscellaneous Issue')
+			print(1)
+			sleep(15)
+			print(2)
+			sleep(10)
+			cv.add_control('frm_TEST', usr,
+			               Textbox(window=app._all_win, criteria={'best_match': "Generate Qty:Edit", 'visible_only': True}, control_name='gen_qty'))
+			print(cv.window_gc.txt_gen_qty.coords)
+			img = cv.window_image.copy()
+			plt.imshow(img[cv.window_gc.txt_gen_qty.top:cv.window_gc.txt_gen_qty.bottom, cv.window_gc.txt_gen_qty.left:cv.window_gc.txt_gen_qty.right])
+			plt.show()
+			sleep(5)
+			quit()
+
+
+
+
+
 			app.open_form('Units')
 			cv.load_previous_configuration('frm_Units')
 			clrs = colorspace_iterator(6)
 			img = cv.window_image.copy()
-			layer = np.zeros_like(img)
 			ones = np.ones(img.shape[-1])
 			for i,color in enumerate(clrs):
-				img = cv.window_image.copy()
+				layer = np.zeros_like(img)
+				# img = cv.window_image.copy()
 				if i == 0:
 					cx,cy = cv.frm_Units.txt_unit.Position.center
 					h = cv.frm_Units.txt_unit.Position.height//4
 					di = np.diag_indices(h*2)
 					di_rev = (di[0][::-1], di[1])
-					print(di, di_rev)
 					sub_img = layer[cy-h:cy+h+1, cx-h:cx+h+1].view()
-					sub_img[di] = ones
+					sub_img[di] = sub_img[di_rev] = ones
 					img = np.where(layer == ones, color, img)
-			cv.plot(img)
+				elif i == 1:
+					cx2, cy2 = cv.frm_Units.txt_cust.Position.center
+					line = get_line(cx, cy, cx2, cy2)
+					layer[line] = ones
+					img = np.where(layer == ones, color, img)
+				elif i == 2:
+					cx = cx2
+					cy = cy2
+					h = cv.frm_Units.txt_cust.Position.height // 4
+					di = np.diag_indices(h * 2)
+					di_rev = (di[0][::-1], di[1])
+					sub_img = layer[cy - h:cy + h + 1, cx - h:cx + h + 1].view()
+					sub_img[di] = sub_img[di_rev] = ones
+					img = np.where(layer == ones, color, img)
+			plt.imshow(img)
+			plt.show()
 
 
 			# for ctrl,names in cv.controls.items():

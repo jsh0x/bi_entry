@@ -120,7 +120,9 @@ def rgb_int_to_float(rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
 def colorspace_iterator(num: int) -> Iterable[Tuple[int, int, int]]:
 	hue = np.linspace(0., 1., num, dtype=np.float)
 	# hue = np.array([np.float(str(x)) for x in np.linspace(0., 1., num, dtype=np.float)])
-	return map(rgb_float_to_int, map(hsv_to_rgb, *np.vstack((hue, np.ones_like(hue), np.ones_like(hue)))))
+
+	# Nested maps??
+	return map(lambda x: (np.uint8(x[0]), np.uint8(x[1]), np.uint8(x[2])), map(rgb_float_to_int, map(hsv_to_rgb, *np.vstack((hue, np.ones_like(hue), np.ones_like(hue))))))
 
 
 def colorspace_transition(start: float, stop: float, num: int):
@@ -128,4 +130,11 @@ def colorspace_transition(start: float, stop: float, num: int):
 	np.linspace(start, stop, num, dtype=np.float)
 
 
-# colorspace_iterator(16)
+def get_line(x1: int, y1: int, x2: int, y2: int):
+	width = np.abs(np.subtract(x2, x1))
+	height = np.abs(np.subtract(y2, y1))
+	if height != width:
+		max_dim = max(height, width)
+		return np.linspace(y1, y2, max_dim, dtype=np.intp), np.linspace(x1, x2, max_dim, dtype=np.intp)
+	else:
+		return np.linspace(y1, y2, width, dtype=np.intp), np.linspace(x1, x2, height, dtype=np.intp)
