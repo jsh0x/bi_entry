@@ -125,7 +125,7 @@ class ExtendedImage(object):
 		return self.__getattribute__('_img').__getattr__(item)
 
 	def __repr__(self):
-		return f'<ExtendedImage object resolution={self._img.size[0]}x{self._img.size[1]}, mode={self._img.mode}>'
+		return f'<ExtendedImage object; resolution={self._img.size[0]}x{self._img.size[1]}, mode={self._img.mode}>'
 
 
 class Coordinates:
@@ -202,7 +202,7 @@ class Coordinates:
 		return f"({self.left}, {self.top}, {self.right}, {self.bottom})"
 
 	def __repr__(self):
-		return f"<COORD L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
+		return f"<Coordinate object; L{self.left}, T{self.top}, R{self.right}, B{self.bottom}>"
 
 	def __bytes__(self):
 		return bytes(f"{self.left},{self.top},{self.right},{self.down}", encoding="utf-8")

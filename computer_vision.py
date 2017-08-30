@@ -802,6 +802,7 @@ else:
 
 # TODO: Instead of re-loading configs over and over, load once and switch through active/inactive
 # TODO: Record last focused control in order to avoid redundant focuses
+# TODO: Script SPEED
 
 def main():
 	filepath = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
@@ -900,24 +901,6 @@ def main():
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Location:Edit'}, control_name='loc'))
 			# cv.save_current_configuration('frm_SerNums')
 			# quit()
-			app.open_form('Miscellaneous Issue')
-			print(1)
-			sleep(15)
-			print(2)
-			sleep(10)
-			cv.add_control('frm_TEST', usr,
-			               Textbox(window=app._all_win, criteria={'best_match': "Generate Qty:Edit", 'visible_only': True}, control_name='gen_qty'))
-			print(cv.window_gc.txt_gen_qty.coords)
-			img = cv.window_image.copy()
-			plt.imshow(img[cv.window_gc.txt_gen_qty.top:cv.window_gc.txt_gen_qty.bottom, cv.window_gc.txt_gen_qty.left:cv.window_gc.txt_gen_qty.right])
-			plt.show()
-			sleep(5)
-			quit()
-
-
-
-
-
 			app.open_form('Units')
 			cv.load_previous_configuration('frm_Units')
 			clrs = colorspace_iterator(6)

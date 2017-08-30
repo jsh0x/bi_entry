@@ -8,7 +8,7 @@ from collections import defaultdict, UserDict
 import datetime
 import argparse
 import concurrent.futures as cf
-from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator
+from typing import Union, Iterable, Dict, Any, Tuple, List, Iterator, NamedTuple
 from time import sleep
 
 import numpy as np
@@ -28,7 +28,6 @@ from computer_vision import CV_Config
 
 pag.FAILSAFE = True
 
-LabeledDataRow = Dict[str, Any]
 SRO_Row = Dict[str, Any]
 # TODO: LabeledDataRow -> NamedTuple
 Date_Dict = Dict[str, datetime.datetime]
@@ -88,11 +87,11 @@ timer = TestTimer()
 class Part:
 	def __init__(self, part_number: str, quantity: int=1):
 		self.part_number = part_number
-		_data = mssql.query(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
-		self.quantity = quantity * int(_data.get('Qty', 1))
-		self.display_name = str(_data.get('DispName', None))
-		self.part_name = str(_data.get('PartName', None))
-		self.location = str(_data.get('Location', None))
+		_data = mssql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+		self.quantity = quantity * _data.Qty
+		self.display_name = _data.DispName
+		self.part_name = _data.PartName
+		self.location = _data.Location
 		log.debug(f"Part initialization complete for part {self.part_number}")
 
 	def __str__(self):
@@ -100,25 +99,14 @@ class Part:
 
 
 class Unit:
-	def __init__(self, **kwargs: LabeledDataRow):
+	def __init__(self, args: NamedTuple):
 		# for k,v in kwargs.items():
 		# 	log.info(f"{k}  {v}")
-		self.id = kwargs.get('Id', None)
-		self.serial_number = kwargs.get('Serial Number', None)
+		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
+		self.parts, self.datetime, self.notes, _status = args
 		# self.serial_number = kwargs.get('SerialNumber', None)
 		# self.serial_number_prefix = None
-		self._serial_number_prefix = None
-		self.esn = kwargs.get('ESN', None)
-		self.build = kwargs.get('Build', None)
-		self.suffix = kwargs.get('Suffix', None)
-		self.operation = kwargs.get('Operation', None)
-		self.operator = kwargs.get('Operator', None)
-		self.parts = kwargs.get('Parts', None)
-		self.datetime = kwargs.get('DateTime', None)
-		self.notes = kwargs.get('Notes', None)
-		self._product = None
-		self._whole_build = None
-		self._operator_initials = None
+		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = None
 		log.debug("Unit initialization complete")
 
 	@property
@@ -176,10 +164,10 @@ class Unit:
 	@property
 	def whole_build(self):
 		if self._whole_build is None:
-			data = mssql.query(f"SELECT [ItemNumber],[Carrier],[Suffix] FROM UnitData WHERE [SerialNumber] = '{self.serial_number}'")
-			if not data:
+			data = mssql.execute(f"SELECT [ItemNumber],[Carrier],[Suffix] FROM UnitData WHERE [SerialNumber] = '{self.serial_number}'")
+			if not data[0]:
 				raise ValueError
-			item,carrier,sfx = data['ItemNumber'],data['Carrier'],data['Suffix']
+			item,carrier,sfx = data
 			if carrier == 'None':
 				build = item
 			else:
@@ -204,7 +192,7 @@ class Unit:
 	@property
 	def operator_initials(self):
 		if self._operator_initials is None:
-			fullname = mssql.query(f"SELECT [FullName] FROM Users WHERE [Username] = '{self.operator}'")
+			fullname = mssql.execute(f"SELECT [FullName] FROM Users WHERE [Username] = '{self.operator}'")
 			first, last = fullname[0].split(' ', 1)
 			self._operator_initials = first.strip()[0].upper()+last.strip()[0].upper()
 		return self._operator_initials
@@ -216,8 +204,8 @@ class Unit:
 	@property
 	def product(self):
 		if self._product is None:
-			data = mssql.query(f"SELECT [Product] FROM Builds WHERE [Prefix] = '{self.serial_number_prefix}'")
-			if not data:
+			data = mssql.execute(f"SELECT [Product] FROM Builds WHERE [Prefix] = '{self.serial_number_prefix}'")
+			if not data[0]:
 				raise ValueError
 			self._product = data[0]
 		return self._product
@@ -231,15 +219,6 @@ class Unit:
 
 
 # or Default_Listionary
-
-
-def pre__init__(app: Application):
-	log.debug("Pre-initialization process started")
-	# app._add_form('Units', preinit=True)
-	# app._add_form('SROLines', preinit=True)
-	# app._add_form('SROOperations', preinit=True)
-	# app._add_form('SROTransactions', preinit=True)
-	log.debug("Pre-initialization completed")
 
 
 def _try_unit(unit: Unit, app: Application):
@@ -377,7 +356,6 @@ def _open_first_open_sro(unit: Unit, app: Application):
 			log.debug(f"Status found: {SRO_Lines.status}")
 			if SRO_Lines.status != 'Open':  # If Service Order Lines' status isn't open, go back and try next SRO
 				raise SROClosedWarning(data='SRO_Lines')
-			xml_helpers.WriteDialogToFile('SROLines.xml', app._win.wrapper_object())
 			app.write_data('SROLines')
 			SRO_Lines.sro_operations.click()
 			log.debug("Opening Service Order Operations form")
@@ -421,11 +399,11 @@ def transact(app: Application):
 	sleep_counter = 0
 	while True:
 		log.debug("Checking queued non-QC transactions")
-		queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] <> 'QC'", fetchall=True)
+		queued = mssql.execute("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] <> 'QC'", fetchall=True)
 		if not queued:
 			log.debug("No queued non-QC transactions found")
 			log.debug("Checking queued QC transactions")
-			queued = mssql.query("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] = 'QC'", fetchall=True)
+			queued = mssql.execute("SELECT DISTINCT [Suffix] FROM PyComm WHERE [Status] = 'Queued' AND [Operation] = 'QC'", fetchall=True)
 			if not queued:
 				log.debug("No queued QC transactions found")
 				if sleep_counter > 16:
@@ -437,15 +415,12 @@ def transact(app: Application):
 				sleep_counter += 1
 				continue
 			else:
-				log.debug(f"Queued QC transaction found for suffix type: {queued[0]}")
+				log.debug(f"Queued QC transaction found for suffix type: {queued[0][0]}")
 				mod = '='
 		else:
-			log.debug(f"Queued non-QC transaction found for suffix type: {queued[0]}")
+			log.debug(f"Queued non-QC transaction found for suffix type: {queued[0][0]}")
 			mod = '<>'
-		queued2 = []
-		for q in queued:
-			queued2.append(q[0])
-		queued = queued2
+		queued = queued[0]
 		sorted_sfx_queue = sorted(queued, key=lambda x: sfx_dict[x])
 		log.debug("Receiving unit data")
 		sleep_counter = 0
@@ -478,25 +453,24 @@ def transact(app: Application):
 		# Where[Status] = 'Queued' AND Operation = 'QC' AND Parts != '') q
 		# Order by q.[Suffix] ASC, q.[DateTime] ASC
 		# unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] ASC")
-		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] DESC")
-		unit = Unit(**unit_data)
+		unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Suffix] = '{sorted_sfx_queue[0]}' AND [Status] = 'Queued' AND [Operation] {mod} 'QC' ORDER BY [DateTime] DESC")
+		unit = Unit(unit_data)
 		if unit.operation == 'QC':
-			reason_check = mssql.query(f"SELECT * FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason'")
-			if reason_check:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Paused Queue' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
+			reason_check = mssql.execute(f"SELECT * FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason'")
+			if reason_check[0]:
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Paused Queue' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 				continue
 		log.info("Unit data found:")
-		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
-		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
+		log.info(f"SN: {unit_data.Serial_Number}, Build: {unit_data.Build}, Suffix: {unit_data.Suffix}, Notes: {unit_data.Notes}")
+		log.info(f"DateTime: {unit_data.DateTime}, Operation: {unit_data.Operation}, Operator: {unit_data.Operator}, Parts: {unit_data.Parts}")
 		if not dev_mode:
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 		try:
 			app.add_form('UnitsForm')
 			Units = app.UnitsForm
 			timer.start()
 			# Opens unit
 			_try_unit(unit, app)
-			app.write_data('Units')
 			Units.owner_history_tab.select()
 			Units.owner_history_tab.grid.sort_with_header('Eff Date')
 			Units.owner_history_tab.grid.populate('Eff Date', 1)
@@ -506,7 +480,6 @@ def transact(app: Application):
 			sro_count = _open_first_open_sro(unit, app)
 			SRO_Lines = app.ServiceOrderLinesForm
 			SRO_Operations = app.ServiceOrderOperationsForm
-			app.write_data('SROOperations')
 			part_count = 0
 			if unit.parts:
 				log.debug("Opening SRO Transactions form")
@@ -518,7 +491,6 @@ def transact(app: Application):
 				# SRO_Transactions.apply_filter.ready()
 				log.debug("SRO Transactions form opened")
 				log.debug("Setting Date Range Start")
-				app.write_data('SROTransactions')
 				SRO_Transactions.date_range_start.set_text(min_date)
 				SRO_Transactions.apply_filter.click()
 				max_rows = SRO_Transactions.grid.rows-1
@@ -665,8 +637,8 @@ def transact(app: Application):
 			if not fl_d:
 				min_date_temp = datetime.datetime.strptime(min_date, '%m/%d/%Y')
 				date_string = min_date_temp.strftime("%Y-%m-%d 00:00:00")
-				value = mssql.query(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
-				if not value:
+				value = mssql.execute(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
+				if not value[0]:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
 					# value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")  ####???
@@ -734,7 +706,7 @@ def transact(app: Application):
 				is_closed_status = ''
 		except pag.FailSafeException:
 			log.error("Failsafe triggered!")
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -742,7 +714,7 @@ def transact(app: Application):
 			quit()
 		except UnitClosedError:
 			log.error("No open SROs found")
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -751,7 +723,7 @@ def transact(app: Application):
 		except Exception:
 			log.exception("Something went horribly wrong")
 			if not dev_mode:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			else:
 				quit()
 			app.cancel_close.click()
@@ -770,7 +742,7 @@ def transact(app: Application):
 				Units._unit.set_keyboard_focus()
 				Units._unit.send_keystrokes('{F4}')
 				Units._unit.send_keystrokes('{F5}')
-				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 				log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
 				end_time = timer.stop()
 				sro_string = part_string = ""
@@ -792,8 +764,8 @@ def query(app: Application):
 	while True:
 		# try:
 		log.debug("Checking queued Queries")
-		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Request' ORDER BY [DateTime] ASC")
-		if not unit_data:
+		unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Request' ORDER BY [DateTime] ASC")
+		if not unit_data[0]:
 			log.debug("No queued Queries found")
 			continue
 		log.debug(f"Queued Queries found")
@@ -855,16 +827,16 @@ def query(app: Application):
 		if not build:
 			build = 'No SL Data'
 
-		row = mssql.query(f"SELECT * FROM UnitData WHERE [SerialNumber] = '{sn2}'")
-		if row:
-			mssql.modify(f"UPDATE UnitData SET [ItemNumber] = '{build}',[Carrier] = '{carrier}',[Date] = GETDATE(),[Suffix] = '{sfx}',[ESN] = '{esn}',[SyteLineData] = 1 WHERE [SerialNumber] = '{sn2}'")
+		row = mssql.execute(f"SELECT * FROM UnitData WHERE [SerialNumber] = '{sn2}'")
+		if row[0]:
+			mssql.execute(f"UPDATE UnitData SET [ItemNumber] = '{build}',[Carrier] = '{carrier}',[Date] = GETDATE(),[Suffix] = '{sfx}',[ESN] = '{esn}',[SyteLineData] = 1 WHERE [SerialNumber] = '{sn2}'")
 		else:
-			mssql.modify(f"INSERT INTO UnitData ([SerialNumber],[ItemNumber],[Carrier],[Date],[Suffix],[ESN],[SyteLineData]) VALUES ('{sn2}','{build}','{carrier}',GETDATE(),'{sfx}','{esn}',1)")
+			mssql.execute(f"INSERT INTO UnitData ([SerialNumber],[ItemNumber],[Carrier],[Date],[Suffix],[ESN],[SyteLineData]) VALUES ('{sn2}','{build}','{carrier}',GETDATE(),'{sfx}','{esn}',1)")
 		Units._unit.set_focus()
 		Units._unit.set_keyboard_focus()
 		Units._unit.send_keystrokes('{F4}')
 		Units._unit.send_keystrokes('{F5}')
-		mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Status] = 'Request'")
+		mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Status] = 'Request'")
 
 
 def reason(app: Application):
@@ -893,8 +865,8 @@ def reason(app: Application):
 	# Order by[DateTime] ASC
 
 		# unit_data = mssql.query("Select TOP 1 p.*, f.Failure from PyComm p Inner join FailuresRepairs f on p.Notes = f.ReasonCodes Where p.[Status] = 'Reason' Order by[DateTime] ASC")
-		unit_data = mssql.query(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
-		if not unit_data:
+		unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
+		if not unit_data[0]:
 			log.debug("No queued Reason Codes found")
 			if sleep_counter > 16:
 				sleep(60)
@@ -912,7 +884,7 @@ def reason(app: Application):
 		log.info(f"SN: {unit_data['Serial Number']}, Build: {unit_data['Build']}, Suffix: {unit_data['Suffix']}, Notes: {unit_data['Notes']}")
 		log.info(f"DateTime: {unit_data['DateTime']}, Operation: {unit_data['Operation']}, Operator: {unit_data['Operator']}, Parts: {unit_data['Parts']}")
 		if not dev_mode:
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason' AND [Id] = {int(unit.id)}")
 		try:
 			app.add_form('UnitsForm')
 			Units = app.UnitsForm
@@ -995,15 +967,15 @@ def reason(app: Application):
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
 				SRO_Operations.reasons_tab.reason_notes.send_keystrokes("[ACCEPTED]")
 			else:
-				failure = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")[0]
-				SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{failure}]")
+				failure = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")[0]
+				SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{failure[0]}]")
 			SRO_Operations.reasons_tab.resolution_notes.set_focus()
 			SRO_Operations.reasons_tab.resolution_notes.set_keyboard_focus()
 			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes("^{END}")
 			SRO_Operations.reasons_tab.resolution_notes.send_keystrokes(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 		except pag.FailSafeException:
 			log.error("Failsafe triggered!")
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'Reason' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'Reason' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -1011,7 +983,7 @@ def reason(app: Application):
 			quit()
 		except UnitClosedError:
 			log.error("No open SROs found")
-			mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+			mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			app.cancel_close.click()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -1020,9 +992,9 @@ def reason(app: Application):
 		except Exception:
 			log.exception("Something went horribly wrong")
 			if not dev_mode:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			else:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Started(Reason)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 				quit()
 			app.cancel_close.click()
 			app.cancel_close.click()
@@ -1040,355 +1012,9 @@ def reason(app: Application):
 				Units._unit.set_keyboard_focus()
 				Units._unit.send_keystrokes('{F4}')
 				Units._unit.send_keystrokes('{F5}')
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Paused Queue'")
-				mssql.modify(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Queued' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Paused Queue'")
+				mssql.execute(f"DELETE FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 				log.info(f"Unit {unit.serial_number_prefix}{unit.serial_number} completed")
-
-
-def scrap(app: Application):
-	log.debug("Scrap script started")
-
-	log.debug("Opening Miscellaneous Issue form")
-	app.open_form('Miscellaneous Issue')
-	MiscIssue = app.MiscellaneousIssueForm
-	log.debug("Miscellaneous Issue form opened")
-	sleep(0.5)
-	log.debug("Opening Units form")
-	app.open_form('Units')
-	Units = app.UnitsForm
-	log.debug("Unit form opened")
-
-	log.debug("Opening Serial Numbers form")
-	app.open_form('Serial Numbers')
-	SrlNum = app.SerialNumbersForm
-	log.debug("Serial Numbers form opened")
-	for item in app.window_menu.items():
-		text = item.texts()[0]
-		if 'Units' in text:
-			UnitsFormFocus = item
-		elif 'Miscellaneous Issue' in text:
-			MiscIssueFormFocus = item
-		elif 'Serial Numbers' in text:
-			SrlNumFormFocus = item
-	# NotesFormFocus = None
-	while True:
-		log.debug("Checking queued scrap units")
-		all_unit_data = mssql.query("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
-		if not all_unit_data:
-			continue
-		log.debug("Receiving unit data")
-		all_units = set(map(lambda x: Unit(**x), all_unit_data))
-		log.info(f"Units data found: {len(all_units)}")
-		if not dev_mode:
-			for unit in all_units:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
-		try:
-			timer.start()
-			all_units_grouped = _group_units_by_build(all_units)
-			log.debug(f"Units split into {len(all_units_grouped.keys())} group(s)")
-			sorted_keys = sorted(all_units_grouped.keys(), key=lambda x: len(all_units_grouped[x]), reverse=True)
-			sorted_unit_groups = dict(zip(sorted_keys, map(lambda x: all_units_grouped[x], sorted_keys)))  # Sorts unit groups by quantity in descending order
-			log.debug("Units sorted by quantity in descending order")
-			for i,(key,group) in enumerate(sorted_unit_groups.items()):
-				log.debug(f"Group {i+1}: {key} build, {len(group)} unit(s)")
-			# skipped_units = Default_Lictionary(list)
-			for build,units in sorted_unit_groups.items():
-				if build in cellular_unit_builds:
-					phone = True
-				else:
-					phone = False
-				unit_locations = defaultdict(list)
-				SrlNumFormFocus.select()
-				app.add_form('SerialNumbersForm')
-				SrlNum = app.SerialNumbersForm
-				for unit in units:
-					_try_serial(unit, app)
-					status = SrlNum.status.texts()[0]
-					log.debug(f"Unit location status '{status}' found for unit {unit.serial_number_prefix + unit.serial_number}")
-					if status != 'Out of Inventory':  # OR   status == 'In Inventory' ???
-						location = SrlNum.location.text()
-						unit_locations[location].append(unit)
-						log.debug(f"Unit location '{location}' found for unit {unit.serial_number_prefix + unit.serial_number}")
-					sleep(0.1)
-					SrlNum.serial_number.send_keystrokes('{F4}')
-					SrlNum.serial_number.send_keystrokes('{F5}')
-					sleep(0.1)
-				MiscIssueFormFocus.select()
-				app.add_form('MiscellaneousIssueForm')
-				MiscIssue = app.MiscellaneousIssueForm
-				MiscIssue.item.set_text(build)
-				for location,units in unit_locations.items():
-					MiscIssue.detail_tab.select()
-					MiscIssue.detail_tab.location.set_text(location)
-					MiscIssue.detail_tab.quantity.set_text(float(len(units)))
-					sleep(0.5)
-					kbd.SendKeys('{TAB}')
-					sleep(0.5)
-					if build.count('-') < 2:  # If direct units
-						reason = "24"
-					else:
-						reason = "22"
-					MiscIssue.detail_tab.reason.set_text(reason)
-					MiscIssue.detail_tab.document_number.set_text(f"SCRAP {units[0].operator_initials}")
-					sleep(0.5)
-					MiscIssue.serial_numbers_tab.select()
-					sleep(0.5)
-					MiscIssue.serial_numbers_tab.generate_qty.set_text("9999999")
-					kbd.SendKeys("%g")  # Generate button, (ALT + G)
-					kbd.SendKeys("{RIGHT}")
-					for unit in sorted(units, key=lambda x: int(x.serial_number)):  # Sorts units by serial number in descending order
-						app.find_value_in_collection(collection='SLSerials', property='S/N (SerNum)', value=unit.serial_number)
-						if app.popup.exists(1, 2):
-							# skipped_units[build].append(unit)
-							app.enter()
-							log.debug(f"Added unit {unit.serial_number_prefix + unit.serial_number} to skipped list")
-							continue
-						sleep(0.2)
-						kbd.SendKeys("{LEFT}")
-						sleep(0.2)
-						kbd.SendKeys("{SPACE}")
-						sleep(0.2)
-						kbd.SendKeys("{RIGHT}")
-						sleep(0.2)
-					if dev_mode:
-						app.cancel_close.click()
-						app.open_form('Miscellaneous Issue')
-						MiscIssue = app.MiscellaneousIssueForm
-					else:
-						pag.hotkey('alt', 'r')
-						pag.press('enter')
-						# kbd.SendKeys("%r")  # Process button, (ALT + R)
-				pag.keyUp('ctrlleft')
-				pag.keyUp('ctrlright')
-				pag.keyUp('ctrl')
-				log.debug("Step 2 Complete")
-				UnitsFormFocus.select()
-				app.add_form('UnitsForm')
-				Units = app.UnitsForm
-				log.debug("Step 3 Started")
-				for unit in all_units:
-					try:
-						log.debug(f"Running Step 3 on unit {unit.serial_number_prefix + unit.serial_number}")
-						# if unit in skipped_units:
-						# 	log.debug(f"Skipping Step 3 on unit {unit.serial_number_prefix + unit.serial_number}, it's in the skipped list")
-							# continue
-						Units._unit.set_focus()
-						Units._unit.set_keyboard_focus()
-						Units._unit.send_keystrokes(unit.serial_number_prefix+unit.serial_number)
-						log.debug(f"Serial number {unit.serial_number_prefix+unit.serial_number} entered")
-						kbd.SendKeys("{F4}")
-						app.add_form('UnitsForm')
-						Units = app.UnitsForm
-						Units.custmer.set_text('302')
-						log.debug("Customer set to 302")
-						moveTo(*Units.change_status.coordinates.center)
-						pag.click()
-						log.debug("Change status clicked")
-						sleep(0.5)
-						kbd.SendKeys("%y")  # Yes button, (ALT + Y)
-						log.debug("4")
-						if phone:
-							scrap_code = 'SCRAPPED1'
-						else:
-							scrap_code = 'SCRAPPED'
-						Units.unit_status_code.set_text(scrap_code)
-						log.debug(f"Unit Status Code set to {scrap_code}")
-						if phone:
-							ship_num = "2"
-						else:
-							ship_num = "1"
-						Units.ship_to.set_text(ship_num)
-						log.debug(f"Ship To set to {ship_num}")
-						if not dev_mode:
-							kbd.SendKeys("^s")
-						pag.keyUp('ctrlleft')
-						pag.keyUp('ctrlright')
-						pag.keyUp('ctrl')
-						sleep(1)
-						sro_count = _open_first_open_sro(unit, app)
-						SRO_Operations = app.ServiceOrderOperationsForm
-						SRO_Operations.reasons_tab.select()
-						row = SRO_Operations.reasons_tab.grid.rows
-						SRO_Operations.reasons_tab.grid.populate(('General Reason', 'Specific Reason', 'General Resolution'), row - 1)
-						SRO_Operations.reasons_tab.grid.select_cell('General Reason', row - 1)
-						gen_rsn = SRO_Operations.reasons_tab.grid.cell
-						gen_rso, spec_rso = unit.notes.split(',')
-						SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row - 1)
-						if SRO_Operations.reasons_tab.grid.cell:  # If last row filled, append new row
-							# gen_rsn, spec_rsn, gen_rso, spec_rso = unit.notes.split(',')
-							gen_rsn = str(gen_rsn).strip(' ')
-							spec_rsn = '20'
-							# spec_rsn = spec_rsn.strip(' ')
-							gen_rso = gen_rso.strip(' ')
-							spec_rso = spec_rso.strip(' ')
-							SRO_Operations.reasons_tab.grid.select_cell('General Reason', row)
-							SRO_Operations.reasons_tab.grid.cell = gen_rsn
-							sleep(10)
-							SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row)
-							SRO_Operations.reasons_tab.grid.cell = spec_rsn
-							SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row)
-							SRO_Operations.reasons_tab.grid.cell = gen_rso
-							SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row)
-							SRO_Operations.reasons_tab.grid.cell = spec_rso
-						else:  # Else, fill last row
-							SRO_Operations.reasons_tab.grid.select_cell('Specific Reason', row - 1)
-							if not SRO_Operations.reasons_tab.grid.cell:
-								spec_rsn = '20'
-								SRO_Operations.reasons_tab.grid.cell = spec_rsn
-							SRO_Operations.reasons_tab.grid.select_cell('General Resolution', row - 1)
-							SRO_Operations.reasons_tab.grid.cell = gen_rso
-							SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row - 1)
-							SRO_Operations.reasons_tab.grid.cell = spec_rso
-						spec_rso_name = spec_rso_codes.get(spec_rso, 'SCRAP')
-						gen_rso_name = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")[0]
-						SRO_Operations.reasons_tab.reason_notes.set_focus()
-						SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
-						SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
-						if SRO_Operations.reasons_tab.reason_notes.texts()[-1] != '':
-							SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
-						SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{spec_rso_name.upper()} {gen_rso_name.upper()}]")
-						SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
-						SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
-						SRO_Operations.status = 'Closed'
-						is_closed_status = ''
-						if dev_mode:
-							app.cancel_close.click()
-							app.cancel_close.click()
-						else:
-							app.save_close.click()
-							app.save_close.click()
-						# if NotesButton is None:
-						# 	for item in app.actions_menu.items():
-						# 		text = item.text()[0]
-						# 		if 'Notes for Current' in text:
-						# 			NotesButton = item
-						# NotesFormFocus.select()
-						sleep(0.5)
-						kbd.SendKeys('%s')  # Actions Menu, (ALT + S)
-						sleep(0.2)
-						kbd.SendKeys('o')  # Notes For Current, (O)
-						sleep(0.5)
-						app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='NOTES', case_sensitive=True)
-						while app.popup.exists():
-							app.popup.close_alt_f4()
-							app.find_value_in_collection(collection='Object Notes', property='Subject (DerDesc)', value='')
-							kbd.SendKeys('NOTES')
-						note_txt = app._win2.child_window(auto_id='DerContentEdit')
-						note_txt.set_focus()
-						note_txt.click_input()
-						note_txt.type_keys('^{END}')
-						text = fr"{note_txt.legacy_properties()['Value'].strip(' ')}"
-						if not ((text.endswith(r'\n') or text.endswith(r'\r')) or (text == '')):
-							note_txt.type_keys('{ENTER}')
-						note_txt.type_keys(f"[{spec_rso_name}")
-						note_txt.type_keys("[{SPACE}]")
-						note_txt.type_keys(f"{gen_rso_name}]")
-						note_txt.type_keys("{ENTER}")
-						note_txt.type_keys(f"[{unit.operator_initials}")
-						note_txt.type_keys("[{SPACE}]")
-						note_txt.type_keys(f"{unit.datetime.strftime('%m/%d/%Y')}]")
-						if dev_mode:
-							app.cancel_close.click()
-						else:
-							app.save_close.click()
-						kbd.SendKeys("{F4}")
-						kbd.SendKeys("{F5}")
-					except UnitClosedError:
-						log.exception("No open SROs")
-						if not dev_mode:
-							continue
-							# mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
-						continue
-						kbd.SendKeys("{F4}")
-						kbd.SendKeys("{F5}")
-						kbd.SendKeys("%y")
-					else:
-						if not dev_mode:
-							mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
-							mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
-		except Exception:
-			log.exception(f"Something went horribly wrong!")
-			if not dev_mode:
-				for unit in all_units:
-					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
-			quit()
-		else:
-			end_time = timer.stop()
-
-			if len(unit_locations.keys()) > 0:
-				total = 0
-				for u in unit_locations.values():
-					total += len(u)
-				begin_string = f"{total} unit(s) processed through Miscellaneous Issue, "
-				if len(all_units_grouped.keys()) > 1:
-					begin_string += f"seperated into {len(all_units_grouped.keys())} different groups by build, "
-				if len(unit_locations.keys()) > 1:
-					begin_string += f"from {len(unit_locations.keys())} different locations, "
-				begin_string += f"and {len(all_units)} units fully scrapped through the Units form."
-			else:
-				begin_string = f"{len(all_units)} units fully scrapped through the Units form."
-			time_log.info(f"{begin_string} Total time {end_time}")
-
-	# If Out of Inventory then: ???
-	# Open Miscellaneous Issue Form
-	# For each group:
-
-	#   Input Build ('LC-800V-M', etc) into Item textbox
-	#           Click Generate button(also: alt+g)
-	#           For each serial number, in ascending order:
-	#               Find Value In Collection menu item(also: alt+e, v)
-	#               In Find window:
-	#                   If popup, unit doesn't exist
-	#       Click Process button(also: alt+r)
-	#       Any popups???
-
-	# Open Units Form
-	# For each serial number:
-	#   Input serial number into Unit textbox
-	#   Press 'F4'
-	#   Input "302" into Customer textbox
-	#   Input "1" for non-phone or "2" for phone into Ship To textbox
-
-	#   Click Change Status button
-	#   In Popup titled "hh4q0kfi":     ("Are you sure you want to change the unit status?" text)
-	#       Click Yes button (Alt + Y)
-	#   Input "SCRAPPED" for non-phone or "SCRAPPED1" for phone into Unit Status Code textbox
-	#   Save
-	#   In Service History Tab:
-	#       Find first open SRO
-	#       If there are none open: ???
-	#       Click View button
-	#       In Service Order Lines Form:
-	#           Click Service Order Operations button
-	#           In Service Order Operations Form:
-	#               In Reasons tab:
-	#                   Input General Resolution and Specific Resolution???
-	#                   Name1 = General Resolution Fault Code Name
-	#                   Name2 = Specific Resolution Fault Code Name(Usually "SCRAP")
-	#                   Input "{Name2} {Name1}\n{Initials} {datetime.date}"
-	#               Close Unit
-	#               Save Close Form
-	#   Click Notes button
-
-	#   In Notes Form:
-	#       Find Value In Collection menu item(also: alt+e, v)
-	#       In Find window:
-	#           Input "NOTES" into Find textbox
-	#           Input "Object Notes" into In Collection textbox
-	#           Input "Subject (DerDesc)" into In Property textbox
-	#           Click Case Sensitive checkbox to toggle from unchecked -> checked
-	#           Click OK button
-	#       If popup happens(NOTES doesn't exist):
-	#           Find Value In Collection menu item(also: alt+e, v)
-	#           In Find window:
-	#               Input "" into Find textbox
-	#               Input "Object Notes" into In Collection textbox
-	#               Input "Subject (DerDesc)" into In Property textbox
-	#               Click OK button
-	#           Typewrite "NOTES"
-	#       Input(append) "{Name2} {Name1}\n{Initials} {datetime.date}" into Note("A&ttach  File...Edit") textbox
-	#       Save Close Form
-	# TODO: Scrap report
 cellular_unit_builds = ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',
 						'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M', 'HB-110',
@@ -1401,7 +1027,7 @@ cellular_unit_builds = ['EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M
 # and [Status] = 'Reason'
 
 
-def scrap2(app: Application):
+def scrap(app: Application):
 	cv = CV_Config(window=app._win)
 	log.debug("Scrap script started")
 
@@ -1430,15 +1056,15 @@ def scrap2(app: Application):
 	# NotesFormFocus = None
 	while True:
 		log.debug("Checking queued scrap units")
-		all_unit_data = mssql.query("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
+		all_unit_data = mssql.execute("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
 		if not all_unit_data:
 			continue
 		log.debug("Receiving unit data")
-		all_units = set(map(lambda x: Unit(**x), all_unit_data))
+		all_units = set(map(Unit, all_unit_data)) ####
 		log.info(f"Units data found: {len(all_units)}")
 		if not dev_mode:
 			for unit in all_units:
-				mssql.modify(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Started' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Scrap' AND [Id] = {int(unit.id)}")
 		try:
 			timer.start()
 			count1 = 0
@@ -1671,11 +1297,11 @@ def scrap2(app: Application):
 						SRO_Operations.reasons_tab.grid.select_cell('Specific Resolution', row - 1)
 						SRO_Operations.reasons_tab.grid.cell = spec_rso
 					spec_rso_name = spec_rso_codes.get(spec_rso, 'SCRAP')
-					gen_rso_name = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")
-					if gen_rso_name is not None:
+					gen_rso_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [Product] = '{unit.product}' AND [ReasonCodes] = '{unit.notes}'")
+					if gen_rso_name[0] is not None:
 						gen_rso_name = gen_rso_name[0]
 					else:
-						gen_rso_name = mssql.query(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{unit.notes}'")[0]
+						gen_rso_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{unit.notes}'")[0]
 					SRO_Operations.reasons_tab.reason_notes.set_focus()
 					SRO_Operations.reasons_tab.reason_notes.set_keyboard_focus()
 					SRO_Operations.reasons_tab.reason_notes.send_keystrokes("^{END}")
@@ -1749,7 +1375,7 @@ def scrap2(app: Application):
 						pag.press('f4')
 						pag.press('f5')
 						pag.hotkey('alt', 'y')
-						mssql.modify(f"UPDATE PyComm SET [Status] = 'No Open SRO(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+						mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 						continue
 					continue
 					pag.press('f4')
@@ -1758,13 +1384,13 @@ def scrap2(app: Application):
 				else:
 					if not dev_mode:
 						count3 += 1
-						mssql.modify(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
-						mssql.modify(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
+						mssql.execute(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
+						mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
 		except Exception:
 			log.exception(f"Something went horribly wrong!")
 			if not dev_mode:
 				for unit in all_units:
-					mssql.modify(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
+					mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(Scrap)' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started' AND [Id] = {int(unit.id)}")
 			if count3 > 0:
 				end_time = timer.stop()
 				begin_string = f"{count3} units fully scrapped through the Units form."
@@ -1861,7 +1487,7 @@ def main(argv):
 	# 	log.error(f"Expected >4 cmd arguments, got {len(argv)}")
 	# 	raise ValueError(f"Expected >4 cmd arguments, got {len(argv)}")
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
-	cmd_all = {'transact': transact, 'query': query, 'reason': reason, 'scrap': scrap2}
+	cmd_all = {'transact': transact2, 'query': query, 'reason': reason, 'scrap': scrap}
 	opt_all = ('-fp', '-w', '-k', '-p', '-o')
 	long_opt_all = ('--filepath', '--workers', '--key', '--preference', '--override')
 	if len(argv) > 2:

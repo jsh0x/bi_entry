@@ -1,132 +1,74 @@
 import logging
-from typing import Union, Dict, Tuple, Any
+from collections import namedtuple
+import re
+from typing import Union, Dict, Tuple, Any, NamedTuple, Optional
 import sqlite3
-# Try importing 3rd-party modules
+
+import pymssql
+
 log = logging.getLogger('root')
-try:
-	missing_imports = []
-	try:
-		import pymssql as pysql
-	except ImportError:
-		missing_imports.append(('pymssql', '2.1.3'))
-finally:
-	if missing_imports:
-		error_string = "The following modules are missing, and are required for base functionality:\n"
-		for m,v in missing_imports:
-			error_string += f"    {m} - {v}\n"
-		raise ImportError(error_string)
 
 
-def _label_columns(columns: Tuple[str], row: Tuple[Any]) -> Dict[str, Any]:
-	row_dict = {}
-	for col, data in zip(columns, row):
-		row_dict[col] = data
-	return row_dict
-
-
-def get_columns_from_command(cmd: str) -> Tuple[str]:
-	column_slice = (cmd.split('FROM', 1)[0]).split('[')[1:]
-	columns = []
-	for col in column_slice:
-		columns.append(col.rsplit(']', 1)[0])
-	return tuple(columns)
-
-
-class SQL:
-	def __init__(self, conn: Union[pysql.Connection, sqlite3.Connection]):
-		self._conn = conn
-
-	def query(self, cmd: str, fetchall=False) -> Union[Any, Dict[str, Any], Tuple[Dict[str, Any]]]:
+class _SQL:
+	def execute(self, command: str, fetchall: Optional[bool]=None) -> Union[NamedTuple, Tuple[NamedTuple, ...]]:
 		c = self._conn.cursor()
-		try:
-			log.debug(f"Attempting to execute SQL command: {cmd}")
-			c.execute(cmd)
+		if command.startswith('SELECT'):
+			SQL_Results = namedtuple('SQL_Results', field_names=self._parse_sql_command(command))
+			log.debug(f"Attempting to execute SQL command: {command}")
+			c.execute(command)
 			log.debug("Command successful")
-		except Exception:
-			raise ConnectionError(f"Command execution failed for command:\n'{cmd}'")
-		else:
-			if cmd.startswith('SELECT') and ('FROM' in cmd) and ('COUNT' in cmd.split('FROM', 1)[0]):
-				retval = int(c.fetchone()[0])
-				log.debug(f"Results: {retval}")
-				return retval
-			elif fetchall:
-				rows = c.fetchall()
-				if cmd.startswith('SELECT') and ('*' in cmd.split('FROM', 1)[0]):
-					table = cmd.split('FROM ', 1)[1]
-					if ' WHERE' in table:
-						table = table.rsplit(' WHERE', 1)[0]
-					columns = self.columns(table=table)
-				else:
-					columns = get_columns_from_command(cmd)
-				if len(columns) > 1:
-					retval = []
-					for row in rows:
-						retval.append(_label_columns(columns, row))
-					log.debug(f"Results: {tuple(retval)}")
-					return tuple(retval)
-				else:
-					log.debug(f"Results: {tuple(rows)}")
-					return tuple(rows)
+			if fetchall:
+				results = tuple([SQL_Results(*x) for x in c.fetchall()])
 			else:
-				row = c.fetchone()
-				if cmd.startswith('SELECT') and ('*' in cmd.split('FROM', 1)[0]):
-					table = cmd.split('FROM ', 1)[1]
-					if ' WHERE' in table:
-						table = table.rsplit(' WHERE', 1)[0]
-					columns = self.columns(table=table)
-				else:
-					columns = get_columns_from_command(cmd)
-				if len(columns) > 1 and row:
-					retval = _label_columns(columns, row)
-					log.debug(f"Results: {retval}")
-					return retval
-				else:
-					log.debug(f"Results: {row}")
-					return row
-
-	def modify(self, cmd: str):
-		c = self._conn.cursor()
-		try:
-			c.execute(cmd)
-		except Exception:
-			raise ConnectionError(f"Command execution failed for command:\n'{cmd}'")
+				results = SQL_Results(*c.fetchone())
+			log.debug(f"Results returned: {results}")
+			return results
 		else:
+			log.debug(f"Attempting to execute SQL command: {command}")
+			c.execute(command)
 			self._conn.commit()
+			log.debug("Command successful")
+			return None
 
-	def columns(self, table: str) -> Tuple[str]:
-		c = self._conn.cursor()
-		cmd = f"SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='{table}'"
-		try:
-			c.execute(cmd)
-		except Exception:
-			raise ConnectionError(f"Command execution failed for command:\n'{cmd}'")
+	def _parse_sql_command(self, string: str) -> Tuple[str, ...]:
+		# language=RegExp
+		regex = r"^SELECT (?:TOP \d+ )?((?:\*)|(?:(?:, |,)?\[[\w ]+\],?)+) FROM (\w+)"
+		# regex = r"(?:" \
+		#         r"^(?:(SELECT) ((?:\*)|(?:(?: ?,)?(?:\w+.)?\[[\w ]+\](?: ?,)?)+) (FROM \w+(?: \w+)?)(?: (INNER JOIN \w+ \w+ ON \w+.\[[\w ]+\] ?(?:=|<>|>|<|>=|<=|LIKE|NOT LIKE) ?\w+.\[[\w ]+\]))*)|" \
+		#         r"^(?:(INSERT) INTO (\w+)(?: (\[[\w ]+\],?))* VALUES \((?:([\w\? ]),?)+\))|" \
+		#         r"^(?:(UPDATE) (\w+) SET (,?(?:\w+.)?\[[\w ]+\] ?= ?[\w\?]+,?)+)|" \
+		#         r"^(?:(DELETE) FROM (\w+))" \
+		#         r")" \
+		#         r"(?: (WHERE (?:(?: ?,)?(?:\w+.)?\[[\w ]+\] ?(?:=|<>|>|<|>=|<=|LIKE|NOT LIKE) ?[\w\?]+(?: ?,)?)+))?" \
+		#         r"(?: (ORDER BY (?:(?: ?,)?(?:\w+.)?\[[\w ]+\](?: ASC| DESC)?(?: ?,)?)+))?"
+		p = re.compile(regex)
+		m = p.match(string)
+		columns, table_name = m.groups()
+		if columns == '*':
+			c = self._conn.cursor()
+			c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = '%s' ORDER BY ordinal_position" % table_name)
+			columns = tuple([str(x[0]).strip().replace(' ', '_') for x in c.fetchall()])
 		else:
-			retval = []
-			for col in c.fetchall():
-				retval.append(col[3])
-			return tuple(retval)
-
+			columns = tuple([str(x).strip('[ ]').replace(' ', '_') for x in columns.split(',')])
+		return columns
 # TODO: Function to parse commands, for getting table name, if count, if distinct, if top #, if *, requested columns, etc.
 
 
-class MS_SQL(SQL):
+class MS_SQL(_SQL):
 	def __init__(self, address: str, username: str, password: str, database: str):
 		try:
-			conn = pysql.connect(server=address, user=username, password=password, database=database, login_timeout=10)
+			conn = pymssql.connect(server=address, user=username, password=password, database=database, login_timeout=10)
 		except Exception:
 			raise ConnectionError("Connection to SQL Server failed!")
 		else:
-			super().__init__(conn=conn)
+			self._conn = conn
 
 
-class SQL_Lite(SQL):
+class SQL_Lite(_SQL):
 	def __init__(self, database: Union[bytes, str], detect_types: int=0):
 		try:
 			conn = sqlite3.connect(database=database, detect_types=detect_types)
 		except Exception:
 			raise ConnectionError("Connection to SQL Server failed!")
 		else:
-			super().__init__(conn=conn)
-
-# c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-# print(c.fetchall())
+			self._conn = conn
