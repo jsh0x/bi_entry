@@ -300,6 +300,16 @@ c.execute("CREATE TABLE IF NOT EXISTS cv_configs("
           "Config ARRAY, "
           "Total_Reliability REAL"
           ")")
+c.execute("CREATE TABLE IF NOT EXISTS cv_verification("
+          "Id INTEGER PRIMARY KEY, "
+          "Type TEXT, "
+          "Name TEXT, "
+          "Form TEXT, "
+          "Position COORDINATES, "
+          "Image IMAGE, "
+          "Mask IMAGE"
+          "Reliability INTEGER DEFAULT 0"
+          ")")
 conn.commit()
 # values = [('Name1', np.arange(9, dtype=np.uint16).reshape((3,3))), ('Name2', np.arange(16, dtype=np.uint16).reshape((4,4))), ('Name3', np.arange(4, dtype=np.uint16).reshape((2,2))), ('Name4', np.arange(16384, dtype=np.uint16).reshape((128,128)))]
 # c.executemany("INSERT INTO cv_configs(name,config) VALUES (?, ?)", values)
@@ -317,35 +327,21 @@ class CV_Config:
 	             '_cropped_window_image', 'forms', 'controls', '_control_ids',
 	             '_config', '__dict__']
 
-	def __init__(self, **kwargs):
+	def __init__(self, window):
 		"""Sets the global coordinates to that of the window"""
-		if 'window' in kwargs.keys():
-			window = kwargs['window']
-			props = window.get_properties()
-			coord = props['rectangle']
-			self._window = window
-			self._window_gc = GlobalCoordinates(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
-			self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
-			self._cropped_window_image = self.window_image[7:748, 8:1015].copy()
-			self.forms = set([])
-			self.controls = set([])
-			self._all_controls = set([])
-			self._control_ids = UniqueList()
-			self._config = None
-			# TODO: Iterable forms/controls initlist
-			# self._worker = DisplayThread(1, self.window_image)
-		# elif 'coord' in kwargs.keys():
-		# 	coord = kwargs['coord']
-		# 	self.window_gc = GlobalCoordinates(left=coord.left, top=coord.top, right=coord.right, bottom=coord.bottom)
-		# 	self._window = None
-		# 	self.scrn = np.array(screenshot())
-		# 	self.window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
-		# 	self.controls = defaultdict(dict)
-		else:
-			raise ValueError("Expected at least one argument for either 'coord' or 'window', got None")
-		if 'controls' in kwargs.keys():
-			controls = kwargs['controls']
-			self.add_control(*controls)
+		props = window.get_properties()
+		coord = props['rectangle']
+		self._window = window
+		self._window_gc = GlobalCoordinates(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
+		self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
+		self._cropped_window_image = self.window_image[7:748, 8:1015].copy()
+		self.forms = set([])
+		self.controls = set([])
+		self._all_controls = set([])
+		self._control_ids = UniqueList()
+		self._config = None
+		self._visible_form = None
+		# TODO: Iterable forms/controls initlist
 
 	@property
 	def scrn(self):
@@ -369,6 +365,7 @@ class CV_Config:
 	@config.setter
 	def config(self, value):
 		if type(value) is ControlConfig:
+			self.forms.clear()
 			self.controls.clear()
 			self._control_ids.clear()
 			for name in self.window_gc._locals:
@@ -383,21 +380,15 @@ class CV_Config:
 	def _total_reliability(self):
 		return get_total_reliability(np.array(list(map(lambda x: x.Reliability, self._all_controls)), np.uint32))
 
-	def check_control(self, ctrl: Union[Control, ControlInfo]):
+	def check_control(self, ctrl: ControlInfo):
 		"""Checks if the given control still exists at its previous known location"""
-		if type(ctrl) is Control:
-			ctrl = self.window_gc.__getattribute__(ctrl.__name__)
-			ctrl_image = self.window_image[ctrl.top:ctrl.bottom, ctrl.left:ctrl.right].view()
-		elif type(ctrl) is ControlInfo:
-			ctrl_image = self.controls[ctrl.Form][ctrl.Type][ctrl.Name].Image
-			ctrl = ctrl.Position
-		coords = pag.locate(needleImage=Image.fromarray(ctrl_image), haystackImage=Image.fromarray(self.window_image), grayscale=True)
+		coords = pag.locate(needleImage=ctrl.Image, haystackImage=Image.fromarray(self.window_gc), grayscale=True)
 		if coords:
-			val = np.subtract(np.array(ctrl.coords(), dtype=np.int16), np.array([coords[0], coords[1], coords[0] + coords[2], coords[1] + coords[3]], dtype=np.int16)).sum().sum()
-			if val < 4:
-				return True
-			else:
-				return False
+			return True
+		for img in self._control_image_history[ctrl.Id]:
+			coords = pag.locate(needleImage=img, haystackImage=Image.fromarray(self.window_gc), grayscale=True)
+			if coords:
+				break
 		else:
 			return False
 
@@ -439,7 +430,6 @@ class CV_Config:
 		_sysinfo = uname()
 		if form not in self.forms:
 			self.add_form(form)
-			# raise ValueError()
 		for ctrl in args:
 			pfx = ctrl_pfx_dict[ctrl.__class__.__name__]
 			sfx = ctrl.__name__.strip()
@@ -466,9 +456,9 @@ class CV_Config:
 			control_name = pfx+'_'+sfx.lower()
 
 			if ctrl.__class__.__name__ == 'Tab':
-				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 5, right=ctrl.coordinates.right, bottom=ctrl.coordinates.bottom + 7)
+				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left + 1, top=ctrl.coordinates.top + 6, right=ctrl.coordinates.right, bottom=ctrl.coordinates.bottom + 7)
 			else:
-				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left, top=ctrl.coordinates.top + 6, right=ctrl.coordinates.right - 1, bottom=ctrl.coordinates.bottom + 5)
+				self.window_gc.add_local(name=control_name, left=ctrl.coordinates.left + 1, top=ctrl.coordinates.top + 7, right=ctrl.coordinates.right - 1, bottom=ctrl.coordinates.bottom + 5)
 			coord = self.window_gc.__getattribute__(control_name)
 			img = ExtendedImage(self.window_image[coord.top:coord.bottom, coord.left:coord.right])
 			# plt.imshow(img.array)
@@ -502,20 +492,21 @@ class CV_Config:
 			c.execute("SELECT [Id],[Type],[Name],[Form],[Position],[Image],[Reliability] FROM cv_data WHERE [Id] = ?", (int(ctrl_id),))
 			val = c.fetchone()
 			ctrl = ControlInfo(*val)
+			self.window_gc._add_local(ctrl.Name, *ctrl.Position.coords())
+			ctrl.Position.update(left=ctrl.Position.left + self.window_gc.left, top=ctrl.Position.top + self.window_gc.top,
+			                     right=self.window_gc.left + ctrl.Position.right, bottom=self.window_gc.top + ctrl.Position.bottom)
 			if ctrl.Form not in self.forms:
 				self.__setattr__(ctrl.Form, Form(**{ctrl.Name: ctrl}))
 				self.forms.add(ctrl.Form)
-			self.window_gc._add_local(ctrl.Name, *ctrl.Position.coords())
 			if ctrl not in self._all_controls:
 				self.controls.add(ctrl.Name)
 				old_kwargs = self.__getattribute__(ctrl.Form).list_attr()
 				old_kwargs[ctrl.Name] = ctrl
 				self.__setattr__(ctrl.Form, Form(**old_kwargs))
-
 				self._all_controls.add(ctrl)
 				self._control_ids.append(ctrl.Id)
 
-	def load_previous_configuration(self, name: str):
+	def load_config(self, name: str):
 		c.execute("SELECT * FROM cv_configs WHERE [Name] = ?", (name,))
 		exists = c.fetchone()
 		if exists:
@@ -523,7 +514,7 @@ class CV_Config:
 		else:
 			raise ValueError(f"Config with name '{name}' does not exist")
 
-	def save_current_configuration(self, name: str=None):
+	def save_config(self, name: str=None):
 		if name is not None:
 			c.execute("SELECT * FROM cv_configs WHERE [Name] = ?", (name,))
 			exists = c.fetchone()
@@ -562,106 +553,12 @@ class CV_Config:
 		else:
 			raise ValueError(f"Control '{name}' does not exist in database.")
 
-	def plot(self, img=None):
-		if img is None:
-			img = self.window_image
-		plt.imshow(img)
-		plt.show()
-	# def TEST_WINDOW(self):
-	# 	# Create figure and axes
-	# 	window_image2 = self.window_image.copy()
-	#
-	# 	# Display the image
-	# 	plt.imshow(self.window_image)
-	# 	# Add the lines to the Axes
-	# 	ymax, ymin = plt.ylim()
-	# 	xmin, xmax = plt.xlim()
-	# 	ymax, ymin, xmax, xmin = map(sum, [[ymax, 0.5], [ymin, 0.5], [xmax, 0.5], [xmin, 0.5]])
-	# 	rng = np.arange(ymin, ymax, 100, dtype=np.intp)
-	# 	hlines = np.array([np.array([y-1, y+1], dtype=np.intp) for y in rng if y-1 > ymin and y+2 < ymax], dtype=np.intp)
-	# 	edge1 = np.array([np.array([y, y + 1], dtype=np.intp) for y in rng if y - 1 < ymin], dtype=np.intp)
-	# 	edge2 = np.array([np.array([y-1, y], dtype=np.intp) for y in rng if y + 2 > ymax], dtype=np.intp)
-	# 	rng = np.arange(ymin, ymax, 10, dtype=np.intp)
-	# 	# self.window_image[hlines] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	# self.window_image[edge1] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	# self.window_image[edge2] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	# self.window_image[rng] += np.array([128, 128, 128], dtype=np.uint8)
-	#
-	# 	# self.window_image = self.window_image[7:748, 8:1015]
-	#
-	# 	h,w = self.window_image.shape[:2]
-	# 	z = np.zeros(self.window_image.shape[-1], dtype=np.uint8)
-	# 	self.window_image[:7] = z
-	# 	self.window_image[748:] = z
-	# 	self.window_image[:, :8] = z
-	# 	self.window_image[:, 1015:] = z
-	# 	self.window_image[9:36, 9:np.floor_divide(w, 2)] = z
-	# 	self.window_image[36:64, np.floor_divide(w, 2):-9] = z
-	# 	self.window_image[64:89, 9:np.multiply(np.floor_divide(w, 5), 3)] = z
-	# 	self.window_image[89:725, 9:-9] = z
-	# 	self.window_image[729:746, 9:np.multiply(np.floor_divide(w, 5), 1)] = z
-	# 	self.window_image[729:746, np.multiply(np.floor_divide(w, 5), 4):-9] = z
-	# 	plt.imshow(self.window_image)
-	# 	plt.show()
-	#
-	# 	rng = np.arange(xmin, xmax, 100, dtype=np.intp)
-	# 	vlines = np.array([np.array([x - 1, x + 1], dtype=np.intp) for x in rng if x - 1 > xmin and x + 2 < xmax], dtype=np.intp)
-	# 	edge1 = np.array([np.array([x, x + 1], dtype=np.intp) for x in rng if x - 1 < xmin], dtype=np.intp)
-	# 	edge2 = np.array([np.array([x-1, x], dtype=np.intp) for x in rng if x + 2 > xmax], dtype=np.intp)
-	# 	rng = np.arange(xmin, xmax, 10, dtype=np.intp)
-	# 	window_image2[:, vlines] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	window_image2[:, edge1] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	window_image2[:, edge2] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	window_image2[:, rng] += np.array([128, 128, 128], dtype=np.uint8)
-	# 	plt.imshow(window_image2)
-	# 	plt.show()
-	# @property
-	# def controls(self):
-	# 	"""Returns a more friendly version of the controls dictionary"""
-	# 	retval = self._controls.copy()
-	# 	for ctrl,names in self._controls.items():
-	# 		for name in names:
-	# 			retval[ctrl][name] = self._controls[ctrl][name][0](**self._controls[ctrl][name][1])
+	# def __getattr__(self, item):
+	# 	retval = self.__getattribute__(item)
+	# 	if item in self.forms:
+	# 		retval._queued_image = self.window_image.copy(), self.scrn.copy()
 	# 	return retval
-	#
-	# @controls.setter
-	# def controls(self, value1):
-	# 	pass
-# def convert_configs(value: bytes) -> list:
-# 	value = bytes.decode(value, encoding="utf-8").split('```')
-# 	retval = []
-# 	for v in value:
-# 		k, names = v.split('``;')
-# 		for name in names.split('`;`'):
-# 			name,val = name.split('`;;')
-# 			kwargs = {}
-# 			for arg in val.split(';``'):
-# 				k2, v2 = arg.split(';`;')
-# 				kwargs[k2] = v2
-# 			retval.append(ctrl_dict[k](**kwargs))
-# 	return retval
-#
-#
-# def adapt_configs(value: dict) -> bytes:
-# 	string1 = ""
-# 	for ctrl,names in value.items():
-# 		string2 = ""
-# 		for name in names:
-# 			string3 = ""
-# 			for k,v in value[ctrl][name][1].items():
-# 				if type(v) is dict:
-# 					string4 = ""
-# 					for k2,v2 in v.items():
-# 						string4 += f"{k2};;`{v2};;;"
-# 					string3 += f"{k};`;{string4[:-3]};``"
-# 				else:
-# 					string3 += f"{k};`;{v};``"
-# 			string2 += f"{name}`;;{string1[:-3]}`;`"
-# 		string1 += f"{ctrl}``;{string2[:-3]}```"
-# 	print(string1[:-3])
-# 	return bytes(string1[:-3], encoding='utf-8')
-# sql.register_adapter(dict, adapt_configs)
-# sql.register_converter('config', convert_configs)
+
 
 class DisplayThread(object):
 	def __init__(self, interval=1, *args):
@@ -805,12 +702,13 @@ else:
 # TODO: Script SPEED
 
 def main():
-	filepath = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
-	with Application(filepath) as app:
-			usr = "jredding"
-			pwd = "JRJul17!"
-			app.log_in(usr, pwd)
-			cv = CV_Config(window=app._win)
+	# filepath = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
+	# with Application(filepath) as app:
+	# 		usr = "jredding"
+	# 		pwd = "JRJul17!"
+	# 		app.log_in(usr, pwd)
+	# 		cv = CV_Config(window=app._win)
+			print()
 			# app.open_form('Miscellaneous Issue')
 			# cv.add_control('frm_MiscIssue', usr,
 			#                Button(window=app._all_win, criteria={'best_match': "ProcessButton", 'control_type': "Button", 'top_level_only': False}, control_name='proc'),
@@ -819,9 +717,12 @@ def main():
 			#                Textbox(window=app._all_win, criteria={'best_match': "Quantity:Edit", 'top_level_only': False}, control_name='qty'),
 			#                Textbox(window=app._all_win, criteria={'best_match': "Reason:Edit", 'top_level_only': False}, control_name='rsn'),
 			#                Textbox(window=app._all_win, criteria={'best_match': "Document Number:Edit", 'top_level_only': False}, control_name='doc_num'),
-			#                Textbox(window=app._all_win, criteria={'best_match': "Generate Qty:Edit", 'visible_only': True}, control_name='gen_qty'),
 			# 			   Tab(window=app._all_win, criteria={'best_match': "DetailTabControl"}, name='Detail', controls={}, control_name='dtl'),
 			# 			   Tab(window=app._all_win, criteria={'best_match': "Serial NumbersTabControl"}, name='Serial Numbers', controls={}, control_name='srl_num'))
+			# print('Open Serial Numbers Tab')
+			# sleep(20)
+			# cv.add_control('frm_MiscIssue', usr,
+			#              Textbox(window=app._all_win, criteria={'best_match': "Generate Qty:Edit", 'visible_only': True}, control_name='gen_qty'))
 			# cv.save_current_configuration('frm_MiscIssue')
 			# quit()
 
@@ -833,23 +734,26 @@ def main():
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Customer:Edit1'}, control_name='cust'),
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Unit Status Code:Edit'}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='unit_status_code'),
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Ship To:Edit1'}, control_name='ship_to'),
-			#                Textbox(window=app._all_win, criteria={'best_match': 'ESN:Edit'}, fmt=('alphabetic', 'numeric', 'upper'), control_name='esn'),
 			#                Button(window=app._all_win, criteria={'auto_id': "SROLinesButton", 'control_type': "Button", 'top_level_only': False}, control_name='svc_order_lines'),
 			#                Button(window=app._all_win, criteria={'auto_id': "uf_OverrideStatusBtn", 'control_type': "Button", 'top_level_only': False}, control_name='change_status'),
 			#                Tab(window=app._all_win, criteria={'best_match': "Owner HistoryTabControl"}, name='Owner History', controls={}, control_name='owner_history'),
-			# 	           Tab(window=app._all_win, criteria={'best_match': "Service HistoryTabControl"}, name='Service History', controls={}, control_name='svc_history'),
-			# 	           Tab(window=app._all_win, criteria={'best_match': "UNIT DATATabControl"}, name='UNIT DATA', controls={}, control_name='unit_data'))
+			#                Tab(window=app._all_win, criteria={'best_match': "Service HistoryTabControl"}, name='Service History', controls={}, control_name='svc_history'),
+			#                Tab(window=app._all_win, criteria={'best_match': "UNIT DATATabControl"}, name='UNIT DATA', controls={}, control_name='unit_data'))
 			# print('Open Owner History Tab')
 			# sleep(5)
 			# cv.add_control('frm_Units', usr,
 			#                GridView(window=app._all_win, criteria={'parent': app._win2.child_window(best_match='Alt. 6/7 Digit SN:GroupBox'), 'auto_id': "ConsumerHistoryGrid", 'control_type': "Table",
-			#                                         'top_level_only': False}, control_name='owner_history'))
+			#                                                        'top_level_only': False}, control_name='owner_history'))
 			# print('Open Service History Tab')
 			# sleep(5)
 			# cv.add_control('frm_Units', usr,
 			#                Button(window=app._all_win, criteria={'auto_id': "BtnSROLineView", 'control_type': "Button", 'top_level_only': False}, control_name='view'),
 			#                GridView(window=app._all_win, criteria={'parent': app._win2.child_window(best_match='Resource:GroupBox'), 'auto_id': "fsTmpSROLineViewsGrid", 'control_type': "Table",
 			#                                                        'top_level_only': False}, control_name='svc_history'))
+			# print('Open Unit Data Tab')
+			# sleep(5)
+			# cv.add_control('frm_Units', usr,
+			#                Textbox(window=app._all_win, criteria={'best_match': 'ESN:Edit'}, fmt=('alphabetic', 'numeric', 'upper'), control_name='esn'))
 			# cv.save_current_configuration('frm_Units')
 			# quit()
 
@@ -901,38 +805,43 @@ def main():
 			#                Textbox(window=app._all_win, criteria={'best_match': 'Location:Edit'}, control_name='loc'))
 			# cv.save_current_configuration('frm_SerNums')
 			# quit()
-			app.open_form('Units')
-			cv.load_previous_configuration('frm_Units')
-			clrs = colorspace_iterator(6)
-			img = cv.window_image.copy()
-			ones = np.ones(img.shape[-1])
-			for i,color in enumerate(clrs):
-				layer = np.zeros_like(img)
-				# img = cv.window_image.copy()
-				if i == 0:
-					cx,cy = cv.frm_Units.txt_unit.Position.center
-					h = cv.frm_Units.txt_unit.Position.height//4
-					di = np.diag_indices(h*2)
-					di_rev = (di[0][::-1], di[1])
-					sub_img = layer[cy-h:cy+h+1, cx-h:cx+h+1].view()
-					sub_img[di] = sub_img[di_rev] = ones
-					img = np.where(layer == ones, color, img)
-				elif i == 1:
-					cx2, cy2 = cv.frm_Units.txt_cust.Position.center
-					line = get_line(cx, cy, cx2, cy2)
-					layer[line] = ones
-					img = np.where(layer == ones, color, img)
-				elif i == 2:
-					cx = cx2
-					cy = cy2
-					h = cv.frm_Units.txt_cust.Position.height // 4
-					di = np.diag_indices(h * 2)
-					di_rev = (di[0][::-1], di[1])
-					sub_img = layer[cy - h:cy + h + 1, cx - h:cx + h + 1].view()
-					sub_img[di] = sub_img[di_rev] = ones
-					img = np.where(layer == ones, color, img)
-			plt.imshow(img)
-			plt.show()
+			print()
+			# app.open_form('Units')
+			# cv.add_control('frm_select_form', usr,
+			#                Button(window=app._all_win, criteria={'best_match': "ProcessButton", 'control_type': "Button", 'top_level_only': False}, control_name='proc'),
+			#                Textbox(window=app._all_win, criteria={'best_match': "Item:Edit0", 'visible_only': True}, fmt=('alphabetic', 'numeric', 'punctuation', 'upper'), control_name='item'))
+			# quit()
+			print()
+			# clrs = colorspace_iterator(6)
+			# img = cv.window_image.copy()
+			# ones = np.ones(img.shape[-1])
+			# for i,color in enumerate(clrs):
+			# 	layer = np.zeros_like(img)
+			# 	# img = cv.window_image.copy()
+			# 	if i == 0:
+			# 		cx,cy = cv.frm_Units.txt_unit.Position.center
+			# 		h = cv.frm_Units.txt_unit.Position.height//4
+			# 		di = np.diag_indices(h*2)
+			# 		di_rev = (di[0][::-1], di[1])
+			# 		sub_img = layer[cy-h:cy+h+1, cx-h:cx+h+1].view()
+			# 		sub_img[di] = sub_img[di_rev] = ones
+			# 		img = np.where(layer == ones, color, img)
+			# 	elif i == 1:
+			# 		cx2, cy2 = cv.frm_Units.txt_cust.Position.center
+			# 		line = get_line(cx, cy, cx2, cy2)
+			# 		layer[line] = ones
+			# 		img = np.where(layer == ones, color, img)
+			# 	elif i == 2:
+			# 		cx = cx2
+			# 		cy = cy2
+			# 		h = cv.frm_Units.txt_cust.Position.height // 4
+			# 		di = np.diag_indices(h * 2)
+			# 		di_rev = (di[0][::-1], di[1])
+			# 		sub_img = layer[cy - h:cy + h + 1, cx - h:cx + h + 1].view()
+			# 		sub_img[di] = sub_img[di_rev] = ones
+			# 		img = np.where(layer == ones, color, img)
+			# plt.imshow(img)
+			# plt.show()
 
 
 			# for ctrl,names in cv.controls.items():
@@ -974,6 +883,14 @@ def main():
 			# 	return win.child_window(**kwargs)
 			# cmd = code.InteractiveConsole({'app': app, 'win': win, 'get': get})
 			# cmd.interact(banner="")
+
+
+# left -> right through center w/ (3x3)kernel
+# first darkest value is outline
+# first set of consequtive values is foreground color (usually white)
+# find bounds of foreground color
+# find bounds of text
+# mask-out text square area
 
 if __name__ == '__main__':
 	main()

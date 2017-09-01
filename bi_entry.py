@@ -31,9 +31,11 @@ pag.FAILSAFE = True
 SRO_Row = Dict[str, Any]
 # TODO: LabeledDataRow -> NamedTuple
 Date_Dict = Dict[str, datetime.datetime]
-pfx_dict = {'11': 'OT', '13': 'LC', '40': 'SL', '21': 'SL', '63': ('BE', 'ACB'), '48': 'LCB'}
+pfx_dict = {'11': 'OT', '13': 'LC', '15': 'LC', '40': 'SL', '21': 'SL', '63': ('BE', 'ACB'), '48': 'LCB',
+            '05': 'OT', '98': 'TD', '60': 'BS', '65': 'HB', '61': 'HB', '67': 'HB'}
+# OR just type  *  before serial number
 
-
+logging.config.fileConfig("config.ini")
 log = logging.getLogger('root')
 time_log = logging.getLogger('logTimer')
 
@@ -51,6 +53,25 @@ mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _ke
 # inputting reason codes
 # pyperclip.copy(u'\t1-61-00377-0\tZSVC-ETONE\t1.000\tNo Charge\t\r\n')
 
+# tr_set = {545913, 546111, 547319, 548272, 548282, 548354, 548433, 548655, 548662, 548667,
+#           548672, 549026, 549344, 550186, 569670, 569719, 569975, 570553, 570599, 570601,
+#           570602, 570603, 570604, 570605, 570608, 570639, 570641, 570646, 570648, 571203,
+#           571208, 571209, 571257, 571287, 571289, 571291, 571293, 571296, 571297, 571326,
+#           571742, 572292, 572395, 573014, 573471, 573489, 573652, 573654, 574020, 575912,
+#           575917, 576202, 576210, 576617, 577080, 577149, 577188, 577193, 577211, 577293,
+#           577294, 577295, 577296, 577301, 577786, 577788, 577794, 577795, 577797, 577799,
+#           577800, 577801, 577833, 577835, 578451, 578837, 578853, 578866, 578883, 578965,
+#           578987, 579001, 579017, 579724, 579730, 580403, 579730, 580403, 580434, 580448,
+#           580702, 580744, 560805, 568065, 570500, 570708, 570715, 572652, 577110, 577115,
+#           577122, 577839, 579050, 579253, 579652, 580744, 581386, 581410, 582227, 582228}
+# rr_set = {573782, 579965, 580807, 580809, 580823, 566813, 568896, 572572, 572973, 574093,
+#           575570, 575880, 577063, 579965, 580807, 580809, 580823}
+# del_set = {558368, 558583, 558587, 559244, 559245, 559246, 559248, 559252, 559253, 559260,
+#            559261, 559267, 567200, 567213, 567238, 567239, 541149, 577909, 580310, 580962,
+#            580962, 565553, 565561}
+# for i in del_set:
+# 	mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {int(i)}")
+# quit()
 file_list = os.listdir(os.getcwd())
 if 'dev.key' in file_list:
 	dev_mode = True
@@ -59,6 +80,8 @@ else:
 
 gen_rso_codes = {}
 spec_rso_codes = {}
+
+# TODO: Move classes to types_.py
 
 class TestTimer:
 	def __init__(self):
@@ -165,7 +188,7 @@ class Unit:
 	def whole_build(self):
 		if self._whole_build is None:
 			data = mssql.execute(f"SELECT [ItemNumber],[Carrier],[Suffix] FROM UnitData WHERE [SerialNumber] = '{self.serial_number}'")
-			if not data[0]:
+			if not data:
 				raise ValueError
 			item,carrier,sfx = data
 			if carrier == 'None':
@@ -192,8 +215,7 @@ class Unit:
 	@property
 	def operator_initials(self):
 		if self._operator_initials is None:
-			fullname = mssql.execute(f"SELECT [FullName] FROM Users WHERE [Username] = '{self.operator}'")
-			first, last = fullname[0].split(' ', 1)
+			first, last = mssql.execute(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{self.operator}'")
 			self._operator_initials = first.strip()[0].upper()+last.strip()[0].upper()
 		return self._operator_initials
 
@@ -205,7 +227,7 @@ class Unit:
 	def product(self):
 		if self._product is None:
 			data = mssql.execute(f"SELECT [Product] FROM Builds WHERE [Prefix] = '{self.serial_number_prefix}'")
-			if not data[0]:
+			if not data:
 				raise ValueError
 			self._product = data[0]
 		return self._product
@@ -457,7 +479,7 @@ def transact(app: Application):
 		unit = Unit(unit_data)
 		if unit.operation == 'QC':
 			reason_check = mssql.execute(f"SELECT * FROM PyComm WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Reason'")
-			if reason_check[0]:
+			if reason_check:
 				mssql.execute(f"UPDATE PyComm SET [Status] = 'Paused Queue' WHERE [Serial Number] = '{unit.serial_number}' AND [Status] = 'Queued' AND [Id] = {int(unit.id)}")
 				continue
 		log.info("Unit data found:")
@@ -638,7 +660,7 @@ def transact(app: Application):
 				min_date_temp = datetime.datetime.strptime(min_date, '%m/%d/%Y')
 				date_string = min_date_temp.strftime("%Y-%m-%d 00:00:00")
 				value = mssql.execute(f"SELECT TOP 1 [DateTime] FROM Operations WHERE [DateTime] > CONVERT ( DATETIME , '{date_string}' , 102 ) ORDER BY [DateTime] ASC")
-				if not value[0]:
+				if not value:
 					value = unit.datetime.strftime("%m/%d/%Y %I:%M:%S %p")
 				else:
 					# value = datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")  ####???
@@ -1053,14 +1075,13 @@ def scrap(app: Application):
 			MiscIssueFormFocus = item
 		elif 'Serial Numbers' in text:
 			SrlNumFormFocus = item
-	# NotesFormFocus = None
 	while True:
 		log.debug("Checking queued scrap units")
-		all_unit_data = mssql.execute("SELECT * FROM PyComm WHERE [Status] = 'Scrap'", fetchall=True)
+		all_unit_data = mssql.execute("SELECT TOP 10 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
 		if not all_unit_data:
 			continue
 		log.debug("Receiving unit data")
-		all_units = set(map(Unit, all_unit_data)) ####
+		all_units = set(map(Unit, all_unit_data))
 		log.info(f"Units data found: {len(all_units)}")
 		if not dev_mode:
 			for unit in all_units:
@@ -1088,11 +1109,17 @@ def scrap(app: Application):
 				cv.load_previous_configuration('frm_SerNums')
 				for unit in units:
 					count1 += 1
-					_try_serial2(unit, app, cv)
-
-					status = SrlNum.status.texts()[0]
+					try:
+						_try_serial2(unit, app, cv)
+					except SyteLineFilterInPlaceError as ex:
+						if SrlNum.status.texts()[0].strip() == "":
+							status = 'Out of Inventory'
+						else:
+							raise SyteLineFilterInPlaceError(ex.debug_data)
+					else:
+						status = SrlNum.status.texts()[0]
 					log.debug(f"Unit location status '{status}' found for unit {unit.serial_number_prefix + unit.serial_number}")
-					if status != 'Out of Inventory':  # OR   status == 'In Inventory' ???
+					if status == 'In Inventory':  # OR   status != 'Out of Inventory' ???
 						location = SrlNum.location.text()
 						unit_locations[location].append(unit)
 						log.debug(f"Unit location '{location}' found for unit {unit.serial_number_prefix + unit.serial_number}")
@@ -1311,7 +1338,9 @@ def scrap(app: Application):
 					SRO_Operations.reasons_tab.reason_notes.send_keystrokes("{ENTER}")
 					SRO_Operations.reasons_tab.reason_notes.send_keystrokes(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 					sleep(1)
+					SRO_Operations.general_tab.select()
 					cv.load_previous_configuration('frm_SRO_Operations')
+					cv.frm_SRO_Operations.dte_complete.input(datetime.datetime.today().strftime("%m/%d/%Y %I:%M:%S %p"))
 					pag.click(*cv.window_gc.txt_status.global_center)
 					sleep(0.2)
 					pag.hotkey('ctrl', 'end')
@@ -1384,7 +1413,7 @@ def scrap(app: Application):
 				else:
 					if not dev_mode:
 						count3 += 1
-						mssql.execute(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed' WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
+						mssql.execute(f"UPDATE ScrapLog SET [SL8_Status] = 'Closed',[ScrappedDate] = GETDATE() WHERE [SL8_Status] = 'Open' AND [SerialNumber] = '{unit.serial_number}'")
 						mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {unit.id} AND [Serial Number] = '{unit.serial_number}' AND [Status] = 'Started'")
 		except Exception:
 			log.exception(f"Something went horribly wrong!")
@@ -1487,7 +1516,7 @@ def main(argv):
 	# 	log.error(f"Expected >4 cmd arguments, got {len(argv)}")
 	# 	raise ValueError(f"Expected >4 cmd arguments, got {len(argv)}")
 	usage_string = f"usage: {argv[0]} cmd username password [OPTIONS]..."
-	cmd_all = {'transact': transact2, 'query': query, 'reason': reason, 'scrap': scrap}
+	cmd_all = {'transact': transact, 'query': query, 'reason': reason, 'scrap': scrap}
 	opt_all = ('-fp', '-w', '-k', '-p', '-o')
 	long_opt_all = ('--filepath', '--workers', '--key', '--preference', '--override')
 	if len(argv) > 2:

@@ -82,3 +82,24 @@ def decrypt(data: str, key: str) -> str:
 				break
 		retval += key_dict[int(chars[j:])]
 	return retval
+
+
+
+from hashlib import blake2b
+# import os.urandom
+from secrets import compare_digest
+
+
+# class HashSlingingSlasher:
+# 	def __init__(self):
+# 		self._count = 0
+#
+# 	@property
+# 	def _hashit(self):
+# 		self._count += 1
+# 		blake2b(salt=os.urandom(blake2b.SALT_SIZE))
+#
+# 	def hashit(self, data1, data2):
+# 		h = self._hashit
+# 		h.update(data1)
+		# compare_digest

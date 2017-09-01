@@ -6,6 +6,7 @@ import sqlite3
 
 import pymssql
 
+logging.config.fileConfig("config.ini")
 log = logging.getLogger('root')
 
 
@@ -18,9 +19,11 @@ class _SQL:
 			c.execute(command)
 			log.debug("Command successful")
 			if fetchall:
-				results = tuple([SQL_Results(*x) for x in c.fetchall()])
+				results = tuple([SQL_Results(*x) for x in c.fetchall() if x is not None])
 			else:
-				results = SQL_Results(*c.fetchone())
+				results = c.fetchone()
+				if results is not None:
+					results = SQL_Results(*results)
 			log.debug(f"Results returned: {results}")
 			return results
 		else:

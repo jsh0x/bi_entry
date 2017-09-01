@@ -1,8 +1,11 @@
-from collections import UserDict, UserList
-from typing import NamedTuple, Iterable, Union
+from collections import UserDict, UserList, defaultdict
+from typing import NamedTuple, Iterable, Union, Optional
 
+import pyautogui as pag
+from pywinauto import mouse,clipboard
 import numpy as np
 import PIL.Image
+import pyperclip
 
 
 class ColorValue:
@@ -310,6 +313,39 @@ class ControlInfo(NamedTuple):
 	Image: ExtendedImage
 	Reliability: int
 
+	@staticmethod
+	def move_to(x: int, y: int):
+		mouse.move((x, y))
+
+	@staticmethod
+	def clear():
+		pag.hotkey('ctrl', 'home')
+		pag.press('del', 100)
+
+	@staticmethod
+	def typewrite(text: str):
+		pag.typewrite(text)
+
+	def click(self):
+		x, y = self.Position.center
+		if (x, y) != pag.position():
+			self.move_to(x, y)
+		pag.click()
+
+	def input(self, text: str, mode: str='w'):
+		self.click()
+		if mode == 'w':
+			self.clear()
+		elif mode == 'a':
+			pag.hotkey('ctrl', 'end')
+		self.typewrite(text)
+
+	def text(self):
+		clipboard.EmptyClipboard()
+		self.click()
+		pag.hotkey('ctrl', 'a')
+		pag.hotkey('ctrl', 'c')
+		return pyperclip.paste()
 
 class UniqueList(UserList):
 	def __init__(self, iterable: list=None):
@@ -485,7 +521,7 @@ class ControlConfig(NamedTuple):
 	Total_Reliability: float
 
 
-class Form:
+class Form(object):
 	attr_dict = {}
 	def __init__(self, *args, **kwargs):
 		self.attr_dict = {}
@@ -495,3 +531,42 @@ class Form:
 
 	def list_attr(self):
 		return self.attr_dict
+
+	def verify_visible(self):
+		goal = len(self._control_image_history.keys())
+		count = 0
+		for k,v in self._control_image_history.items():
+			for v2 in list(v):
+				exists = pag.locate(v2, self._queued_image[0])
+				if exists:
+					count += 1
+					break
+			if count >= goal//2:
+				return True
+		else:
+			return False
+
+	def __getattr__(self, item):
+		retval = self.__getattribute__(item)
+		if isinstance(retval, ControlInfo) and self._queued_image is not None:
+			image = self._queued_image[1][retval.top:retval.bottom, retval.left:retval.right]
+			self._control_image_history[retval.Id].add(image)
+			self._queued_image = None
+		return retval
+
+
+class DynamicClass(Form):
+	def __init__(self, args):
+		self._queued_image = None
+		self._control_image_history = defaultdict(set)
+		self._txt_unit = ControlInfo()
+
+	@property
+	def txt_unit(self):
+		retval = self._txt_unit
+		image = self._queued_image[1][retval.top:retval.bottom, retval.left:retval.right]
+		self._control_image_history[retval.Id].add(image)
+		self._queued_image = None
+		return retval
+
+

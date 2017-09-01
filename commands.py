@@ -10,6 +10,8 @@ from time import sleep
 
 import win32gui
 import win32api
+import win32con
+import win32process
 from PIL import ImageGrab
 import numpy as np
 import pywinauto as pwn
@@ -110,42 +112,6 @@ def screenshot():
 
 
 class Application(subprocess.Popen):
-	# def __preinit__(self):
-	# 	xml_helpers.ReadPropertiesFromFile('Units.xml')
-	# 	xml_helpers.ReadPropertiesFromFile('SROLines.xml')
-	# 	xml_helpers.ReadPropertiesFromFile('SROOperations.xml')
-
-	def __preinit__(self, val):
-		pass
-		# if val == 1:
-		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_Units.pkl').connect(process=self.pid)
-		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_Units.pkl').connect(process=self.pid)
-		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
-		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		# 	all_win = {'win32': win, 'uia': win2}
-		# 	self.UnitsForm = UnitsForm(all_win, False)
-		# elif val == 2:
-		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROLines.pkl').connect(process=self.pid)
-		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROLines.pkl').connect(process=self.pid)
-		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
-		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		# 	all_win = {'win32': win, 'uia': win2}
-		# 	self.ServiceOrderLinesForm = ServiceOrderLinesForm(all_win, False)
-		# elif val == 3:
-		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROOperations.pkl').connect(process=self.pid)
-		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROOperations.pkl').connect(process=self.pid)
-		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
-		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		# 	all_win = {'win32': win, 'uia': win2}
-		# 	self.ServiceOrderOperationsForm = ServiceOrderOperationsForm(all_win, False)
-		# elif val == 4:
-		# 	app_win32 = pwn.Application(backend='win32', datafilename='app_win32_history_SROTransactions.pkl').connect(process=self.pid)
-		# 	app_uia = pwn.Application(backend='uia', datafilename='app_uia_history_SROTransactions.pkl').connect(process=self.pid)
-		# 	win = app_win32.window(title_re='Infor ERP SL (EM)*')
-		# 	win2 = app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
-		# 	all_win = {'win32': win, 'uia': win2}
-		# 	self.SROTransactionsForm = SROTransactionsForm(all_win, False)
-
 	def __init__(self, args: Iterable[Union[bytes, str]]):
 		super().__init__(args)
 		log.debug("Application initialization started")
