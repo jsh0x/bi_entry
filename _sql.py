@@ -17,7 +17,10 @@ class _SQL:
 			if 'JOIN' not in command:
 				SQL_Results = namedtuple('SQL_Results', field_names=self._parse_sql_command(command))
 				# log.debug(f"Attempting to execute SQL command: {command}")
+				# try:
 				c.execute(command)
+				# except pymssql.ProgrammingError:
+				# 	pass
 				# log.debug("Command successful")
 				if fetchall:
 					results = tuple([SQL_Results(*x) for x in c.fetchall() if x is not None])

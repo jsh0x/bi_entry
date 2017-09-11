@@ -1,6 +1,7 @@
 import re
 import pathlib
 import datetime
+import logging.config
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict
@@ -11,6 +12,8 @@ import pywinauto as pwn
 
 from _sql import MS_SQL
 
+logging.config.fileConfig('config2.ini')
+log = logging
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 class Part:
@@ -22,16 +25,33 @@ class Part:
 		self.part_name = _data.PartName
 		self.location = _data.Location
 
+	def __repr__(self):
+		return f"<Part object; {self.part_number}x{self.quantity}>"
+
 	def __str__(self):
 		return f"{self.display_name}({self.part_number}) x {self.quantity}"
 
 
 class Unit:
 	def __init__(self, sql: MS_SQL, args: NamedTuple):
+		className = self.__class__.__name__
 		self._mssql = sql
 		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, _status = args
 		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = None
+		log.debug(f"Attribute id={self.id}")
+		log.debug(f"Attribute serial_number='{self.serial_number}'")
+		log.debug(f"Attribute build='{self.build}'")
+		log.debug(f"Attribute suffix='{self.suffix}'")
+		log.debug(f"Attribute operation='{self.operation}'")
+		log.debug(f"Attribute operator='{self.operator}'")
+		log.debug(f"Attribute notes='{self.notes}'")
+		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
+		log.debug(f"Property parts='{self.parts}'")
+		log.debug(f"Property datetime='{self.datetime}'")
+		log.debug(f"Property product='{self.product}'")
+		log.debug(f"Property whole_build='{self.whole_build}'")
+		log.debug(f"Property operator_initials='{self.operator_initials}'")
 
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
@@ -120,7 +140,7 @@ class Unit:
 	@property
 	def product(self):
 		if self._product is None:
-			data = self._mssql.execute(f"SELECT [Product] FROM Prefixes WHERE r.[Prefix] = '{self.serial_number_prefix}'")
+			data = self._mssql.execute(f"SELECT [Product] FROM Prefixes WHERE [Prefix] = '{self.serial_number_prefix}'")
 			if not data:
 				raise ValueError
 			self._product = data[0]
@@ -139,52 +159,53 @@ class Application(psutil.Process):
 			super().__init__(process_pid(fp, exclude))
 		else:
 			super().__init__(psutil.Popen(fp).pid)
+		self.fp = fp
 		self.nice(psutil.HIGH_PRIORITY_CLASS)
 		self.win32 = pwn.Application(backend='win32').connect(process=self.pid)
 		self.uia = pwn.Application(backend='uia').connect(process=self.pid)
 		self._user = None
 		self.logged_in = False
 
-	def log_in(self, usr: str = None, pwd: str = None):
-		if pwd is None:
-			raise ValueError()
-		if usr is None:
-			if self._user is not None:
-				usr = self._user
-			else:
-				raise ValueError()
-		else:
-			self._user = usr
-		login_win = self.app_win32['Sign In']
-		login_win.set_focus()
-		login_win.Edit3.SetEditText(usr)
-		login_win.Edit2.SetEditText(pwd)
-		login_win.OKButton.Click()
-		if self._error.exists():
-			message = self._error.Static2.texts()[0]
-			if ('count limit' in message) and ('exceeded' in message):
-				self._error.OKButton.Click()
-		while self._notification.exists():
-			try:
-				message2 = self._notification.Static2.texts()[0]
-				if (f"session for user '{usr}'" in message2) and ('already exists' in message2):
-					self._notification['&YesButton'].Click()
-				elif ('Exception initializing form' in message2) and ('executable file vbc.exe cannot be found' in message2):
-					self._notification.OKButton.Click()
-					raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
-				sleep(1)
-			except Exception:
-				break
-		CV_Config.__init__(self, self._win)
-		self.logged_in = True
-
-	def log_out(self, force_quit=True):
-		if force_quit:
-			self._win2.child_window(best_match='Sign OutMenuItem').select()
-		else:
-			# Close out each individual open form properly
-			pass
-		self.logged_in = False
+	# def log_in(self, usr: str = None, pwd: str = None):
+	# 	if pwd is None:
+	# 		raise ValueError()
+	# 	if usr is None:
+	# 		if self._user is not None:
+	# 			usr = self._user
+	# 		else:
+	# 			raise ValueError()
+	# 	else:
+	# 		self._user = usr
+	# 	login_win = self.app_win32['Sign In']
+	# 	login_win.set_focus()
+	# 	login_win.Edit3.SetEditText(usr)
+	# 	login_win.Edit2.SetEditText(pwd)
+	# 	login_win.OKButton.Click()
+	# 	if self._error.exists():
+	# 		message = self._error.Static2.texts()[0]
+	# 		if ('count limit' in message) and ('exceeded' in message):
+	# 			self._error.OKButton.Click()
+	# 	while self._notification.exists():
+	# 		try:
+	# 			message2 = self._notification.Static2.texts()[0]
+	# 			if (f"session for user '{usr}'" in message2) and ('already exists' in message2):
+	# 				self._notification['&YesButton'].Click()
+	# 			elif ('Exception initializing form' in message2) and ('executable file vbc.exe cannot be found' in message2):
+	# 				self._notification.OKButton.Click()
+	# 				raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
+	# 			sleep(1)
+	# 		except Exception:
+	# 			break
+	# 	CV_Config.__init__(self, self._win)
+	# 	self.logged_in = True
+	#
+	# def log_out(self, force_quit=True):
+	# 	if force_quit:
+	# 		self._win2.child_window(best_match='Sign OutMenuItem').select()
+	# 	else:
+	# 		# Close out each individual open form properly
+	# 		pass
+	# 	self.logged_in = False
 
 	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
 		self._hwnd = self._win.handle
@@ -263,7 +284,8 @@ class Application(psutil.Process):
 
 	@property
 	def forms(self):
-		return {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in self.uia.WindowMenu.items() if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
+		sl_uia = self.uia.window(title_re='Infor ERP SL (EM)*')
+		return {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items() if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
 
 
 class PuppetMaster:
@@ -362,7 +384,8 @@ def is_running(filename: str, exclude: Optional[Union[int, Iterable[int]]]=None)
 
 
 # - - - - - - - - - - - - - - - - - - - - REGEX - - - - - - - - - - - - - - - - - - - - -
-REGEX_USER_SESSION_LIMIT = re.compile(r".* session count limit .*")
+REGEX_USER_SESSION_LIMIT = re.compile(r"session count limit")
+REGEX_INVALID_LOGIN = re.compile(r"user ?name.*password.*invalid")
 REGEX_REPLACE_SESSION = re.compile(r"(?im)session .* user '(?P<user>\w+)' .* already exists(?s:.*)[\n\r](?P<question>.+\?)")
 REGEX_WINDOW_MENU_FORM_NAME = re.compile(r"^\d+ (?P<name>[\w* ?]+\w*) .*")
 

@@ -158,7 +158,7 @@ def screenshot():
 	return im
 
 
-class Application(psutil.Process, CV_Config):
+class Application(psutil.Process):
 	def __init__(self, fp: Union[str, pathlib.Path], exclude: Optional[Union[int, Iterable[int]]]=None):
 		if type(fp) is pathlib.Path:
 			fp = str(fp)

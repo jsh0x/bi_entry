@@ -13,6 +13,39 @@ import logging.handlers
 import pathlib
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 			'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
+
+# class OneLineExceptionFormatter(logging.Formatter):
+#     def formatException(self, exc_info):
+#         """
+#         Format an exception so that it prints on a single line.
+#         """
+#         result = super(OneLineExceptionFormatter, self).formatException(exc_info)
+#         return repr(result)  # or format into one line however you want to
+#
+#     def format(self, record):
+#         s = super(OneLineExceptionFormatter, self).format(record)
+#         if record.exc_text:
+#             s = s.replace('\n', '') + '|'
+#         return s
+#
+# def configure_logging():
+#     fh = logging.FileHandler('output.txt', 'w')
+#     f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
+#                                   '%d/%m/%Y %H:%M:%S')
+#     fh.setFormatter(f)
+#     root = logging.getLogger()
+#     root.setLevel(logging.DEBUG)
+#     root.addHandler(fh)
+#
+# def main():
+#     configure_logging()
+#     logging.info('Sample message')
+#     try:
+#         x = 1 / 0
+#     except ZeroDivisionError as e:
+#         logging.exception('ZeroDivisionError: %s', e)
+
+
 loggers = ['root', 'logTime', 'logControl']
 handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler', 'timeHandler', 'controlHandler']
 formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter', 'timeFormatter']
@@ -27,6 +60,7 @@ info_log_dir = str(log_dir/'info.log').replace('\\', '/')
 debug_log_dir = str(log_dir/'dbg.log').replace('\\', '/')
 time_log_dir = str(time_dir/'completed.log').replace('\\', '/')
 control_log_dir = str(ctrl_dir/'controls.log').replace('\\', '/')
+
 
 def list_to_string(iterable: Sequence, sep: str=','):
 	retval = ''
@@ -69,7 +103,7 @@ def write_config():
 						 'min_sl_instances': '1',
 						 'max_sl_instances': '1',
 						 'multiprocess': 'False'}
-	config['Schedule'] = {'active_days': ''.join([str(i)+',' for i in range(1, 7)][:-1]),
+	config['Schedule'] = {'active_days': ''.join([str(i)+',' for i in range(1, 6)][:-1]),
 	                      'active_hours': ''.join([str(i)+',' for i in range(5, 18)][:-1])
 	                      }
 	config['Paths'] = {'sl_exe': 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe',# find_file('WinStudio.exe'),
@@ -121,7 +155,7 @@ def write_config():
 										'args': f"('{control_log_dir}', 'w')"}
 	config['logger_root'] = {'level': 'NOTSET',
 							 'handlers': list_to_string(handlers[:4]),
-							 'qualname': 'root'}
+							 'qualname': 'logMain'}
 	config['logger_logTime'] = {'level': 'INFO',
 								'handlers': 'timeHandler',
 								'qualname': 'logTime'}
@@ -136,6 +170,8 @@ if 'config.ini' not in os.listdir(os.getcwd()):
 	write_config()
 
 logging.config.fileConfig("config.ini")
+log = logging
+
 
 
 
