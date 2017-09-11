@@ -1,4 +1,4 @@
-import logging
+import logging.config
 from collections import namedtuple
 import re
 from typing import Union, Dict, Tuple, Any, NamedTuple, Optional
@@ -14,28 +14,38 @@ class _SQL:
 	def execute(self, command: str, fetchall: Optional[bool]=None) -> Union[NamedTuple, Tuple[NamedTuple, ...]]:
 		c = self._conn.cursor()
 		if command.startswith('SELECT'):
-			SQL_Results = namedtuple('SQL_Results', field_names=self._parse_sql_command(command))
-			log.debug(f"Attempting to execute SQL command: {command}")
-			c.execute(command)
-			log.debug("Command successful")
-			if fetchall:
-				results = tuple([SQL_Results(*x) for x in c.fetchall() if x is not None])
+			if 'JOIN' not in command:
+				SQL_Results = namedtuple('SQL_Results', field_names=self._parse_sql_command(command))
+				# log.debug(f"Attempting to execute SQL command: {command}")
+				c.execute(command)
+				# log.debug("Command successful")
+				if fetchall:
+					results = tuple([SQL_Results(*x) for x in c.fetchall() if x is not None])
+				else:
+					results = c.fetchone()
+					if results is not None:
+						results = SQL_Results(*results)
 			else:
-				results = c.fetchone()
-				if results is not None:
-					results = SQL_Results(*results)
-			log.debug(f"Results returned: {results}")
+				# log.debug(f"Attempting to execute SQL command: {command}")
+				c.execute(command)
+				# log.debug("Command successful")
+				if fetchall:
+					results = tuple([x for x in c.fetchall() if x is not None])
+				else:
+					results = c.fetchone()
+			# log.debug(f"Results returned: {results}")
 			return results
 		else:
-			log.debug(f"Attempting to execute SQL command: {command}")
+			# log.debug(f"Attempting to execute SQL command: {command}")
 			c.execute(command)
 			self._conn.commit()
-			log.debug("Command successful")
+			# log.debug("Command successful")
 			return None
 
 	def _parse_sql_command(self, string: str) -> Tuple[str, ...]:
 		# language=RegExp
 		regex = r"^SELECT (?:TOP \d+ )?((?:\*)|(?:(?:, |,)?\[[\w ]+\],?)+) FROM (\w+)"
+		# regex = r"^SELECT (?:TOP \d+ )?((?:\*)|(?:(?:, |,)?\[[\w ]+\],?)+) FROM (\w+)"
 		# regex = r"(?:" \
 		#         r"^(?:(SELECT) ((?:\*)|(?:(?: ?,)?(?:\w+.)?\[[\w ]+\](?: ?,)?)+) (FROM \w+(?: \w+)?)(?: (INNER JOIN \w+ \w+ ON \w+.\[[\w ]+\] ?(?:=|<>|>|<|>=|<=|LIKE|NOT LIKE) ?\w+.\[[\w ]+\]))*)|" \
 		#         r"^(?:(INSERT) INTO (\w+)(?: (\[[\w ]+\],?))* VALUES \((?:([\w\? ]),?)+\))|" \

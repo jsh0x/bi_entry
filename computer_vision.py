@@ -236,13 +236,23 @@ def convert_image(value: bytes) -> Image:
 def adapt_image(value: ExtendedImage) -> bytes:
 	return bytes(value)
 
+
+def convert_boolean(value: bytes) -> bool:
+	return bool(int(value))
+
+
+def adapt_boolean(value: bool) -> bytes:
+	return bytes(str(int(value)), encoding='utf-8')
+
+
 sql.register_adapter(np.ndarray, adapt_array)
 sql.register_adapter(Coordinates, adapt_coordinates)
 sql.register_adapter(ExtendedImage, adapt_image)
+sql.register_adapter(bool, adapt_boolean)
 sql.register_converter('ARRAY', convert_array)
 sql.register_converter('COORDINATES', convert_coordinates)
 sql.register_converter('IMAGE', convert_image)
-
+sql.register_converter('BOOL', convert_boolean)
 
 # Initial Variables
 # SkeletonClass = namedtuple('SkeletonClass', ['control', 'criteria'])
@@ -279,7 +289,6 @@ c = conn.cursor()
 # c.execute("DROP TABLE cv_configs")
 # conn.commit()
 # quit()
-
 c.execute("CREATE TABLE IF NOT EXISTS cv_data("
           "Id INTEGER PRIMARY KEY, "
           "Type TEXT, "
@@ -300,6 +309,14 @@ c.execute("CREATE TABLE IF NOT EXISTS cv_configs("
           "Config ARRAY, "
           "Total_Reliability REAL"
           ")")
+c.execute("CREATE TABLE IF NOT EXISTS cv_master("
+          "Id INTEGER PRIMARY KEY, "
+          "Type TEXT, "
+          "Name TEXT, "
+          "Form TEXT, "
+          "Exec_String TEXT, "
+          "Exec_Extra TEXT"
+          ")")
 c.execute("CREATE TABLE IF NOT EXISTS cv_verification("
           "Id INTEGER PRIMARY KEY, "
           "Type TEXT, "
@@ -311,6 +328,7 @@ c.execute("CREATE TABLE IF NOT EXISTS cv_verification("
           "Reliability INTEGER DEFAULT 0"
           ")")
 conn.commit()
+
 # values = [('Name1', np.arange(9, dtype=np.uint16).reshape((3,3))), ('Name2', np.arange(16, dtype=np.uint16).reshape((4,4))), ('Name3', np.arange(4, dtype=np.uint16).reshape((2,2))), ('Name4', np.arange(16384, dtype=np.uint16).reshape((128,128)))]
 # c.executemany("INSERT INTO cv_configs(name,config) VALUES (?, ?)", values)
 # conn.commit()
@@ -332,8 +350,22 @@ class CV_Config:
 		props = window.get_properties()
 		coord = props['rectangle']
 		self._window = window
-		self._window_gc = GlobalCoordinates(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
-		self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
+		try:
+			self._window_gc = GlobalCoordinates(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
+		except ValueError:
+			self._window_gc = GlobalCoordinates(left=coord.left+15, top=coord.top+7, right=coord.right-1, bottom=coord.bottom-2)
+		self._window_image = None
+		start_time = datetime.datetime.now()
+		while (datetime.datetime.now() - start_time).seconds < 5:
+			try:
+				self._window_image = self.scrn[self.window_gc.top:self.window_gc.bottom, self.window_gc.left:self.window_gc.right].view()
+			except TypeError:
+				sleep(0.1)
+			else:
+				if self._window_image is not None:
+					break
+		else:
+			raise NameError()
 		self._cropped_window_image = self.window_image[7:748, 8:1015].copy()
 		self.forms = set([])
 		self.controls = set([])
@@ -351,7 +383,10 @@ class CV_Config:
 	def window_gc(self):
 		props = self._window.get_properties()
 		coord = props['rectangle']
-		self._window_gc.update(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
+		try:
+			self._window_gc.update(left=coord.left+8, top=coord.top+7, right=coord.right-8, bottom=coord.bottom-2)
+		except ValueError:
+			self._window_gc.update(left=coord.left+15, top=coord.top+7, right=coord.right-1, bottom=coord.bottom-2)
 		return self._window_gc
 
 	@property
@@ -690,9 +725,11 @@ def print_db_sleek():
 		print(string)
 
 
-print_it = True
+print_it = "NOPE"
 
-if print_it:
+if print_it == 'NOPE':
+	pass
+elif print_it:
 	print_db_sleek()
 else:
 	print_db_simple()

@@ -57,6 +57,7 @@ def get_outdated_modules(pip_dir) -> dict:
 			continue
 	return retval
 
+
 def write_config():
 	path = (os.path.dirname(sys.executable)).replace('\\', '/')+"/Scripts/pip3.6.exe"
 	config = configparser.ConfigParser(interpolation=None)
@@ -68,6 +69,9 @@ def write_config():
 						 'min_sl_instances': '1',
 						 'max_sl_instances': '1',
 						 'multiprocess': 'False'}
+	config['Schedule'] = {'active_days': ''.join([str(i)+',' for i in range(1, 7)][:-1]),
+	                      'active_hours': ''.join([str(i)+',' for i in range(5, 18)][:-1])
+	                      }
 	config['Paths'] = {'sl_exe': 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe',# find_file('WinStudio.exe'),
 					   'pip_exe': path}
 	config['Login'] = {'username': '???',
@@ -135,36 +139,8 @@ logging.config.fileConfig("config.ini")
 
 
 
-# print(logger, type(logger))
-# print(log, type(log))
-#
-# quit()
-
-
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro
 
-
-
-#      %(sl_exe)
-try:
-	try:
-		from exceptions import *
-	except ImportError:
-		raise ImportError("Missing bi_entry 'exceptions.py' module")
-	try:
-		from slapi import *
-	except ImportError:
-		pass  # TODO: Handle
-	try:
-		from . import sql
-	except ImportError:
-		pass  # TODO: Handle
-except Exception:
-	pass  # TODO: Handle
-
-import forms
-import controls
-__all__ = []
-__all__ += forms.__all__
-__all__ += controls.__all__
+# TODO: Any time there is a major update, do a screen calibration
+# TODO: If missing control in db, get it

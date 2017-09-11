@@ -7,6 +7,7 @@ from secrets import choice
 from typing import Union, Iterable, Dict, Any, Tuple, List, Optional
 from time import sleep
 from string import ascii_lowercase
+from concurrent.futures import ThreadPoolExecutor
 
 import psutil
 import win32gui
@@ -176,6 +177,7 @@ class Application(psutil.Process, CV_Config):
 		self.popup_blocker_activated = False
 		self._win = self.app_win32.window(title_re='Infor ERP SL (EM)*')
 		self._win2 = self.app_uia.window(title_re='Infor ERP SL (EM)*', auto_id="WinStudioMainWindow", control_type="Window")
+		self._all_win = {'win32': self._win, 'uia': self._win2}  # Get rid of eventually
 
 	def log_in(self, usr: str=None, pwd: str=None):
 		if pwd is None:
@@ -212,7 +214,7 @@ class Application(psutil.Process, CV_Config):
 
 	def log_out(self, force_quit=True):
 		if force_quit:
-			self._win.SignOut.select()
+			self._win2.child_window(best_match='Sign OutMenuItem').select()
 		else:
 			# Close out each individual open form properly
 			pass
@@ -220,37 +222,55 @@ class Application(psutil.Process, CV_Config):
 
 	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
 		self._hwnd = self._win.handle
+		# hwnd = win32gui.GetForegroundWindow()
 		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
-		win32gui.MoveWindow(self._hwnd, coord.left, coord.top, coord.width, coord.height, True)
+		win32gui.MoveWindow(self._hwnd, int(coord.left)-7, coord.top, coord.width, coord.height, True)
 
 	def open_form(self, name: str, alias: Optional[str]=None):
-		pag.hotkey('ctrl', 'o')
-		win = self._win2.child_window(title='Select Form')
-		pag.hotkey('alt', 'c')
-		pag.typewrite(name)
-		pag.hotkey('alt', 'f')
-		lb = win.child_window(auto_id='formsListView')
-		lb.click_input()
-		pag.press([name[0], 'up'])
-		selection = lb.get_selection()[0]
-		if selection.name != name:
-			start = selection.name
-			current = None
-			limit = 10
-			count = 0
-			while current != start and count < limit:
-				count += 1
-				pag.press('down')
-				selection = lb.get_selection()[0]
-				if selection.name == name:
-					break
-				current = selection.name
-			else:
-				raise ValueError(f"Could not find form '{name}'")
-		pag.press('enter')
+		self._win.send_keystrokes('^o')
+		# pag.hotkey('ctrl', 'o')
+		# win = self._win.child_window(title='Select Form')
+		self._win.send_keystrokes('%c')
+		# pag.hotkey('alt', 'c')
+		# pag.typewrite(name)
+		self._win.send_keystrokes(name)
+		self._win.send_keystrokes('%f')
+		# pag.hotkey('alt', 'f')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{TAB}')
+		self._win.send_keystrokes('{SPACE}')
+		# pag.press('tab', 6)###
+		# pag.press('space')###
+		lb = self._win.child_window(auto_id='formsListView')
+		# lb.click_input()
+		# pag.press([name[0], 'up'])
+		# selection = lb.get_selection()[0]
+		# if selection.name != name:
+		# 	start = selection.name
+		# 	current = None
+		# 	limit = 10
+		# 	count = 0
+		# 	while current != start and count < limit:
+		# 		count += 1
+		# 		pag.press('down')
+		# 		selection = lb.get_selection()[0]
+		# 		if selection.name == name:
+		# 			break
+		# 		current = selection.name
+		# 	else:
+		# 		raise ValueError(f"Could not find form '{name}'")
+		self._win.send_keystrokes('{DOWN}')
+		self._win.send_keystrokes('{ENTER}')
+		# pag.press('down')###
+		# pag.press('enter')
 		if alias:
 			name = alias
 		self._visible_form = name
+		# CV_Config.load_config(self, name)
 
 	def find_value_in_collection(self, collection: str, property: str, value, case_sensitive=False):
 		pag.hotkey('alt', 'e')
@@ -284,35 +304,6 @@ class Application(psutil.Process, CV_Config):
 		else:
 			self._blocker.stop()
 
-	def __getattribute__(self, item):
-		#Have python rewrite class upon initialization???
-		print(item)
-		retval = CV_Config.__getattribute__(self, item)
-		print(retval)
-		if item in CV_Config.__getattribute__(self, 'forms'):
-			retval._queued_image = self.window_image.copy(), self.scrn.copy()
-			print(item, self._visible_form)
-			if item != self._visible_form:
-				# pag.hotkey('alt', 'w')
-				# TODO: Form focused verification
-				window_menu = self._win2.child_window(best_match='WindowMenuItem')
-				for i in window_menu.items():
-					print(i.texts()[0])
-					if (item.split('_', 1)[1]).replace('_', ' ') in i.texts()[0]:
-						i.select()
-						break
-				else:
-					for i in window_menu.items():
-						for item2 in item.split('_', 1)[1:][::-1]:
-							if item2 in i.texts()[0]:
-								i.select()
-								break
-					else:
-						raise ValueError()
-			if retval.verify_visible():
-					self._visible_form = item
-		return retval
-
 
 class PuppetMaster:
 	_children = set()
@@ -340,21 +331,14 @@ class PuppetMaster:
 	def __exit__(self, type, value, traceback):
 		procs = self.children()
 		for p in procs:
-			print(p)
+			# print(p)
 			p.terminate()
 		gone, still_alive = psutil.wait_procs(procs, timeout=3)
 		for p in still_alive:
-			print(p)
+			# print(p)
 			p.kill()
 
-
-with PuppetMaster() as ppt:
-	fp = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
-	app = ppt.start(fp)
-	app.log_in(usr='jredding', pwd='JRJul17!')
-	app.load_config('Transaction')
-	# app.__getattr__('frm_Units')
-	# quit()
+def transaction(app):
 	app.open_form('Units', 'frm_Units')
 	unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] DESC")
 	while unit_data is None:
@@ -363,25 +347,67 @@ with PuppetMaster() as ppt:
 	timer.start()
 	unit = Unit(unit_data)
 	sleep(3)
-	app.frm_Units.txt_unit.input(unit.serial_number_prefix+unit.serial_number)
+	# app.frm_Units.txt_unit.input(unit.serial_number_prefix + unit.serial_number)
+	app._win['Unit:Edit'].send_keystrokes(unit.serial_number_prefix + unit.serial_number)
 	sleep(1)
-	pag.press('f4')
+	app._win.send_keystrokes('{F4}')
+	# pag.press('f4')
 	sleep(1)
-	app.frm_Units.btn_svc_order_lines.click()
+	# app.frm_Units.btn_svc_order_lines.click()
+	app._win['Service Order Lines'].click()
 	sleep(4)
 	if app.frm_SRO_Lines.txt_status.text() == 'Closed':
 		raise ValueError()
-	app.frm_SRO_Lines.btn_sro_oprtns.click()
+	app._win['Service Order Operations'].click()
+	# app.frm_SRO_Lines.btn_sro_oprtns.click()
 	sleep(4)
 	if app.frm_SRO_Operations.txt_status.text() == 'Closed':
 		raise ValueError()
-	app.popup_blocker(True)
-	app.frm_SRO_Operations.btn_sro_transactions.click()
-	app.popup_blocker(False)
-	sleep(2)
-	app.frm_Units.txt_unit.click()
-	sleep(360)
+	# app.frm_SRO_Operations.btn_sro_transactions.click()
+	app._win['SRO Transactions'].click()
 	print(timer.stop())
 
+def scrap(app):
+	app.open_form('Units', 'frm_Units')
+	unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
+	while unit_data is None:
+		sleep(1)
+		unit_data = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
+	timer.start()
+	unit = Unit(unit_data)
+	sleep(3)
+	# app.frm_Units.txt_unit.input(unit.serial_number_prefix + unit.serial_number)
+	app._win['Unit:Edit'].send_keystrokes(unit.serial_number_prefix + unit.serial_number)
+	sleep(1)
+	app._win.send_keystrokes('{F4}')
+	# pag.press('f4')
+	sleep(1)
+	# app.frm_Units.btn_svc_order_lines.click()
+	app._win['Service Order Lines'].click()
+	sleep(4)
+	if app.frm_SRO_Lines.txt_status.text() == 'Closed':
+		raise ValueError()
+	app._win['Service Order Operations'].click()
+	# app.frm_SRO_Lines.btn_sro_oprtns.click()
+	sleep(4)
+	if app.frm_SRO_Operations.txt_status.text() == 'Closed':
+		raise ValueError()
+	# app.frm_SRO_Operations.btn_sro_transactions.click()
+	app._win['SRO Transactions'].click()
+	print(timer.stop())
 
-
+with PuppetMaster() as ppt:
+	fp = 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe'
+	areas = ((0, 0, 960, 1047), (950, 0, 1920, 1047))
+	targets = (transaction, scrap)
+	app1 = ppt.start(fp)
+	app1.log_in('jredding', 'JRJul17!')
+	app1.move_and_resize(*areas[0])
+	app1.load_config('Transaction')
+	app2 = ppt.start(fp)
+	app2.log_in('BISync03', 'N0Gue$$!ng')
+	app2.move_and_resize(*areas[1])
+	app2.load_config('Transaction')
+	with ThreadPoolExecutor(max_workers=2) as e:
+		e.submit(transaction, app1)
+		e.submit(scrap, app2)
