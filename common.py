@@ -4,11 +4,12 @@ import datetime
 import logging.config
 from random import choice
 from string import ascii_lowercase
-from collections import defaultdict
-from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable
+from collections import defaultdict, namedtuple
+from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any
 
 import psutil
 import pywinauto as pwn
+from pywinauto.controls import uia_controls
 
 from _sql import MS_SQL
 
@@ -381,6 +382,34 @@ def is_running(filename: str, exclude: Optional[Union[int, Iterable[int]]]=None)
 		except (psutil.NoSuchProcess, psutil.AccessDenied):
 			pass
 	return False
+
+
+def _adapt_cell(x):
+	if x == '(null)':
+		return None
+	elif x == 'False':
+		return False
+	elif x == 'True':
+		return True
+	elif x.rsplit('.', 1)[0].isnumeric():
+		return int(x.rsplit('.', 1)[0].isnumeric())
+	else:
+		return x
+
+
+def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]], condition: Optional[Tuple[str, Any]]=None) -> List[NamedTuple]:
+	if type(columns) is str:
+		columns = [columns]
+	# TODO: regex datetime
+	# TODO: better condition handling (exec string?)
+	DataRow = namedtuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
+	if condition is None:
+		return [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+		                   for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):]]
+	else:
+		return [DataRow(**{
+		col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+			for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()['Value'].strip()) == condition[1]]
 
 
 # - - - - - - - - - - - - - - - - - - - - REGEX - - - - - - - - - - - - - - - - - - - - -
