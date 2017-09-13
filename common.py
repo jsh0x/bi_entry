@@ -35,11 +35,14 @@ class Part:
 
 class Unit:
 	def __init__(self, sql: MS_SQL, args: NamedTuple):
-		className = self.__class__.__name__
 		self._mssql = sql
 		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
-		self.parts, self.datetime, self.notes, _status = args
+		self.parts, self.datetime, self.notes, self._status = args
 		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = None
+		self._total_sros = 0
+		self._open_sros = 0
+		self._sros_tried = 0
+		self.timer = TestTimer()
 		log.debug(f"Attribute id={self.id}")
 		log.debug(f"Attribute serial_number='{self.serial_number}'")
 		log.debug(f"Attribute build='{self.build}'")
@@ -53,6 +56,25 @@ class Unit:
 		log.debug(f"Property product='{self.product}'")
 		log.debug(f"Property whole_build='{self.whole_build}'")
 		log.debug(f"Property operator_initials='{self.operator_initials}'")
+		# 'hh:mm:ss.nnn'
+		# 'YYYY-MM-DD'
+
+	def start(self):
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
+		self._start_time = self.timer.start()
+
+	def complete(self):
+		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = 'Started({self._status})'")
+		self._mssql.execute("INSERT INTO [Statistics]"
+		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],[Open SROs],[Checked SROs],"
+		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Date],"
+		                    "[Start Time],[SRO Operations],[SRO Transactions],[Misc Issue Time],[End Time],[Total Time],[Process],[Results],[Reason])"
+		                    f"VALUES ('{self.serial_number}')")
+
+	def skip(self, reason: Optional[str]=None):
+		if reason is None:
+			reason = 'Skipped'
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = 'Started({self._status})'")
 
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
@@ -414,6 +436,7 @@ def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable
 
 # - - - - - - - - - - - - - - - - - - - - REGEX - - - - - - - - - - - - - - - - - - - - -
 REGEX_USER_SESSION_LIMIT = re.compile(r"session count limit")
+REGEX_PASSWORD_EXPIRE = re.compile(r"password will expire")
 REGEX_INVALID_LOGIN = re.compile(r"user ?name.*password.*invalid")
 REGEX_REPLACE_SESSION = re.compile(r"(?im)session .* user '(?P<user>\w+)' .* already exists(?s:.*)[\n\r](?P<question>.+\?)")
 REGEX_WINDOW_MENU_FORM_NAME = re.compile(r"^\d+ (?P<name>[\w* ?]+\w*) .*")

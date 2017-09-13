@@ -7,7 +7,7 @@ from time import sleep
 from transact import transact
 from scrap import scrap
 from reason import reason
-from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, Application, Unit
+from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
 from _sql import MS_SQL
 from _crypt import decrypt
 from exceptions import *
@@ -23,6 +23,7 @@ mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _ke
 replace_session_regex = REGEX_REPLACE_SESSION
 user_session_regex = REGEX_USER_SESSION_LIMIT
 invalid_login_regex = REGEX_INVALID_LOGIN
+password_expire_regex = REGEX_PASSWORD_EXPIRE
 
 config = configparser.ConfigParser()
 logging.config.fileConfig('config2.ini')
@@ -64,6 +65,9 @@ def main():
 						if replace_session_regex.search(text[0]):  # Handle better in future
 							if 'yes_button' in buttons:
 								buttons['yes_button'].click()
+						elif password_expire_regex.search(text[0]):  # Handle better in future
+							if 'ok_button' in buttons:
+								buttons['ok_button'].click()
 						elif user_session_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
 								buttons['ok_button'].click()
@@ -79,21 +83,24 @@ def main():
 				log.info(f"Successfully logged in as '{usr}'")
 				app.logged_in = True
 		if app.logged_in:
-			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
-			if result is None:
-				log.info("No valid results, waiting...")
-				sleep(10)
-				continue
-			unit = Unit(mssql, result)
-			log.info(f"Unit object created with serial_number={unit.serial_number}'")
-			if result.Status == 'Queued':
-				transact(app, unit)
-			elif result.Status == 'Reason':
-				transact(app, unit)
-			elif result.Status == 'Scrap':
-				transact(app, unit)
-			else:
-				raise ValueError()
+			try:
+				result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
+				if result is None:
+					log.info("No valid results, waiting...")
+					sleep(10)
+					continue
+				unit = Unit(mssql, result)
+				log.info(f"Unit object created with serial_number={unit.serial_number}'")
+				if result.Status == 'Queued':
+					transact(app, unit)
+				elif result.Status == 'Reason':
+					transact(app, unit)
+				elif result.Status == 'Scrap':
+					transact(app, unit)
+				else:
+					raise ValueError()
+			except UnitClosedError:
+				pass
 
 if __name__ == '__main__':
 	main()
