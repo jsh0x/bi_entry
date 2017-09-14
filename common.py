@@ -2,6 +2,7 @@ import re
 import pathlib
 import datetime
 import logging.config
+from sys import exc_info
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
@@ -34,18 +35,23 @@ class Part:
 
 
 class Unit:
-	def __init__(self, sql: MS_SQL, args: NamedTuple):
-		self._mssql = sql
+	def __init__(self, ms_sql: MS_SQL, sl_sql: MS_SQL, args: NamedTuple):
+		self._mssql = ms_sql
+		self._sl_sql = sl_sql
 		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, self._status = args
-		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = None
-		self._total_sros = 0
-		self._open_sros = 0
-		self._sros_tried = 0
+		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = \
+		self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
 		self.timer = TestTimer()
+		self.update_sl_data()
 		log.debug(f"Attribute id={self.id}")
 		log.debug(f"Attribute serial_number='{self.serial_number}'")
 		log.debug(f"Attribute build='{self.build}'")
+		log.debug(f"Attribute sro_num='{self.sro_num}'")
+		log.debug(f"Attribute sro_line='{self.sro_line}'")
+		log.debug(f"Attribute eff_date='{self.eff_date}'")
+		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
+		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
 		log.debug(f"Attribute suffix='{self.suffix}'")
 		log.debug(f"Attribute operation='{self.operation}'")
 		log.debug(f"Attribute operator='{self.operator}'")
@@ -76,6 +82,29 @@ class Unit:
 			reason = 'Skipped'
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = 'Started({self._status})'")
 
+	def update_sl_data(self):
+		try:
+			self.sro_num, self.sro_line, self.eff_date, self.SRO_Operations_status, self.SRO_Line_status = self.sl_data
+		except TypeError as ex:
+			if re.search(r"NoneType.*not iterable", str(exc_info()[1])) is None:
+				raise ex
+
+	@property
+	def sl_data(self) -> NamedTuple:
+		return self._sl_sql.execute("SELECT TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
+									"Case when s.sro_stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
+									"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
+									"From fs_sro s (nolock) "
+									"Inner join fs_sro_line l (nolock) "
+									"on s.sro_num = l.sro_num "
+									"Inner join fs_unit_cons c (nolock) "
+									"on l.ser_num = c.ser_num "
+									"Left join fs_unit_cons c2 (nolock) "
+									"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
+									"Where c2.eff_date IS NULL AND "
+									f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
+									"Order by s.open_date DESC")
+
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
 		try:
@@ -95,7 +124,7 @@ class Unit:
 		if type(self.serial_number_prefix) is tuple and value in self.serial_number_prefix:
 			self._serial_number_prefix = value
 		else:
-			self._serial_number_prefix = None
+			self._serial_number_prefix = value
 
 	@property
 	def parts(self) -> Iterator[Part]:
@@ -281,26 +310,18 @@ class Application(psutil.Process):
 			name = alias
 		self._visible_form = name
 
-	def find_value_in_collection(self, collection: str, property: str, value, case_sensitive=False):
-		pag.hotkey('alt', 'e')
-		pag.press('v')
-		find_window = self.app_win32['Find']
-		find = find_window['Find:Edit']
-		clct = find_window['In Collection:Edit']
-		ppty = find_window['In Property:Edit']
-		ok_button = find_window['&OKButton']
-		clct.click()
-		pag.hotkey('alt', 'down')
-		lb = find_window['In CollectionListBox']
-		lb.select(collection)
-		ppty.click()
-		pag.hotkey('alt', 'down')
-		lb = find_window['In PropertyListBox']
-		lb.select(property)
-		find.set_text(str(value))
+	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
+		sl_win = self.win32.window(title_re='Infor ERP SL (EM)*')
+		sl_win.send_keystrokes('%e')
+		sl_win.send_keystrokes('v')
+		find_window = self.win32['Find']
+		find_window.InCollectionComboBox.select(collection)
+		find_window.InPropertyComboBox.select(property_)
+		find_window.FindEdit.set_text(value)
 		if case_sensitive:
-			kbd.SendKeys('%a')
-		ok_button.click()
+			find_window.CaseSensitiveButton.check()
+		find_window.set_focus()
+		find_window.OKButton.click()
 
 	def change_forms(self):
 		pass
@@ -440,8 +461,12 @@ REGEX_PASSWORD_EXPIRE = re.compile(r"password will expire")
 REGEX_INVALID_LOGIN = re.compile(r"user ?name.*password.*invalid")
 REGEX_REPLACE_SESSION = re.compile(r"(?im)session .* user '(?P<user>\w+)' .* already exists(?s:.*)[\n\r](?P<question>.+\?)")
 REGEX_WINDOW_MENU_FORM_NAME = re.compile(r"^\d+ (?P<name>[\w* ?]+\w*) .*")
-
-
+REGEX_ROW_NUMBER = re.compile(r"^Row (?P<row_number>\d+)")
+REGEX_SAVE_CHANGES = re.compile(r"save your changes to")
+REGEX_CREDIT_HOLD = re.compile(r"credit.*")
+REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/\-](?P<month>[01]\d)[/\-](?P<day>[0-3]\d)")
+REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
+# TODO: Improved credit hold regex, specific customer number
 # - - - - - - - - - - - - - - - - - - - - COMMON  - - - - - - - - - - - - - - - - - - - -
 CELLULAR_UNIT_BUILDS = ('EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',

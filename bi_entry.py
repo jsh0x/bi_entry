@@ -13,12 +13,17 @@ from _crypt import decrypt
 from exceptions import *
 
 _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
-                              '474046203600486038404260432039003960',
-                              '63004620S875486038404260S875432039003960',
-                              '58803900396063004620360048603840426038404620',
-                              '1121327')
-_adr_data, _usr_data, _pwd_data, _db_data, _key = _assorted_lengths_of_string
+                               '3660426037804620468050404740384034653780366030253080',
+                               '474046203600486038404260432039003960',
+                               '63004620S875486038404260S875432039003960',
+                               '58803900396063004620360048603840426038404620',
+                               '54005880Q750516045004500',
+                               '1121327')
+_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
 mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
+slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
+
+result = mssql.execute("SELECT TOP 1 * FROM [Statistics]")
 
 replace_session_regex = REGEX_REPLACE_SESSION
 user_session_regex = REGEX_USER_SESSION_LIMIT
@@ -28,7 +33,6 @@ password_expire_regex = REGEX_PASSWORD_EXPIRE
 config = configparser.ConfigParser()
 logging.config.fileConfig('config2.ini')
 log = logging
-
 
 def main():
 	sleep(randint(10, 20) / 10)
@@ -55,6 +59,7 @@ def main():
 					app.win32.SignIn.PasswordEdit.set_text(pwd)
 					if (app.win32.SignIn.UserLoginEdit.texts()[0] != usr) or (app.win32.SignIn.PasswordEdit.texts()[0] != pwd) or (not app.win32.SignIn.OKButton.exists()):
 						raise ValueError()
+					app.win32.SignIn.set_focus()
 					app.win32.SignIn.OKButton.click()
 					while app.win32.Dialog.exists():
 						# Get dialog info
@@ -64,15 +69,19 @@ def main():
 						log.debug([title, buttons, text, replace_session_regex.search(text[0]), user_session_regex.search(text[0])])
 						if replace_session_regex.search(text[0]):  # Handle better in future
 							if 'yes_button' in buttons:
+								app.win32.Dialog.set_focus()
 								buttons['yes_button'].click()
 						elif password_expire_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
+								app.win32.Dialog.set_focus()
 								buttons['ok_button'].click()
 						elif user_session_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
+								app.win32.Dialog.set_focus()
 								buttons['ok_button'].click()
 						elif invalid_login_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
+								app.win32.Dialog.set_focus()
 								buttons['ok_button'].click()
 								raise SyteLineLogInError('')
 						else:
@@ -83,23 +92,25 @@ def main():
 				log.info(f"Successfully logged in as '{usr}'")
 				app.logged_in = True
 		if app.logged_in:
+			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
+			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [Id] ASC")
+			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Serial Number] = '1160324'")
+			if result is None:
+				log.info("No valid results, waiting...")
+				sleep(10)
+				continue
+			unit = Unit(mssql, slsql, result)
+			log.info(f"Unit object created with serial_number={unit.serial_number}'")
+			script_dict = {'Queued': transact, 'Reason': reason, 'Scrap': scrap}
 			try:
-				result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
-				if result is None:
-					log.info("No valid results, waiting...")
-					sleep(10)
-					continue
-				unit = Unit(mssql, result)
-				log.info(f"Unit object created with serial_number={unit.serial_number}'")
-				if result.Status == 'Queued':
-					transact(app, unit)
-				elif result.Status == 'Reason':
-					transact(app, unit)
-				elif result.Status == 'Scrap':
-					transact(app, unit)
-				else:
-					raise ValueError()
+				if unit.SRO_Line_status == 'Closed':
+					raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")
+				if unit.sro_num is None:
+					raise UnitClosedError(f"Unit '{unit.serial_number}' has no SROs")
+				script_dict.get(result.Status, lambda x,y: None)(app, unit)
 			except UnitClosedError:
+				pass
+			else:
 				pass
 
 if __name__ == '__main__':
