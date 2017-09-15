@@ -15,7 +15,7 @@ from pywinauto import mouse, keyboard
 import pywinauto.timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
 
-pag.FAILSAFE = True
+pag.FAILSAFE = False
 
 pywinauto.timings.Timings.Fast()
 logging.config.fileConfig('config2.ini')
@@ -319,7 +319,6 @@ def Transact(app: Application, unit: Unit):
 			except Exception:  # Placeholder
 				unit.skip()
 			else:
-				pag._failSafeCheck()
 				added_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
 				log.debug(f"Added parts: {added_parts}")
 				added_part_numbers = {p.Item for p in added_parts}
@@ -401,13 +400,14 @@ def Transact(app: Application, unit: Unit):
 				resn_notes.send_keystrokes(resn_notes.texts()[0] + "{ENTER}[UDI]{ENTER}[PASSED ALL TESTS]")
 			else:
 				resn_notes.send_keystrokes("[UDI]{ENTER}[PASSED ALL TESTS]")
+		reso_notes = sl_win.ResolutionNotesEdit
 		if unit.parts:
 			reso_string = ", ".join([p.display_name for p in unit.parts])
 			if reso_notes.texts():
 				reso_notes.send_keystrokes(reso_notes.texts()[0] + "{ENTER}[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 			else:
 				reso_notes.send_keystrokes("[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
-		pag._failSafeCheck()
+		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 		status.send_keystrokes('^s')
 		status.wait_for_idle()
 		if unit.operation == 'QC':
@@ -418,7 +418,6 @@ def Transact(app: Application, unit: Unit):
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			status.set_text('Closed')
 			sl_win.set_focus()
-			pag._failSafeCheck()
 			status.send_keystrokes('^s')
 			sleep(0.5)
 			handle_popup()
@@ -431,12 +430,13 @@ def Transact(app: Application, unit: Unit):
 		sleep(0.2)
 		sl_win.send_keystrokes('{F5}')  # Clear Filter
 		sleep(0.2)
-		pag._failSafeCheck()
 	except pag.FailSafeException:
 		unit.reset()
 		sys.exit(1)
 	except Exception:  # Placeholder
 		unit.skip()
+		for presses in range(4):
+			sl_uia.CancelCloseButton.click()
 	else:
 		unit.complete()
 
