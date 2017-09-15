@@ -6,7 +6,7 @@ from sys import exc_info
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
-from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any
+from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any, overload
 
 import psutil
 import pywinauto as pwn
@@ -16,6 +16,16 @@ from _sql import MS_SQL
 
 logging.config.fileConfig('config2.ini')
 log = logging
+
+
+"""Select ser_num, item from fs_unit (nolock)
+Inner join 
+( VALUES ('ACB'),('BE'),('BS'),('GMU'),('HB'),('HG'),('HGM'),('HGR'),('HGS'),('LC'),('LCB'),('OT'),('PM'),('SL'),('TD')) as p ([Prefix])
+On LEFT(ser_num,LEN(p.Prefix)) = p.Prefix
+Where Right(ser_num, Len(ser_num) - len(p.Prefix)) IN 
+(('SN1'),('SN2'),('SN3')...)
+"""
+
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 class Part:
@@ -66,21 +76,24 @@ class Unit:
 		# 'YYYY-MM-DD'
 
 	def start(self):
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._start_time = self.timer.start()
 
 	def complete(self):
-		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = 'Started({self._status})'")
-		self._mssql.execute("INSERT INTO [Statistics]"
-		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],[Open SROs],[Checked SROs],"
-		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Date],"
-		                    "[Start Time],[SRO Operations],[SRO Transactions],[Misc Issue Time],[End Time],[Total Time],[Process],[Results],[Reason])"
-		                    f"VALUES ('{self.serial_number}')")
+		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		# self._mssql.execute("INSERT INTO [Statistics]"
+		#                     "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],[Open SROs],[Checked SROs],"
+		#                     "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Date],"
+		#                     "[Start Time],[SRO Operations],[SRO Transactions],[Misc Issue Time],[End Time],[Total Time],[Process],[Results],[Reason])"
+		#                     f"VALUES ('{self.serial_number}')")
 
 	def skip(self, reason: Optional[str]=None):
 		if reason is None:
 			reason = 'Skipped'
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}' AND [Status] = 'Started({self._status})'")
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+
+	def reset(self):
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def update_sl_data(self):
 		try:
@@ -91,19 +104,34 @@ class Unit:
 
 	@property
 	def sl_data(self) -> NamedTuple:
-		return self._sl_sql.execute("SELECT TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
-									"Case when s.sro_stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
+		return self._sl_sql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
+									"Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
 									"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
 									"From fs_sro s (nolock) "
 									"Inner join fs_sro_line l (nolock) "
 									"on s.sro_num = l.sro_num "
 									"Inner join fs_unit_cons c (nolock) "
 									"on l.ser_num = c.ser_num "
+									"Inner join fs_sro_oper o (nolock) "
+									"on l.sro_num = o.sro_num and l.sro_line = o.sro_line "
 									"Left join fs_unit_cons c2 (nolock) "
 									"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
 									"Where c2.eff_date IS NULL AND "
 									f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
 									"Order by s.open_date DESC")
+		# return self._sl_sql.execute("SELECT TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
+		# 							"Case when s.sro_stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
+		# 							"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
+		# 							"From fs_sro s (nolock) "
+		# 							"Inner join fs_sro_line l (nolock) "
+		# 							"on s.sro_num = l.sro_num "
+		# 							"Inner join fs_unit_cons c (nolock) "
+		# 							"on l.ser_num = c.ser_num "
+		# 							"Left join fs_unit_cons c2 (nolock) "
+		# 							"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
+		# 							"Where c2.eff_date IS NULL AND "
+		# 							f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
+		# 							"Order by s.open_date DESC")
 
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
@@ -113,7 +141,7 @@ class Unit:
 			else:
 				value = self._serial_number_prefix
 		except Exception as ex:
-			print(ex, self.serial_number)
+			raise ex
 		except (ValueError, KeyError, IndexError):
 			value = None
 		finally:
@@ -378,7 +406,6 @@ class TestTimer:
 			retval = datetime.datetime.now() - self._start_time
 			return retval
 		else:
-			print(None)
 			return None
 
 	def reset(self):
@@ -440,20 +467,46 @@ def _adapt_cell(x):
 		return x
 
 
-def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]], condition: Optional[Tuple[str, Any]]=None) -> List[NamedTuple]:
+def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]], condition: Optional[Tuple[str, Any]]=None, requirement: str=None) -> List[NamedTuple]:
 	if type(columns) is str:
 		columns = [columns]
 	# TODO: regex datetime
 	# TODO: better condition handling (exec string?)
 	DataRow = namedtuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
-	if condition is None:
-		return [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-		                   for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):]]
+	if requirement is not None:
+		if condition is None:
+			return [DataRow(**{
+				col.replace(' ', '_'): _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()['Value'].strip()) != None]
+		else:
+			return [DataRow(**{
+				col.replace(' ', '_'): _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
+				uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()[
+					'Value'].strip()) == condition[1] and _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()['Value'].strip()) != None]
 	else:
-		return [DataRow(**{
-		col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-			for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()['Value'].strip()) == condition[1]]
+		if condition is None:
+			return [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+			                   for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):]]
+		else:
+			return [DataRow(**{
+			col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()['Value'].strip()) == condition[1]]
 
+# Not one Item Price exists for Item that has
+# @overload
+def center(x1: int, y1: int, x2: int, y2: int) -> Tuple[int, int]:
+	assert 0 < x1 < x2
+	assert 0 < y1 < y2
+	x2 -= x1
+	y2 -= y1
+	return x1 + (x2 // 2), y1 + (y2 // 2)
+
+
+# def center(x: int, y: int, w: int, h: int) -> Tuple[int, int]:
+# 	return x + (w // 2), y + (h // 2)
 
 # - - - - - - - - - - - - - - - - - - - - REGEX - - - - - - - - - - - - - - - - - - - - -
 REGEX_USER_SESSION_LIMIT = re.compile(r"session count limit")
@@ -464,6 +517,7 @@ REGEX_WINDOW_MENU_FORM_NAME = re.compile(r"^\d+ (?P<name>[\w* ?]+\w*) .*")
 REGEX_ROW_NUMBER = re.compile(r"^Row (?P<row_number>\d+)")
 REGEX_SAVE_CHANGES = re.compile(r"save your changes to")
 REGEX_CREDIT_HOLD = re.compile(r"credit.*")
+REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?P<part>[^\w\]]+)\].*\[Location: (?P<location>[^\w\]]+)\]")
 REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/\-](?P<month>[01]\d)[/\-](?P<day>[0-3]\d)")
 REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
 # TODO: Improved credit hold regex, specific customer number

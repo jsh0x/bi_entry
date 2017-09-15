@@ -3,14 +3,19 @@ import logging.config
 import configparser
 from random import randint
 from time import sleep
+import sys
 
-from transact import transact
+import pyautogui as pag
+
+from transact import Transact
 from scrap import scrap
 from reason import reason
 from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
 from _sql import MS_SQL
 from _crypt import decrypt
 from exceptions import *
+
+pag.FAILSAFE = True
 
 _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
                                '3660426037804620468050404740384034653780366030253080',
@@ -22,8 +27,6 @@ _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
 _adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
 mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
 slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
-
-result = mssql.execute("SELECT TOP 1 * FROM [Statistics]")
 
 replace_session_regex = REGEX_REPLACE_SESSION
 user_session_regex = REGEX_USER_SESSION_LIMIT
@@ -61,27 +64,31 @@ def main():
 						raise ValueError()
 					app.win32.SignIn.set_focus()
 					app.win32.SignIn.OKButton.click()
-					while app.win32.Dialog.exists():
+					Dialog2 = app.uia.top_window()
+					while Dialog2.exists():
 						# Get dialog info
-						title = app.win32.Dialog.texts()
-						buttons = {ctrl.texts()[0].strip('!@#$%^&*()_ ').replace(' ', '_').lower() + '_button': ctrl for ctrl in app.win32.Dialog.children() if ctrl.friendly_class_name() == 'Button'}
-						text = [ctrl.texts()[0].capitalize() for ctrl in app.win32.Dialog.children() if ctrl.friendly_class_name() == 'Static' and ctrl.texts()[0]]
+						Dialog = Dialog2.children()[0]
+						title = Dialog.texts()
+						buttons = {ctrl.texts()[0].strip('!@#$%^&*()_ ').replace(' ', '_').lower() + '_button': ctrl for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Button'}
+						text = [ctrl.texts()[0].capitalize() for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Static' and ctrl.texts()[0]]
+						if not text:
+							break
 						log.debug([title, buttons, text, replace_session_regex.search(text[0]), user_session_regex.search(text[0])])
 						if replace_session_regex.search(text[0]):  # Handle better in future
 							if 'yes_button' in buttons:
-								app.win32.Dialog.set_focus()
+								Dialog.set_focus()
 								buttons['yes_button'].click()
 						elif password_expire_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
-								app.win32.Dialog.set_focus()
+								Dialog.set_focus()
 								buttons['ok_button'].click()
 						elif user_session_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
-								app.win32.Dialog.set_focus()
+								Dialog.set_focus()
 								buttons['ok_button'].click()
 						elif invalid_login_regex.search(text[0]):  # Handle better in future
 							if 'ok_button' in buttons:
-								app.win32.Dialog.set_focus()
+								Dialog.set_focus()
 								buttons['ok_button'].click()
 								raise SyteLineLogInError('')
 						else:
@@ -99,9 +106,13 @@ def main():
 				log.info("No valid results, waiting...")
 				sleep(10)
 				continue
-			unit = Unit(mssql, slsql, result)
+			try:
+				unit = Unit(mssql, slsql, result)
+			except ValueError:
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				continue
 			log.info(f"Unit object created with serial_number={unit.serial_number}'")
-			script_dict = {'Queued': transact, 'Reason': reason, 'Scrap': scrap}
+			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': scrap}
 			try:
 				if unit.SRO_Line_status == 'Closed':
 					raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")
@@ -109,9 +120,12 @@ def main():
 					raise UnitClosedError(f"Unit '{unit.serial_number}' has no SROs")
 				script_dict.get(result.Status, lambda x,y: None)(app, unit)
 			except UnitClosedError:
-				pass
-			else:
-				pass
+				unit.skip('No Open SRO')
+			except pag.FailSafeException:
+				mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				sys.exit(1)
+			finally:
+				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 
 if __name__ == '__main__':
 	main()

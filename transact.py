@@ -1,30 +1,35 @@
 from sys import exc_info
 import logging.config
 from time import sleep
+import sys
 from traceback import TracebackException
 
-from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex
+from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex, center, REGEX_NEGATIVE_ITEM as negative_item_regex
 from exceptions import *
 
 from common import timer, access_grid
+import pyautogui as pag
 import pywinauto as pwn
 # from pywinauto import Application, application
-import pyautogui as pag
+from pywinauto import mouse, keyboard
 import pywinauto.timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
+
+pag.FAILSAFE = True
 
 pywinauto.timings.Timings.Fast()
 logging.config.fileConfig('config2.ini')
 log = logging
 
-def transact(app: Application, unit: Unit):
+def Transact(app: Application, unit: Unit):
 	log.info(f"Starting Transact script with unit: {unit.serial_number_prefix+unit.serial_number}")
 	form = 'Units'
 	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
 	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
 	# while sl_win.exists():
 	if not sl_win.exists():
-		raise ValueError()
+		unit.reset()
+		sys.exit(1)
 	log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
 	if form not in app.forms:  # If required form is not open
 		sl_win.send_keystrokes('^o')
@@ -39,6 +44,42 @@ def transact(app: Application, unit: Unit):
 			raise ValueError()
 	# TODO: Check if 'Units' form is focused, if not, do so
 	try:
+		def handle_popup(title: str='Infor ERP SL', specific_method: str=None, best_match: str=None):
+			sleep(0.5)
+			# negative_item_regex
+			pag._failSafeCheck()
+			if best_match is not None:
+				while sl_uia.child_window(best_match=best_match).exists():
+					log.debug(sl_uia.child_window(best_match=best_match).get_properties())
+					dlg_text = ''.join(
+						text for cls, text in zip(sl_uia.child_window(best_match=best_match).children(), sl_uia.child_window(best_match=best_match).children_texts()) if cls.friendly_class_name() == 'Static')
+					log.debug(f"Dialog text: {dlg_text}")
+					if specific_method is None:
+						log.debug("Close pop-up")
+						sl_uia.child_window(best_match=best_match).close()
+					else:
+						button = [cls for cls, text in zip(sl_uia.child_window(best_match=best_match).children(), sl_uia.child_window(best_match=best_match).children_texts()) if
+						          (cls.friendly_class_name() == 'Button') and (text.lower() == specific_method.lower())]
+						if button:
+							button = button[0]
+						button.click()
+						log.debug(f"Pop-up button '{specific_method}' clicked")
+					sleep(0.2)
+			else:
+				while sl_uia.child_window(title=title).exists():
+					log.debug(sl_uia.child_window(title=title).get_properties())
+					dlg_text = ''.join(text for cls,text in zip(sl_uia.child_window(title=title).children(), sl_uia.child_window(title=title).children_texts()) if cls.friendly_class_name() == 'Static')
+					log.debug(f"Dialog text: {dlg_text}")
+					if specific_method is None:
+						log.debug("Close pop-up")
+						sl_uia.child_window(title=title).close()
+					else:
+						button = [cls for cls, text in zip(sl_uia.child_window(title=title).children(), sl_uia.child_window(title=title).children_texts()) if (cls.friendly_class_name() == 'Button') and (text.lower() == specific_method.lower())]
+						if button:
+							button = button[0]
+						button.click()
+						log.debug(f"Pop-up button '{specific_method}' clicked")
+					sleep(0.2)
 		for i in range(2):
 			try:
 				sl_win.UnitEdit.set_text(unit.serial_number_prefix+unit.serial_number)  # Input serial number
@@ -84,6 +125,8 @@ def transact(app: Application, unit: Unit):
 						unit.build = '650'
 						unit._whole_build = None
 				break
+		unit.start()
+		pag._failSafeCheck()
 		log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 		if not sl_win.ServiceOrderLinesButton.is_enabled():
 			raise UnitClosedError("Service Order Lines Button is disabled")
@@ -99,8 +142,8 @@ def transact(app: Application, unit: Unit):
 		timer.start()
 		sl_win.ServiceOrderLinesButton.click()
 		sl_win.ServiceOrderOperationsButton.wait('visible', 2, 0.09)
-	except ZeroDivisionError:
-		pass
+	except Exception:  # Placeholder
+		unit.skip()
 	try:
 		t_temp = timer.stop()
 		log.debug(f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
@@ -128,14 +171,25 @@ def transact(app: Application, unit: Unit):
 		timer.start()
 		sl_win.ServiceOrderOperationsButton.click()
 		sl_win.SROLinesButton.wait('visible', 2, 0.09)
-	except ZeroDivisionError:
-		pass
+	except Exception:  # Placeholder
+		unit.skip()
 
 	try:
 		# form = 2
 		t_temp = timer.stop()
 		log.debug(f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
-		# TODO: Open SRO Operations-level status if closed
+		# if sl_uia.StatEdit.texts()[0].strip() != unit.SRO_Operations_status:
+		# 	raise InvalidSerialNumberError("")  # Placeholder
+		# print(sl_win.StatusEdit3.texts()[0].strip())
+		pag._failSafeCheck()
+		if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
+			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
+			status.set_text('Open')
+			status.send_keystrokes('{TAB}')
+			handle_popup(best_match='ResetDatesDialog')
+			save = sl_uia.SaveButton
+			save.click()
+		sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 		# 	if sl_win.StatusEdit3.texts()[0].strip() != 'Open' or not sl_win.SROTransactionsButton.is_enabled():
 		# 		log.warning(f"SRO '{sro}' closed on SRO Operations level")
 		# 		raise SROClosedWarning(f"SRO '{sro}' closed on SRO Operations level")
@@ -174,94 +228,217 @@ def transact(app: Application, unit: Unit):
 				log.debug(transaction_grid.get_properties())
 				# Columns to get:
 				# 'Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'
-				posted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], ('Posted', True))
-				log.debug(posted_parts)
+				posted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], condition=('Posted', True), requirement='Item')
+				log.debug(f"Posted parts: {posted_parts}")
+				posted_part_numbers= {p.Item for p in posted_parts}
 				sl_win.IncludePostedButton.click()
 				timer.start()
 				sl_win.ApplyFilterButton.click()
 				sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
 				t_temp = timer.stop()
 				log.debug(f"Time waited for second Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
-				unposted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'])
-				log.debug(unposted_parts)
+				unposted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
+				log.debug(f"Unposted parts: {unposted_parts}")
+				unposted_part_numbers= {p.Item for p in unposted_parts}
 				# TODO: Based on already posted and unposted, transact accordingly
+				row_i = None
 				columns = ['Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date']
 				top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 				log.debug(F"Columns: {top_row.children_texts()[1:10]}")
+				loc_rec_list = []
 				for part in unit.parts:
+					pag._failSafeCheck()
+					if (part.part_number in posted_part_numbers) or (part.part_number in unposted_part_numbers):
+						continue
+					if row_i is None:
+						if unposted_parts:
+							row_i = -1
+						else:
+							row_i = -2
+					else:
+						row_i = -1
 					log.debug(f"Attempting to transact part {part}")
-					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-1].element_info)
+					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[row_i].element_info)
 					item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
+					r_i = item.rectangle()
+					sl_win.set_focus()
+					c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+					mouse.click(coords=c_coords)
+					handle_popup()
+					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-2].element_info)
 					location = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Location')).element_info)
 					quantity = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Quantity')).element_info)
 					billcode = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Billing Code')).element_info)
-					# sl_win.set_focus()
-					# TODO: Replace pag with pwn.mouse
-					# TODO: Turn pag fs off
-					pag.click(pag.center((item.rectangle().left, item.rectangle().top, item.rectangle().right-item.rectangle().left, item.rectangle().bottom-item.rectangle().top)))
-					sleep(0.5)
-					pag.press('enter', presses=2)
-					sleep(0.5)
-					pag.typewrite(part.part_number)
+					r_loc = location.rectangle()
+					r_qty = quantity.rectangle()
+					r_bill = billcode.rectangle()
+					keyboard.SendKeys(str(part.part_number))
 					sleep(0.5)
 					if part.quantity > 1:
-						# sl_win.set_focus()
-						pag.click(pag.center((quantity.rectangle().left, quantity.rectangle().top, quantity.rectangle().right - quantity.rectangle().left, quantity.rectangle().bottom - quantity.rectangle().top)))
+						sl_win.set_focus()
+						c_coords = center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom)
+						mouse.click(coords=c_coords)
+						handle_popup()
 						sleep(0.5)
-						pag.press('enter', presses=2)
+						keyboard.SendKeys(str(part.quantity))
 						sleep(0.5)
-						pag.typewrite(part.quantity)
-						sleep(0.5)
-						# while sl_win.InforSLDialog.exists():
-						# 	print(sl_win.InforSLDialog.get_properties())
-						# 	log.debug("Close pop-up")
-						# 	sl_win.InforSLDialog.close()
-						# 	sleep(0.2)
-					# sl_win.set_focus()
-					pag.click(pag.center((billcode.rectangle().left, billcode.rectangle().top, billcode.rectangle().right - billcode.rectangle().left, billcode.rectangle().bottom - billcode.rectangle().top)))
-					sleep(0.5)
-					pag.press('enter', presses=2)
+					sl_win.set_focus()
+					c_coords = center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom)
+					mouse.click(coords=c_coords)
+					handle_popup()
 					if unit.suffix == 'Direct' or unit.suffix == 'RTS':
 						bc = 'Contract'
 					else:
 						bc = 'No Charge'
 					sleep(0.5)
-					pag.typewrite(bc)
+					keyboard.SendKeys(str(bc), with_spaces=True)
 					sleep(0.5)
-					# sl_win.set_focus()
-					pag.click(pag.center((location.rectangle().left, location.rectangle().top, location.rectangle().right - location.rectangle().left, location.rectangle().bottom - location.rectangle().top)))
-					sleep(0.5)
-					pag.press('enter', presses=2)
-					sleep(0.5)
-					pag.typewrite(part.location)
-					sleep(0.5)
-				pass
-			except ZeroDivisionError:
-				pass
+					loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), part.location))
+				else:
+					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-1].element_info)
+					item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
+					r_i = item.rectangle()
+					sl_win.set_focus()
+					c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+					mouse.click(coords=c_coords)
+					handle_popup()
+					for coord,loc in loc_rec_list:
+						sl_win.set_focus()
+						mouse.click(coords=coord)
+						handle_popup()
+						sleep(0.5)
+						keyboard.SendKeys(str(loc), with_spaces=True)
+						sleep(0.5)
+					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-1].element_info)
+					item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
+					r_i = item.rectangle()
+					sl_win.set_focus()
+					c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+					mouse.click(coords=c_coords)
+					handle_popup()
+			except Exception:  # Placeholder
+				unit.skip()
+			else:
+				pag._failSafeCheck()
+				added_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
+				log.debug(f"Added parts: {added_parts}")
+				added_part_numbers = {p.Item for p in added_parts}
+				if added_parts:
+					save = sl_uia.SaveButton
+					sl_win.set_focus()
+					save.click()
+					handle_popup()
+					sl_win.set_focus()
+					sl_win.PostBatchButton.click()
+					sl_win.PostBatchButton.wait('ready', 2, 0.09)
+					handle_popup()
+					sl_win.set_focus()
+					save.click()
+					sleep(1)
+			handle_popup()
+			sl_win.set_focus()
+			for presses in range(2):
+				sl_uia.CancelCloseButton.click()
+			sl_win.ServiceOrderOperationsButton.wait('visible', 2, 0.09)
+			sl_win.set_focus()
+			timer.start()
+			sl_win.ServiceOrderOperationsButton.click()
+			sl_win.SROLinesButton.wait('visible', 2, 0.09)
+			t_temp = timer.stop()
+			log.debug(f"Time waited for Service Order Lines(part 2): {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 		if not sl_win.ReceivedDateEdit.texts()[0].strip():
 			sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
 		if not sl_win.FloorDateEdit.texts()[0].strip():
 			sl_win.FloorDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
-		if unit.operation == 'QC':
-			sl_win.CompletedDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 		common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
-		if unit.operation == 'QC' or True:
-			reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
-			for ch in reason_grid.children_texts():
-				r = row_number_regex.match(ch)
-				print(r.groups())
-				print(r.group())
-				print(r.groupdict())
-				print(r.lastgroup)
-			# rows = [for x in reason_grid.children_texts() if row_number_regex.match(x)]
-			print(reason_grid.children_texts())
-		# TODO: Handle Reasons Grid
-		# TODO: Look into finding if trailing empty line or not
 		if unit.operation == 'QC':
-			sl_win.StatusEdit3.set_text('Closed')
-		# TODO: Save and go back to beginning
-		quit()
-	except ZeroDivisionError:
-		pass
+			reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
+			reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'], requirement='General Reason')
+			last_row_i = len(reason_rows)-1
+			last_row2 = reason_rows[last_row_i]
+			top_row_i = reason_grid.children_texts().index('Top Row')
+			top_row = reason_grid.children()[top_row_i]
+			last_row = uia_controls.ListViewWrapper(reason_grid.children()[last_row_i+top_row_i+1].element_info)
+
+			gen_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Reason')).element_info)
+			gen_resn_i = gen_resn.rectangle()
+			sl_win.set_focus()
+			c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
+			mouse.click(coords=c_coords)
+			handle_popup()
+			sleep(0.5)
+
+			if last_row2.Specific_Reason is None:
+				spec_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Reason')).element_info)
+				spec_resn_i = spec_resn.rectangle()
+				sl_win.set_focus()
+				c_coords = center(x1=spec_resn_i.left, y1=spec_resn_i.top, x2=spec_resn_i.right, y2=spec_resn_i.bottom)
+				mouse.click(coords=c_coords)
+				handle_popup()
+				sleep(0.5)
+				keyboard.SendKeys('20')
+			if last_row2.General_Resolution is None:
+				gen_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Resolution')).element_info)
+				gen_reso_i = gen_reso.rectangle()
+				sl_win.set_focus()
+				c_coords = center(x1=gen_reso_i.left, y1=gen_reso_i.top, x2=gen_reso_i.right, y2=gen_reso_i.bottom)
+				mouse.click(coords=c_coords)
+				handle_popup()
+				sleep(0.5)
+				keyboard.SendKeys('10000')
+			if last_row2.Specific_Resolution is None:
+				spec_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
+				spec_reso_i = spec_reso.rectangle()
+				sl_win.set_focus()
+				c_coords = center(x1=spec_reso_i.left, y1=spec_reso_i.top, x2=spec_reso_i.right, y2=spec_reso_i.bottom)
+				mouse.click(coords=c_coords)
+				handle_popup()
+				sleep(0.5)
+				keyboard.SendKeys('100')
+			resn_notes = sl_win.ReasonNotesEdit
+			reso_notes = sl_win.ResolutionNotesEdit
+			if resn_notes.texts():
+				resn_notes.send_keystrokes(resn_notes.texts()[0] + "{ENTER}[UDI]{ENTER}[PASSED ALL TESTS]")
+			else:
+				resn_notes.send_keystrokes("[UDI]{ENTER}[PASSED ALL TESTS]")
+		if unit.parts:
+			reso_string = ", ".join([p.display_name for p in unit.parts])
+			if reso_notes.texts():
+				reso_notes.send_keystrokes(reso_notes.texts()[0] + "{ENTER}[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+			else:
+				reso_notes.send_keystrokes("[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+		pag._failSafeCheck()
+		status.send_keystrokes('^s')
+		status.wait_for_idle()
+		if unit.operation == 'QC':
+			common_controls.TabControlWrapper(sl_win.TabControl).select('General')  # Open 'General' Tab
+			sl_win.CompletedDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+			status.send_keystrokes('^s')
+			status.wait_for_idle()
+			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
+			status.set_text('Closed')
+			sl_win.set_focus()
+			pag._failSafeCheck()
+			status.send_keystrokes('^s')
+			sleep(0.5)
+			handle_popup()
+			status.wait_for_idle()
+		for presses in range(2):
+			sl_uia.CancelCloseButton.click()
+		sl_win.UnitEdit.wait('visible', 2, 0.09)
+		sleep(0.2)
+		sl_win.send_keystrokes('{F4}')  # Clear Filter
+		sleep(0.2)
+		sl_win.send_keystrokes('{F5}')  # Clear Filter
+		sleep(0.2)
+		pag._failSafeCheck()
+	except pag.FailSafeException:
+		unit.reset()
+		sys.exit(1)
+	except Exception:  # Placeholder
+		unit.skip()
 	else:
-		pass
+		unit.complete()
+
+	# 6342086
+
