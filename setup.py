@@ -16,28 +16,26 @@ os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
 executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
-packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
-			'pyautogui', 'pymssql', 'pywinauto', 'win32gui',
-            'easygui']
+packages = ['psutil', 'win32api', 'pyautogui',
+            'pymssql', 'pywinauto', 'win32gui',
+            'easygui', '_mssql', 'uuid']
 include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
-                 r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
-                 'config.ini']
+                 r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd']
 excludes = ["tkinter", "PyQt4.QtSql", "sqlite3",
-		             "scipy.lib.lapack.flapack",
-		             "PyQt4.QtNetwork",
-		             "PyQt4.QtScript",
-		             "numpy.core._dotblas",
-		             "PyQt5"]
+            "scipy.lib.lapack.flapack",
+            "PyQt4.QtNetwork", "PyQt4.QtScript",
+            "numpy.core._dotblas", "PyQt5", "matplotlib",
+            "colorama", "pygments", "mpl-data", "numpy",
+            "PIL", "email"]
+
 options = {
 	'build_exe': {
 		'packages': packages,
-		'include_files': include_files
+		'include_files': include_files,
+		"excludes": excludes,
+		"optimize": 2
 		}
 }
-""",
-"excludes": excludes,
-"optimize": 2"""
-
 # TODO: Exclude files
 
 setup(

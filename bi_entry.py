@@ -11,8 +11,8 @@ def main():
 	from scrap import scrap
 	from reason import reason
 	from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
-	from _sql import MS_SQL
-	from _crypt import decrypt
+	from sql import MS_SQL
+	from crypt import decrypt
 
 	_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
 	                               '3660426037804620468050404740384034653780366030253080',

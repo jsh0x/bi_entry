@@ -8,14 +8,14 @@ from sys import exc_info
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
-from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any, overload
+from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any
 
 import psutil
 import pywinauto as pwn
 from pywinauto.controls import uia_controls
+import win32gui
 
-from _sql import MS_SQL
-sanity = __author__
+from sql import MS_SQL
 logging.config.fileConfig('config.ini')
 log = logging
 
@@ -48,10 +48,10 @@ class Part:
 
 
 class Unit:
-	def __init__(self, ms_sql: MS_SQL, sl_sql: MS_SQL, args: NamedTuple):
+	def __init__(self, mssql: MS_SQL, slsql: MS_SQL, args: NamedTuple):
 		config.read_file(open('config.ini'))
-		self._mssql = ms_sql
-		self._sl_sql = sl_sql
+		self._mssql = mssql
+		self._slsql = slsql
 		self.version = config.get('DEFAULT', 'version')
 		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, self._status = args
@@ -190,7 +190,7 @@ class Unit:
 
 	@property
 	def sl_data(self) -> NamedTuple:
-		return self._sl_sql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
+		return self._slsql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
 									"Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
 									"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
 									"From fs_sro s (nolock) "
@@ -361,10 +361,11 @@ class Application(psutil.Process):
 	# 	self.logged_in = False
 
 	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
-		self._hwnd = self._win.handle
+		self._hwnd = self.win32.handle
 		# hwnd = win32gui.GetForegroundWindow()
-		coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
-		win32gui.MoveWindow(self._hwnd, int(coord.left) - 7, coord.top, coord.width, coord.height, True)
+		# coord = Coordinates(left=left, top=top, right=right, bottom=bottom)
+		coord = {'left': left, 'top': top, 'right': right, 'bottom': bottom}
+		win32gui.MoveWindow(self._hwnd, int(coord['left']) - 7, coord['top'], coord['right']-coord['left'], coord['bottom']-coord['top'], True)
 
 	def open_form(self, name: str, alias: Optional[str] = None):
 		self._win.send_keystrokes('^o')

@@ -9,7 +9,7 @@ from exceptions import *
 
 from common import timer, access_grid
 # import pyautogui as pag
-import pywinauto as pwn
+# import pywinauto as pwn
 # from pywinauto import Application, application
 from pywinauto import mouse, keyboard
 import pywinauto.timings
@@ -441,10 +441,6 @@ def Transact(app: Application, unit: Unit):
 				status.send_keystrokes('^s')
 				sleep(1)
 				handle_popup()
-				sleep(1)
-				handle_popup()
-				sleep(1)
-				handle_popup()
 				status.wait_for_idle()
 			unit.sro_operations_time += unit.sro_operations_timer.stop()
 			for presses in range(2):
@@ -461,9 +457,11 @@ def Transact(app: Application, unit: Unit):
 	# 	unit.reset()
 	# 	sys.exit(1)
 	except Exception:  # Placeholder
+		log.exception("SOMETHING HAPPENED!!!")
 		unit.skip()
 		for presses in range(3):
 			sl_uia.CancelCloseButton.click()
+			handle_popup()
 	else:
 		unit.complete()
 

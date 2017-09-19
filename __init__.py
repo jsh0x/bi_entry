@@ -2,16 +2,14 @@ __author__ = 'jsh0x'
 __version__ = '1.0.0'
 
 import struct
-import subprocess
 import configparser
 from sys import version_info as version
 import os
 import sys
-from typing import Iterable, Sequence
+from typing import Sequence
 import logging.config
 import logging.handlers
 import pathlib
-import pyautogui as pag
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 			'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
 
@@ -51,20 +49,14 @@ DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
-loggers = ['root', 'logTime', 'logControl']
-handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler', 'timeHandler', 'controlHandler']
-formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter', 'timeFormatter']
-log_dir = pathlib.WindowsPath.cwd()/'logs'
+loggers = ['root']
+handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler']
+formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter']
+log_dir = pathlib.WindowsPath.cwd().parent/'logs'
 log_dir.mkdir(exist_ok=True)
-time_dir = pathlib.WindowsPath.cwd()/'time_logs'
-time_dir.mkdir(exist_ok=True)
-ctrl_dir = pathlib.WindowsPath.cwd()/'control_logs'
-ctrl_dir.mkdir(exist_ok=True)
 
 info_log_dir = str(log_dir/'info.log').replace('\\', '/')
 debug_log_dir = str(log_dir/'dbg.log').replace('\\', '/')
-time_log_dir = str(time_dir/'completed.log').replace('\\', '/')
-control_log_dir = str(ctrl_dir/'controls.log').replace('\\', '/')
 
 
 def list_to_string(iterable: Sequence, sep: str=','):
@@ -131,10 +123,6 @@ def write_config(usr: str='???', pwd: str='???'):
 										  'datefmt': "%X",
 										  'style': "{",
 										  'class': "logging.Formatter"}
-	config['formatter_timeFormatter'] = {'format': "[{asctime}] {message}",
-										 'datefmt': "%X",
-										 'style': "{",
-										 'class': "logging.Formatter"}
 	config['handler_errorHandler'] = {'class': "StreamHandler",
 									  'level': "WARNING",
 									  'formatter': "errorFormatter",
@@ -151,23 +139,9 @@ def write_config(usr: str='???', pwd: str='???'):
 										'level': "DEBUG",
 										'formatter': "debugFormatter",
 										'args': "()"}
-	config['handler_timeHandler'] = {'class': "handlers.TimedRotatingFileHandler",
-									 'level': "INFO",
-									 'formatter': "timeFormatter",
-									 'args': f"('{time_log_dir}', 'D', 1, 9000)"}
-	config['handler_controlHandler'] = {'class': "FileHandler",
-										'level': "DEBUG",
-										'formatter': "timeFormatter",
-										'args': f"('{control_log_dir}', 'w')"}
-	config['logger_root'] = {'level': 'NOTSET',
+	config['logger_root'] = {'level': 'DEBUG',
 							 'handlers': list_to_string(handlers[:4]),
-							 'qualname': 'logMain'}
-	config['logger_logTime'] = {'level': 'INFO',
-								'handlers': 'timeHandler',
-								'qualname': 'logTime'}
-	config['logger_logControl'] = {'level': 'DEBUG',
-								   'handlers': 'controlHandler',
-								   'qualname': 'logControl'}
+							 'qualname': 'root'}
 	with open('config.ini', 'w') as configfile:
 		config.write(configfile)
 
