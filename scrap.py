@@ -9,7 +9,7 @@ from pywinauto.timings import Timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
 
 Timings.Fast()
-logging.config.fileConfig('config2.ini')
+logging.config.fileConfig('config.ini')
 log = logging
 
 replace_session_regex = REGEX_REPLACE_SESSION

@@ -11,6 +11,7 @@ from typing import Iterable, Sequence
 import logging.config
 import logging.handlers
 import pathlib
+import pyautogui as pag
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 			'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
 
@@ -45,6 +46,10 @@ packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 #     except ZeroDivisionError as e:
 #         logging.exception('ZeroDivisionError: %s', e)
 
+FILE_NAME = sys.executable
+DIR_NAME = os.path.dirname(sys.executable)
+os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
+os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
 loggers = ['root', 'logTime', 'logControl']
 handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler', 'timeHandler', 'controlHandler']
@@ -78,38 +83,39 @@ def find_file(name, path="C:/"):
 		return None
 
 
-def get_outdated_modules(pip_dir) -> dict:
-	retval = {}
-	mods = str(subprocess.Popen([pip_dir, 'list', '--format=legacy', '--outdated'], stdout=subprocess.PIPE).communicate()[0])
-	mods = (mods.split("'")[1]).split('\\r\\n')
-	for mod in mods:
-		try:
-			mod = mod.split(' ')
-			name, old, new = mod[0], (mod[1].rstrip(')')).lstrip('('), mod[4]
-			retval[name] = (old, new)
-		except:
-			continue
-	return retval
+# def get_outdated_modules(pip_dir) -> dict:
+# 	retval = {}
+# 	mods = str(subprocess.Popen([pip_dir, 'list', '--format=legacy', '--outdated'], stdout=subprocess.PIPE).communicate()[0])
+# 	mods = (mods.split("'")[1]).split('\\r\\n')
+# 	for mod in mods:
+# 		try:
+# 			mod = mod.split(' ')
+# 			name, old, new = mod[0], (mod[1].rstrip(')')).lstrip('('), mod[4]
+# 			retval[name] = (old, new)
+# 		except:
+# 			continue
+# 	return retval
 
 
-def write_config():
+def write_config(usr: str='???', pwd: str='???'):
 	path = (os.path.dirname(sys.executable)).replace('\\', '/')+"/Scripts/pip3.6.exe"
 	config = configparser.ConfigParser(interpolation=None)
 	module_list = packages
-	for mod in get_outdated_modules(path).keys():
-		if mod in module_list:
-			pass  # Update it
-	config['DEFAULT'] = {'printer': 'None',
+	# for mod in get_outdated_modules(path).keys():
+	# 	if mod in module_list:
+	# 		pass  # Update it
+	config['DEFAULT'] = {'version': __version__,
+	                     'printer': 'None',
 						 'min_sl_instances': '1',
 						 'max_sl_instances': '1',
 						 'multiprocess': 'False'}
-	config['Schedule'] = {'active_days': ''.join([str(i)+',' for i in range(1, 6)][:-1]),
-	                      'active_hours': ''.join([str(i)+',' for i in range(5, 18)][:-1])
+	config['Schedule'] = {'active_days': ','.join(str(i) for i in range(1, 6)),
+	                      'active_hours': ','.join(str(i) for i in range(5, 18))
 	                      }
-	config['Paths'] = {'sl_exe': 'C:/Users/mfgpc00/AppData/Local/Apps/2.0/QQC2A2CQ.YNL/K5YT3MK7.VDY/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/WinStudio.exe',# find_file('WinStudio.exe'),
+	config['Paths'] = {'sl_exe': find_file('WinStudio.exe'),
 					   'pip_exe': path}
-	config['Login'] = {'username': '???',
-					   'password': '???'}
+	config['Login'] = {'username': usr,
+					   'password': pwd}
 	config['loggers'] = {'keys': list_to_string(loggers)}
 	config['handlers'] = {'keys': list_to_string(handlers)}
 	config['formatters'] = {'keys': list_to_string(formatters)}
@@ -167,12 +173,13 @@ def write_config():
 
 
 if 'config.ini' not in os.listdir(os.getcwd()):
+	# usr = input("Please enter username")
+	# pwd = input("Please enter password")
+	# write_config(usr, pwd)
 	write_config()
 
-logging.config.fileConfig("config.ini")
-log = logging
-
-
+config = configparser.ConfigParser()
+config.read_file(open('config.ini'))
 
 
 bit = 8*struct.calcsize("P")

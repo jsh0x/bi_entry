@@ -1,6 +1,8 @@
+from __init__ import __author__
 import re
 import pathlib
 import datetime
+import configparser
 import logging.config
 from sys import exc_info
 from random import choice
@@ -13,10 +15,11 @@ import pywinauto as pwn
 from pywinauto.controls import uia_controls
 
 from _sql import MS_SQL
-
-logging.config.fileConfig('config2.ini')
+sanity = __author__
+logging.config.fileConfig('config.ini')
 log = logging
 
+config = configparser.ConfigParser()
 
 """Select ser_num, item from fs_unit (nolock)
 Inner join 
@@ -46,17 +49,34 @@ class Part:
 
 class Unit:
 	def __init__(self, ms_sql: MS_SQL, sl_sql: MS_SQL, args: NamedTuple):
+		config.read_file(open('config.ini'))
 		self._mssql = ms_sql
 		self._sl_sql = sl_sql
+		self.version = config.get('DEFAULT', 'version')
 		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, self._status = args
 		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = \
 		self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
+		self.parts_transacted = []
 		self.timer = TestTimer()
+		self._life_timer = TestTimer()
+		self._life_timer.start()
+		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
+		self.sro_operations_time = datetime.timedelta(0)
+		self.sro_transactions_time = datetime.timedelta(0)
+		self.misc_issue_time = datetime.timedelta(0)
+		self.sro_operations_timer = TestTimer()
+		self.sro_transactions_timer = TestTimer()
+		self.misc_issue_timer = TestTimer()
 		self.update_sl_data()
+		self._regex_dict = REGEX_BUILD.match(self.whole_build).groupdict(default='-')
+		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
+		self.carrier = carrier_dict[self._regex_dict['carrier']]
 		log.debug(f"Attribute id={self.id}")
 		log.debug(f"Attribute serial_number='{self.serial_number}'")
-		log.debug(f"Attribute build='{self.build}'")
+		log.debug(f"Attribute build='{self._regex_dict['build'][:3]}'")
+		log.debug(f"Attribute carrier='{self.carrier}'")
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
@@ -77,20 +97,86 @@ class Unit:
 
 	def start(self):
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-		self._start_time = self.timer.start()
+		self._life_timer = TestTimer()
+		self._life_timer.start()
+		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
 
 	def complete(self):
+		value = self.sro_operations_timer.stop()
+		if value is not None:
+			self.sro_operations_time += value
+		value = self.sro_transactions_timer.stop()
+		if value is not None:
+			self.sro_transactions_time += value
+		value = self.misc_issue_timer.stop()
+		if value is not None:
+			self.misc_issue_time += value
+		value = self._life_timer.stop()
+		if value is not None:
+			life_time = value.total_seconds()
+		else:
+			life_time = None
+		if len(self.parts_transacted) > 0:
+			t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+		else:
+			t_parts = 'None'
+		if self._status == 'Queued':
+			process = 'Transaction'
+		else:
+			process = self._status
+		self._mssql.execute("INSERT INTO [Statistics]"
+		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
+		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
+		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
+		                    "[Total Time],[Process],[Results],[Version])"
+		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
+		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
+		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
+		                    f"{life_time},'{process}','Completed','{self.version}')")
 		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-		# self._mssql.execute("INSERT INTO [Statistics]"
-		#                     "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],[Open SROs],[Checked SROs],"
-		#                     "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Date],"
-		#                     "[Start Time],[SRO Operations],[SRO Transactions],[Misc Issue Time],[End Time],[Total Time],[Process],[Results],[Reason])"
-		#                     f"VALUES ('{self.serial_number}')")
 
 	def skip(self, reason: Optional[str]=None):
+		value = self.sro_operations_timer.stop()
+		if value is not None:
+			self.sro_operations_time += value
+		value = self.sro_transactions_timer.stop()
+		if value is not None:
+			self.sro_transactions_time += value
+		value = self.misc_issue_timer.stop()
+		if value is not None:
+			self.misc_issue_time += value
+		value = self._life_timer.stop()
+		if value is not None:
+			life_time = value.total_seconds()
+		else:
+			life_time = 0
 		if reason is None:
 			reason = 'Skipped'
+		if len(self.parts_transacted) > 0:
+			t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+		else:
+			t_parts = 'None'
+		if self._status == 'Queued':
+			process = 'Transaction'
+		else:
+			process = self._status
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute("INSERT INTO [Statistics]"
+		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
+		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
+		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
+		                    "[Total Time],[Process],[Results],[Reason],[Version])"
+		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
+		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
+		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
+		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
 	def reset(self):
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
@@ -119,19 +205,6 @@ class Unit:
 									"Where c2.eff_date IS NULL AND "
 									f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
 									"Order by s.open_date DESC")
-		# return self._sl_sql.execute("SELECT TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
-		# 							"Case when s.sro_stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
-		# 							"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
-		# 							"From fs_sro s (nolock) "
-		# 							"Inner join fs_sro_line l (nolock) "
-		# 							"on s.sro_num = l.sro_num "
-		# 							"Inner join fs_unit_cons c (nolock) "
-		# 							"on l.ser_num = c.ser_num "
-		# 							"Left join fs_unit_cons c2 (nolock) "
-		# 							"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
-		# 							"Where c2.eff_date IS NULL AND "
-		# 							f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
-		# 							"Order by s.open_date DESC")
 
 	@property
 	def serial_number_prefix(self) -> Union[str, Tuple[str, str]]:
@@ -516,11 +589,11 @@ REGEX_REPLACE_SESSION = re.compile(r"(?im)session .* user '(?P<user>\w+)' .* alr
 REGEX_WINDOW_MENU_FORM_NAME = re.compile(r"^\d+ (?P<name>[\w* ?]+\w*) .*")
 REGEX_ROW_NUMBER = re.compile(r"^Row (?P<row_number>\d+)")
 REGEX_SAVE_CHANGES = re.compile(r"save your changes to")
-REGEX_CREDIT_HOLD = re.compile(r"credit.*")
-REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?P<part>[^\w\]]+)\].*\[Location: (?P<location>[^\w\]]+)\]")
-REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/\-](?P<month>[01]\d)[/\-](?P<day>[0-3]\d)")
+REGEX_CREDIT_HOLD = re.compile(r"Credit Hold is Yes.*\[Customer\w*(?P<customer>\d+)\]")
+REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?P<item>\d+-\d{2}-\d{5}-\d+)\].*\[Location: (?P<location>[a-zA-Z0-9_-]+)\]")
+REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/-](?P<month>[01]\d)[/-](?P<day>[0-3]\d)")
 REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
-# TODO: Improved credit hold regex, specific customer number
+REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R))?")
 # - - - - - - - - - - - - - - - - - - - - COMMON  - - - - - - - - - - - - - - - - - - - -
 CELLULAR_UNIT_BUILDS = ('EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',

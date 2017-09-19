@@ -4,49 +4,47 @@ import configparser
 from random import randint
 from time import sleep
 import sys
-
-import pyautogui as pag
-
-from transact import Transact
-from scrap import scrap
-from reason import reason
-from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
-from _sql import MS_SQL
-from _crypt import decrypt
 from exceptions import *
 
-pag.FAILSAFE = True
-
-_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
-                               '3660426037804620468050404740384034653780366030253080',
-                               '474046203600486038404260432039003960',
-                               '63004620S875486038404260S875432039003960',
-                               '58803900396063004620360048603840426038404620',
-                               '54005880Q750516045004500',
-                               '1121327')
-_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
-mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
-slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
-
-replace_session_regex = REGEX_REPLACE_SESSION
-user_session_regex = REGEX_USER_SESSION_LIMIT
-invalid_login_regex = REGEX_INVALID_LOGIN
-password_expire_regex = REGEX_PASSWORD_EXPIRE
-
-config = configparser.ConfigParser()
-logging.config.fileConfig('config2.ini')
-log = logging
-
 def main():
+	from transact import Transact
+	from scrap import scrap
+	from reason import reason
+	from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
+	from _sql import MS_SQL
+	from _crypt import decrypt
+
+	_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
+	                               '3660426037804620468050404740384034653780366030253080',
+	                               '474046203600486038404260432039003960',
+	                               '63004620S875486038404260S875432039003960',
+	                               '58803900396063004620360048603840426038404620',
+	                               '54005880Q750516045004500',
+	                               '1121327')
+	_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
+	mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
+	slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
+
+	replace_session_regex = REGEX_REPLACE_SESSION
+	user_session_regex = REGEX_USER_SESSION_LIMIT
+	invalid_login_regex = REGEX_INVALID_LOGIN
+	password_expire_regex = REGEX_PASSWORD_EXPIRE
+
+	config = configparser.ConfigParser()
+	logging.config.fileConfig('config.ini')
+	log = logging
+
 	sleep(randint(10, 20) / 10)
 	log.info("Attempting to read 'config.ini'")
-	config.read_file(open('config2.ini'))
+	config.read_file(open('config.ini'))
 	log.info("Starting Application")
 	app = Application(config.get('Paths', 'sl_exe'))
 	usr = config.get('Login', 'username')
 	pwd = config.get('Login', 'password')
 	active_days = [int(x) for x in config.get('Schedule', 'active_days').split(',')]
 	active_hours = [int(x) for x in config.get('Schedule', 'active_hours').split(',')]
+	active_days = list(range(7))  # TEMP
+	active_hours = list(range(24))  # TEMP
 	# Switch between Reason, Scrap, and Transaction
 	while True:  # Core Loop
 		dt = datetime.datetime.now()
@@ -55,7 +53,7 @@ def main():
 			continue
 		if not app.logged_in:
 			log.info("SyteLine not logged in, starting login procedure")
-			try:
+			"""try:
 				app.win32.SignIn.wait('ready')
 				while app.win32.SignIn.exists():
 					app.win32.SignIn.UserLoginEdit.set_text(usr)
@@ -97,7 +95,15 @@ def main():
 				continue  # Handle better in future
 			else:
 				log.info(f"Successfully logged in as '{usr}'")
-				app.logged_in = True
+				app.logged_in = True"""
+			sleep(4)
+			app.win32.SignIn.UserLoginEdit.set_text(usr)
+			app.win32.SignIn.PasswordEdit.set_text(pwd)
+			app.win32.SignIn.set_focus()
+			app.win32.SignIn.OKButton.click()
+			sleep(10)
+			log.info(f"Successfully logged in as '{usr}'")
+			app.logged_in = True
 		if app.logged_in:
 			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
 			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [Id] ASC")
@@ -121,9 +127,11 @@ def main():
 				script_dict.get(result.Status, lambda x,y: None)(app, unit)
 			except UnitClosedError:
 				unit.skip('No Open SRO')
-			except pag.FailSafeException:
-				mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
-				sys.exit(1)
+			# except pag.FailSafeException:
+			# 	mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+			# 	sys.exit(1)
+			else:
+				log.info(f"Unit: {unit.serial_number_prefix+unit.serial_number} completed")
 			finally:
 				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 
