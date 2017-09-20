@@ -2,7 +2,6 @@ from sys import exc_info
 import logging.config
 from time import sleep
 import sys
-from traceback import TracebackException
 
 from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex, center, REGEX_NEGATIVE_ITEM as negative_item_regex
 from exceptions import *
@@ -185,8 +184,10 @@ def Transact(app: Application, unit: Unit):
 			if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 				status.set_text('Open')
-				status.send_keystrokes('{TAB}')
-				handle_popup(best_match='ResetDatesDialog')
+				status.click_input()
+				pag.press('tab')
+				# handle_popup(best_match='ResetDatesDialog')
+				pag.press('esc')
 				save = sl_uia.SaveButton
 				save.click()
 			sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
