@@ -52,12 +52,8 @@ os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 loggers = ['root']
 handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler']
 formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter']
-log_dir = pathlib.WindowsPath.cwd().parent/'logs'
-log_dir.mkdir(exist_ok=True)
-
-info_log_dir = str(log_dir/'info.log').replace('\\', '/')
-debug_log_dir = str(log_dir/'dbg.log').replace('\\', '/')
-
+cwd = pathlib.WindowsPath.cwd().parent.parent
+log_dir = cwd / 'logs'
 
 def list_to_string(iterable: Sequence, sep: str=','):
 	retval = ''
@@ -89,8 +85,11 @@ def find_file(name, path="C:/"):
 # 	return retval
 
 
-def write_config(usr: str='???', pwd: str='???'):
+def write_config(usr: str='???', pwd: str='???', fp: str=find_file('WinStudio.exe')):
 	path = (os.path.dirname(sys.executable)).replace('\\', '/')+"/Scripts/pip3.6.exe"
+	log_dir.mkdir(exist_ok=True)
+	info_log_dir = str(log_dir / 'info.log').replace('\\', '/')
+	debug_log_dir = str(log_dir / 'dbg.log').replace('\\', '/')
 	config = configparser.ConfigParser(interpolation=None)
 	module_list = packages
 	# for mod in get_outdated_modules(path).keys():
@@ -104,8 +103,9 @@ def write_config(usr: str='???', pwd: str='???'):
 	config['Schedule'] = {'active_days': ','.join(str(i) for i in range(1, 6)),
 	                      'active_hours': ','.join(str(i) for i in range(5, 18))
 	                      }
-	config['Paths'] = {'sl_exe': find_file('WinStudio.exe'),
-					   'pip_exe': path}
+	config['Paths'] = {'sl_exe': fp,
+					   'pip_exe': path,
+	                   'cwd': str(cwd).replace('\\', '/')}
 	config['Login'] = {'username': usr,
 					   'password': pwd}
 	config['loggers'] = {'keys': list_to_string(loggers)}
@@ -142,19 +142,16 @@ def write_config(usr: str='???', pwd: str='???'):
 	config['logger_root'] = {'level': 'DEBUG',
 							 'handlers': list_to_string(handlers[:4]),
 							 'qualname': 'root'}
-	with open('config.ini', 'w') as configfile:
+	with open(str(cwd).replace('\\', '/') + '/config.ini', 'w') as configfile:
 		config.write(configfile)
 
 
-if 'config.ini' not in os.listdir(os.getcwd()):
-	# usr = input("Please enter username")
-	# pwd = input("Please enter password")
-	# write_config(usr, pwd)
+if 'config.ini' not in os.listdir(str(cwd).replace('\\', '/')):
 	write_config()
 
 config = configparser.ConfigParser()
-config.read_file(open('config.ini'))
-
+config.read_file(open(str(cwd).replace('\\', '/')+'/config.ini'))
+os.chdir(config.get('Paths', 'cwd'))
 
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro

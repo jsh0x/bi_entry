@@ -92,6 +92,7 @@ class Unit:
 		log.debug(f"Property product='{self.product}'")
 		log.debug(f"Property whole_build='{self.whole_build}'")
 		log.debug(f"Property operator_initials='{self.operator_initials}'")
+		self.start()
 		# 'hh:mm:ss.nnn'
 		# 'YYYY-MM-DD'
 
@@ -118,7 +119,10 @@ class Unit:
 		else:
 			life_time = None
 		if len(self.parts_transacted) > 0:
-			t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			try:
+				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			except TypeError:
+				t_parts = 'None'
 		else:
 			t_parts = 'None'
 		if self._status == 'Queued':
@@ -157,7 +161,10 @@ class Unit:
 		if reason is None:
 			reason = 'Skipped'
 		if len(self.parts_transacted) > 0:
-			t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			try:
+				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			except TypeError:
+				t_parts = 'None'
 		else:
 			t_parts = 'None'
 		if self._status == 'Queued':

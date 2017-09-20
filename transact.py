@@ -8,7 +8,7 @@ from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex, cent
 from exceptions import *
 
 from common import timer, access_grid
-# import pyautogui as pag
+import pyautogui as pag
 # import pywinauto as pwn
 # from pywinauto import Application, application
 from pywinauto import mouse, keyboard
@@ -249,6 +249,12 @@ def Transact(app: Application, unit: Unit):
 					top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 					log.debug(F"Columns: {top_row.children_texts()[1:10]}")
 					loc_rec_list = []
+					qty_rec_list = []
+					bc_rec_list = []
+					if unit.suffix == 'Direct' or unit.suffix == 'RTS':
+						bc = 'Contract'
+					else:
+						bc = 'No Charge'
 					for part in unit.parts:
 						# pag._failSafeCheck()
 						if (part.part_number in posted_part_numbers) or (part.part_number in unposted_part_numbers):
@@ -264,10 +270,9 @@ def Transact(app: Application, unit: Unit):
 						last_row = uia_controls.ListViewWrapper(transaction_grid.children()[row_i].element_info)
 						item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
 						r_i = item.rectangle()
-						sl_win.set_focus()
+						# sl_win.set_focus()
 						c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
-						mouse.click(coords=c_coords)
-						handle_popup()
+						pag.click(*c_coords)
 						last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-2].element_info)
 						location = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Location')).element_info)
 						quantity = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Quantity')).element_info)
@@ -275,58 +280,49 @@ def Transact(app: Application, unit: Unit):
 						r_loc = location.rectangle()
 						r_qty = quantity.rectangle()
 						r_bill = billcode.rectangle()
-						keyboard.SendKeys(str(part.part_number))
-						sleep(0.5)
+						loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), str(part.location)))
 						if part.quantity > 1:
-							sl_win.set_focus()
-							c_coords = center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom)
-							mouse.click(coords=c_coords)
-							handle_popup()
-							sleep(0.5)
-							keyboard.SendKeys(str(part.quantity))
-							sleep(0.5)
-						sl_win.set_focus()
-						c_coords = center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom)
-						mouse.click(coords=c_coords)
-						handle_popup()
-						if unit.suffix == 'Direct' or unit.suffix == 'RTS':
-							bc = 'Contract'
-						else:
-							bc = 'No Charge'
+							qty_rec_list.append((center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom), str(part.quantity)))
+						bc_rec_list.append((center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom), bc))
+						pag.typewrite(str(part.part_number))
 						sleep(0.5)
-						keyboard.SendKeys(str(bc), with_spaces=True)
-						sleep(0.5)
-						loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), part.location))
+						pag.press('enter', 10, interval=0.05)
+						pag.click(*c_coords)
 						unit.parts_transacted.append(part)
-					else:
-						last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-1].element_info)
-						item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
-						r_i = item.rectangle()
-						sl_win.set_focus()
-						c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
-						mouse.click(coords=c_coords)
-						handle_popup()
-						for coord,loc in loc_rec_list:
-							sl_win.set_focus()
-							mouse.click(coords=coord)
-							handle_popup()
-							sleep(0.5)
-							keyboard.SendKeys(str(loc), with_spaces=True)
-							sleep(0.5)
-						last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-1].element_info)
-						item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
-						r_i = item.rectangle()
-						sl_win.set_focus()
-						c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
-						mouse.click(coords=c_coords)
-						handle_popup()
+					for coord,qty in qty_rec_list:
+						pag.click(*coord)
+						sleep(0.2)
+						pag.press('backspace', 20)
+						pag.press('delete', 20)
+						sleep(0.2)
+						pag.typewrite(qty)
+						sleep(0.2)
+						pag.press('enter')
+						sleep(0.5)
+					for coord,loc in loc_rec_list:
+						pag.click(*coord)
+						sleep(0.2)
+						pag.press('backspace', 20)
+						pag.press('delete', 20)
+						sleep(0.2)
+						pag.typewrite(loc)
+						sleep(0.2)
+						pag.press('enter')
+						sleep(0.5)
+					for coord,bc in bc_rec_list:
+						pag.click(*coord)
+						sleep(0.2)
+						pag.press('backspace', 20)
+						pag.press('delete', 20)
+						sleep(0.2)
+						pag.typewrite(bc)
+						sleep(0.2)
+						pag.press('enter')
+						sleep(0.5)
 				except Exception as ex:  # Placeholder
 					raise ex
 				else:
-					added_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
-					log.debug(f"Added parts: {added_parts}")
-					added_part_numbers = {p.Item for p in added_parts}
-					if added_parts:
+					if len(unit.parts_transacted) > 0:
 						save = sl_uia.SaveButton
 						sl_win.set_focus()
 						save.click()
@@ -436,12 +432,16 @@ def Transact(app: Application, unit: Unit):
 			status.wait_for_idle()
 			if unit.operation == 'QC':
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
-				status.set_text('Closed')
 				sl_win.set_focus()
-				status.send_keystrokes('^s')
-				sleep(1)
-				handle_popup()
-				status.wait_for_idle()
+				status.set_keyboard_focus()
+				status.send_keystrokes('{DOWN}{DOWN}')
+				try:
+					status.send_keystrokes('^s')
+					sleep(1)
+				except TimeoutError:
+					pass
+				finally:
+					keyboard.SendKeys('{ESC}')
 			unit.sro_operations_time += unit.sro_operations_timer.stop()
 			for presses in range(2):
 				sl_uia.CancelCloseButton.click()
@@ -459,9 +459,17 @@ def Transact(app: Application, unit: Unit):
 	except Exception:  # Placeholder
 		log.exception("SOMETHING HAPPENED!!!")
 		unit.skip()
-		for presses in range(3):
+		if 'SRO Transactions' in app.forms:
 			sl_uia.CancelCloseButton.click()
 			handle_popup()
+		if 'Service Order Operations' in app.forms:
+			sl_uia.CancelCloseButton.click()
+			handle_popup()
+		if 'Service Order Lines' in app.forms:
+			sl_uia.CancelCloseButton.click()
+			handle_popup()
+		sl_win.send_keystrokes('{F4}')
+		sl_win.send_keystrokes('{F5}')
 	else:
 		unit.complete()
 
