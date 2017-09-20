@@ -39,6 +39,12 @@ class Part:
 		self.display_name = _data.DispName
 		self.part_name = _data.PartName
 		self.location = _data.Location
+		"""From PyComm p
+		Cross apply dbo.Split(p.Parts, ',') b
+		Inner join Parts n
+		on b.items = n.PartNum
+		Where p.[Serial Number] = @SN
+		"""
 
 	def __repr__(self):
 		return f"<Part object; {self.part_number}x{self.quantity}>"

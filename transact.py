@@ -355,8 +355,10 @@ def Transact(app: Application, unit: Unit):
 			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 			if not sl_win.ReceivedDateEdit.texts()[0].strip():
 				sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.ReceivedDateEdit.send_keystrokes('^s')
 			if not sl_win.FloorDateEdit.texts()[0].strip():
 				sl_win.FloorDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.FloorDateEdit.send_keystrokes('^s')
 			if not sl_win.CompletedDateEdit.texts()[0].strip() and unit.operation == 'QC':
 				sl_win.CompletedDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 			sl_win.CompletedDateEdit.send_keystrokes('^s')
@@ -383,51 +385,53 @@ def Transact(app: Application, unit: Unit):
 
 				gen_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Reason')).element_info)
 				gen_resn_i = gen_resn.rectangle()
-				sl_win.set_focus()
+				# sl_win.set_focus()
 				c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
-				mouse.click(coords=c_coords)
+				pag.click(*c_coords)
 				handle_popup()
-				sleep(0.5)
-
+				q = []
 				if last_row2.Specific_Reason is None:
 					spec_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Reason')).element_info)
 					spec_resn_i = spec_resn.rectangle()
-					sl_win.set_focus()
+					# sl_win.set_focus()
 					c_coords = center(x1=spec_resn_i.left, y1=spec_resn_i.top, x2=spec_resn_i.right, y2=spec_resn_i.bottom)
-					mouse.click(coords=c_coords)
-					handle_popup()
-					sleep(0.5)
-					keyboard.SendKeys('20')
+					q.append((c_coords, '20'))
 				if last_row2.General_Resolution is None:
 					gen_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Resolution')).element_info)
 					gen_reso_i = gen_reso.rectangle()
-					sl_win.set_focus()
+					# sl_win.set_focus()
 					c_coords = center(x1=gen_reso_i.left, y1=gen_reso_i.top, x2=gen_reso_i.right, y2=gen_reso_i.bottom)
-					mouse.click(coords=c_coords)
-					handle_popup()
-					sleep(0.5)
-					keyboard.SendKeys('10000')
+					q.append((c_coords, '10000'))
 				if last_row2.Specific_Resolution is None:
 					spec_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
 					spec_reso_i = spec_reso.rectangle()
-					sl_win.set_focus()
+					# sl_win.set_focus()
 					c_coords = center(x1=spec_reso_i.left, y1=spec_reso_i.top, x2=spec_reso_i.right, y2=spec_reso_i.bottom)
-					mouse.click(coords=c_coords)
-					handle_popup()
+					q.append((c_coords, '100'))
+				for coord,num in q:
+					pag.click(*coord)
 					sleep(0.5)
-					keyboard.SendKeys('100')
+					pag.typewrite(num)
+					sleep(0.5)
 				resn_notes = sl_win.ReasonNotesEdit
+				resn_notes.click_input()
+				pag.press('end', 30)
 				if resn_notes.texts()[0].strip():
-					resn_notes.send_keystrokes(resn_notes.texts()[0].strip() + "{ENTER}[UDI]{ENTER}[PASSED ALL TESTS]")
-				else:
-					resn_notes.send_keystrokes("[UDI]{ENTER}[PASSED ALL TESTS]")
+					pag.press('enter')
+				pag.typewrite("[UDI]")
+				pag.press('enter')
+				pag.typewrite("[PASSED ALL TESTS]")
 			reso_notes = sl_win.ResolutionNotesEdit
 			if unit.parts:
 				reso_string = ", ".join([p.display_name for p in unit.parts])
+				reso_notes.click_input()
+				pag.press('end', 30)
 				if reso_notes.texts()[0].strip():
-					reso_notes.send_keystrokes(reso_notes.texts()[0].strip() + "{ENTER}[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
-				else:
-					reso_notes.send_keystrokes("[" + reso_string + "]{ENTER}" + f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+					pag.press('enter')
+				pag.typewrite(f"[{reso_string}]")
+				pag.press('enter')
+				pag.typewrite(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+			pag.hotkey('ctrl', 's')
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			status.send_keystrokes('^s')
 			status.wait_for_idle()

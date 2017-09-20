@@ -116,7 +116,7 @@ def main():
 				unit = Unit(mssql, slsql, result)
 			except ValueError:
 				log.exception("EARLY ERROR!!!")
-				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
 				continue
 			log.info(f"Unit object created with serial_number={unit.serial_number}'")
 			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': scrap}

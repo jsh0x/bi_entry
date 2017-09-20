@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.1.1'
+__version__ = '1.1.4'
 
 import struct
 import configparser
@@ -153,7 +153,7 @@ config = configparser.ConfigParser()
 config.read_file(open(str(cwd).replace('\\', '/')+'/config.ini'))
 os.chdir(config.get('Paths', 'cwd'))
 config.set('DEFAULT', 'version', __version__)
-
+config['DEFAULT'].update(version=__version__)
 
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro
