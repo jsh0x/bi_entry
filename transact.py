@@ -23,7 +23,6 @@ def Transact(app: Application, unit: Unit):
 	form = 'Units'
 	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
 	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
-	# while sl_win.exists():
 	if not sl_win.exists():
 		unit.reset()
 		sys.exit(1)
@@ -124,17 +123,9 @@ def Transact(app: Application, unit: Unit):
 							unit._whole_build = None
 					break
 			unit.start()
-			# pag._failSafeCheck()
 			log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 			if not sl_win.ServiceOrderLinesButton.is_enabled():
 				raise UnitClosedError("Service Order Lines Button is disabled")
-			# common_controls.TabControlWrapper(sl_win.TabControl).select('Owner History')  # Open 'Owner History' Tab
-			# owner_history_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)  # Wrap DataGridView
-			# log.debug(owner_history_grid.get_properties())
-			# if owner_history_grid.control_count() < 3:  # If there are no SROs in the DataGrid
-			# 	raise UnitClosedError("No SROs found in Data Grid")
-			# initial_date = datetime.datetime.strptime(sorted(access_grid(owner_history_grid, 'Eff Date'), reverse=True)[0][0], '%m/%d/%Y')  # Get 'Initial Date'
-			# log.info(f"Initial Date found: {initial_date.strftime('%m/%d/%Y')}")
 			log.debug("Service Order Lines Button clicked")
 			sl_win.set_focus()
 			timer.start()
@@ -142,28 +133,11 @@ def Transact(app: Application, unit: Unit):
 			sl_win.ServiceOrderOperationsButton.wait('visible', 2, 0.09)
 		except Exception as ex:  # Placeholder
 			raise ex
+
 		try:
 			t_temp = timer.stop()
 			log.debug(f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 			app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro_num)
-			# if len(sros) == 0:
-			# 	raise UnitClosedError("No Open SROs found")
-			# log.debug(f"Found Open SRO(s) and Line(s):{''.join([f' {sro},{line}' for sro,line in sros])}")
-			# log.info(f"Found {len(sros)} Open SRO(s)")
-			# for sro,line in sros:
-			# 	form = 1
-			# 	try:
-			# 		sro2 = sl_win.SROEdit.texts()[0].strip()
-			# 		line2 = sl_win.LineEdit.texts()[0].strip()
-			# 		if not ((sro == sro2) and (line == line2)):
-			# 			pass
-			# 		if sl_win.StatusEdit2.texts()[0].strip() != 'Open':
-			# 			log.warning(f"SRO '{sro}' closed on SRO Lines level")
-			# 			raise SROClosedWarning(f"SRO '{sro}' closed on SRO Lines level")
-			# 	except SROClosedWarning:
-			# 		continue
-			# 	try:
-			# log.info(f"SRO '{sro}' open on SRO Lines level")
 			log.debug("Service Order Operations Button clicked")
 			sl_win.set_focus()
 			timer.start()
@@ -173,14 +147,9 @@ def Transact(app: Application, unit: Unit):
 			raise ex
 
 		try:
-			# form = 2
 			t_temp = timer.stop()
 			log.debug(f"Time waited for Service Order Operations: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 			unit.sro_operations_timer.start()
-			# if sl_uia.StatEdit.texts()[0].strip() != unit.SRO_Operations_status:
-			# 	raise InvalidSerialNumberError("")  # Placeholder
-			# print(sl_win.StatusEdit3.texts()[0].strip())
-			# pag._failSafeCheck()
 			if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 				status.set_text('Open')
@@ -192,22 +161,6 @@ def Transact(app: Application, unit: Unit):
 				save.click()
 			sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 			sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
-			# 	if sl_win.StatusEdit3.texts()[0].strip() != 'Open' or not sl_win.SROTransactionsButton.is_enabled():
-			# 		log.warning(f"SRO '{sro}' closed on SRO Operations level")
-			# 		raise SROClosedWarning(f"SRO '{sro}' closed on SRO Operations level")
-			# 	log.info(f"SRO '{sro}' open on SRO Operations level")
-			# 		except SROClosedWarning:
-			# 			sl_win.CancelCloseToolbarButton.click()
-			# 			continue
-			# 		else:
-			# 			break
-			# 	else:
-			# 		raise UnitClosedError("No Open SROs found")
-			# except UnitClosedError as ex:
-			# 	log.exception(f"Unit '{unit.serial_number_prefix+unit.serial_number}' has no open SROs")
-			# 	for presses in range(form):
-			# 		sl_win.CancelCloseToolbarButton.click()
-			# 	raise ex
 			if unit.parts:
 				try:
 					unit.sro_operations_time += unit.sro_operations_timer.stop()
@@ -216,22 +169,18 @@ def Transact(app: Application, unit: Unit):
 					timer.start()
 					sl_win.SROTransactionsButton.click()
 					log.debug("SRO Transactions Button clicked")
-					# sl_win.PostBatchButton.wait('active', 2, 0.09)
 					sl_win.FilterDateRangeEdit.wait('ready', 2, 0.09)
 					t_temp = timer.stop()
 					log.debug(f"Time waited for SRO Transactions: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 					log.info("Starting transactions")
 					sl_win.FilterDateRangeEdit.set_text(unit.eff_date.strftime('%m/%d/%Y'))
 					timer.start()
-					# sl_win.FilterDateRangeEdit2.set_text()
 					sl_win.ApplyFilterButton.click()
 					sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
 					t_temp = timer.stop()
 					log.debug(f"Time waited for first Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 					transaction_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 					log.debug(transaction_grid.get_properties())
-					# Columns to get:
-					# 'Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'
 					posted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], condition=('Posted', True), requirement='Item')
 					log.debug(f"Posted parts: {posted_parts}")
 					posted_part_numbers= {p.Item for p in posted_parts}
@@ -246,7 +195,6 @@ def Transact(app: Application, unit: Unit):
 					unposted_part_numbers= {p.Item for p in unposted_parts}
 					# TODO: Based on already posted and unposted, transact accordingly
 					row_i = None
-					columns = ['Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date']
 					top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 					log.debug(F"Columns: {top_row.children_texts()[1:10]}")
 					loc_rec_list = []
@@ -478,7 +426,7 @@ def Transact(app: Application, unit: Unit):
 	else:
 		unit.complete()
 
-	# 6342086
+
 """Select m.Item, m.matl_qty from fs_sro_matl m(nolock)
 Inner join fs_sro_line l(nolock)
 on m.sro_num = l.sro_num and l.sro_line = m.sro_line
