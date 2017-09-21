@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.2.0'
+__version__ = '1.1.10'
 
 import struct
 import configparser
@@ -7,11 +7,15 @@ from sys import version_info as version
 import os
 import sys
 from typing import Sequence
+from tempfile import mkstemp
+from shutil import move
+from os import fdopen, remove
 import logging.config
 import logging.handlers
 import pathlib
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
 			'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
+
 
 # class OneLineExceptionFormatter(logging.Formatter):
 #     def formatException(self, exc_info):
@@ -70,6 +74,25 @@ def find_file(name, path="C:/"):
 	else:
 		return None
 
+
+def update_config():
+	# Create temp file
+	fh, abs_path = mkstemp()
+	with fdopen(fh, 'w') as new_file:
+		with open('config.ini') as old_file:
+			for line in old_file:
+				if '=' in line:
+					k, v = map(str.strip, line.split('=', 1))
+					if k == 'version':
+						new_file.write(f"{k} = {__version__}\n")
+					else:
+						new_file.write(line)
+				else:
+					new_file.write(line)
+	# Remove original file
+	remove('config.ini')
+	# Move new file
+	move(abs_path, 'config.ini')
 
 # def get_outdated_modules(pip_dir) -> dict:
 # 	retval = {}
@@ -152,8 +175,7 @@ if 'config.ini' not in os.listdir(str(cwd).replace('\\', '/')):
 config = configparser.ConfigParser()
 config.read_file(open(str(cwd).replace('\\', '/')+'/config.ini'))
 os.chdir(config.get('Paths', 'cwd'))
-config.set('DEFAULT', 'version', __version__)
-config['DEFAULT'].update(version=__version__)
+update_config()
 
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro

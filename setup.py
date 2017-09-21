@@ -1,13 +1,43 @@
 # from distutils.core import setup
+from __init__ import __version__
 import configparser
 import sys
 import os
 import subprocess
 from cx_Freeze import setup, Executable
 
-
+os.chdir(os.getcwd() + '\\GitHub\\bi_entry')
 config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
+
+major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
+version = f"{major}.{minor}.{micro+1}"
+
+print(os.getcwd())
+def update_init(vers):
+	from tempfile import mkstemp
+	from shutil import move
+	from os import fdopen, remove
+	# Create temp file
+	fh, abs_path = mkstemp()
+	with fdopen(fh, 'w') as new_file:
+		with open('__init__.py') as old_file:
+			for line in old_file:
+				if '=' in line:
+					k, v = map(str.strip, line.split('=', 1))
+					if k == '__version__':
+						new_file.write(f"{k} = '{vers}'\n")
+					else:
+						new_file.write(line)
+				else:
+					new_file.write(line)
+	# Remove original file
+	remove('__init__.py')
+	# Move new file
+	move(abs_path, '__init__.py')
+
+
+update_init(version)
 
 FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
@@ -44,7 +74,7 @@ options = {
 setup(
 	name='bi_entry',
 	options=options,
-	version=config.get('DEFAULT', 'version'),
+	version=version,
 	packages=[''],
 	url='',
 	license='',
@@ -63,5 +93,3 @@ setup(
 # 				f.write(buffer_)
 # 				buffer_ = f2.readline()
 # subprocess.run([r'C:\Program Files\UPX\upx', '--ultra-brute', '--compress-icons=1', 'bi_entry.exe'])
-
-

@@ -65,7 +65,6 @@ class Unit:
 		log.debug(f"Attribute _status='{self._status}'")
 		log.debug(f"Property parts='{self.parts}'")
 		log.debug(f"Property datetime='{self.datetime}'")
-		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
 		"""From PyComm p
 				Cross apply dbo.Split(p.Parts, ',') b
 				Inner join Parts n
@@ -86,18 +85,32 @@ class Unit:
 		self.sro_operations_timer = TestTimer()
 		self.sro_transactions_timer = TestTimer()
 		self.misc_issue_timer = TestTimer()
+		sn1 = sn2 = f"{self.serial_number_prefix}{self.serial_number}"
+		if self.serial_number_prefix == 'BE':
+			sn2 = f"ACB{self.serial_number}"
+		gc, item, loc, whse = self._slsql.execute("Select top 1 * from ("
+													"select ser_num, item, "
+														"Case when loc is null then 'None' "
+														"else loc "
+														"end as [Inv_Stat], whse "
+													f"from serial (nolock) where ser_num = '{sn1}' "
+													"Union All "
+													"select ser_num, item, "
+														"Case when loc is null then 'None' "
+														"else loc "
+														"end as [Inv_Stat], whse "
+													f"from serial (nolock) where ser_num = '{sn2}') t")
+		if gc.upper().startswith('BE'):
+			self.serial_number_prefix = 'BE'
+		elif gc.upper().startswith('ACB'):
+			self.serial_number_prefix = 'ACB'
 		self.update_sl_data()
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
-		gc, item, loc, whse = self._slsql.execute("select ser_num, item, "
-		                                          "Case when loc is null then 'None' "
-		                                          "else loc "
-		                                          "end as [Inv_Stat], whse "
-		                                         f"from serial (nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}'")
-		self._regex_dict = REGEX_BUILD.fullmatch(item.upper()).groupdict(default='-')
+		self._regex_dict = REGEX_BUILD.match(item.upper()).groupdict(default='-')
 		try:
 			loc = literal_eval(loc)
 		except ValueError:
@@ -114,6 +127,7 @@ class Unit:
 		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
 		self.carrier = carrier_dict[self._regex_dict['carrier']]
 		log.debug(f"Attribute carrier='{self.carrier}'")
+		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
 		log.debug(f"Property product='{self.product}'")
 		log.debug(f"Property operator_initials='{self.operator_initials}'")
 		if self._status.lower() != 'scrap':  # Because they're done in batches by a single computer, no risk of overlap
@@ -248,14 +262,12 @@ class Unit:
 		except (ValueError, KeyError, IndexError):
 			value = None
 		finally:
-			return value
+			self._serial_number_prefix = value
+			return self._serial_number_prefix
 
 	@serial_number_prefix.setter
 	def serial_number_prefix(self, value: str):
-		if type(self.serial_number_prefix) is tuple and value in self.serial_number_prefix:
-			self._serial_number_prefix = value
-		else:
-			self._serial_number_prefix = value
+		self._serial_number_prefix = value
 
 	@property
 	def parts(self) -> Iterator[Part]:
