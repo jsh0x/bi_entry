@@ -121,6 +121,10 @@ def main():
 				log.exception("EARLY ERROR!!!")
 				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
 				continue
+			except UnitClosedError:
+				log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				continue
 			log.info(f"Unit object created with serial_number={unit.serial_number}'")
 			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap}
 			try:

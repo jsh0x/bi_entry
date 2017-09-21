@@ -16,6 +16,7 @@ import pywinauto as pwn
 from pywinauto.controls import uia_controls
 import win32gui
 
+from exceptions import *
 from sql import MS_SQL
 logging.config.fileConfig('config.ini')
 log = logging
@@ -88,18 +89,21 @@ class Unit:
 		sn1 = sn2 = f"{self.serial_number_prefix}{self.serial_number}"
 		if self.serial_number_prefix == 'BE':
 			sn2 = f"ACB{self.serial_number}"
-		gc, item, loc, whse = self._slsql.execute("Select top 1 * from ("
-													"select ser_num, item, "
-														"Case when loc is null then 'None' "
-														"else loc "
-														"end as [Inv_Stat], whse "
-													f"from serial (nolock) where ser_num = '{sn1}' "
-													"Union All "
-													"select ser_num, item, "
-														"Case when loc is null then 'None' "
-														"else loc "
-														"end as [Inv_Stat], whse "
-													f"from serial (nolock) where ser_num = '{sn2}') t")
+		build_data = self._slsql.execute("Select top 1 * from ("
+											"select ser_num, item, "
+												"Case when loc is null then 'Out of Inventory' "
+												"else loc "
+												"end as [Inv_Stat], whse "
+										   f"from serial (nolock) where ser_num = '{sn1}' "
+											"Union All "
+											"select ser_num, item, "
+												"Case when loc is null then 'Out of Inventory' "
+												"else loc "
+												"end as [Inv_Stat], whse "
+										   f"from serial (nolock) where ser_num = '{sn2}') t")
+		if build_data is None:
+			raise UnitClosedError(f"Unit '{self.serial_number}' has no SROs")
+		gc, item, loc, whse = build_data
 		if gc.upper().startswith('BE'):
 			self.serial_number_prefix = 'BE'
 		elif gc.upper().startswith('ACB'):
@@ -111,12 +115,7 @@ class Unit:
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
 		self._regex_dict = REGEX_BUILD.match(item.upper()).groupdict(default='-')
-		try:
-			loc = literal_eval(loc)
-		except ValueError:
-			pass
-		finally:
-			self.location = loc
+		self.location = loc
 		log.debug(f"Attribute location='{self.location}'")
 		self.warehouse = whse
 		log.debug(f"Attribute warehouse='{self.warehouse}'")
