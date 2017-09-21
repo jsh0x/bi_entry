@@ -1,4 +1,3 @@
-from sys import exc_info
 import logging.config
 from time import sleep
 import sys
@@ -8,14 +7,14 @@ from exceptions import *
 
 from common import timer, access_grid
 import pyautogui as pag
-# import pywinauto as pwn
-# from pywinauto import Application, application
 from pywinauto import mouse, keyboard
 import pywinauto.timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
 
+
 logging.config.fileConfig('config.ini')
 log = logging
+
 
 def Transact(app: Application, unit: Unit):
 	pywinauto.timings.Timings.Fast()

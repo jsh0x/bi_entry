@@ -9,6 +9,7 @@ from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
 from typing import NamedTuple, Union, Tuple, Iterator, Optional, Iterable, List, Any
+from ast import literal_eval
 
 import psutil
 import pywinauto as pwn
@@ -39,12 +40,6 @@ class Part:
 		self.display_name = _data.DispName
 		self.part_name = _data.PartName
 		self.location = _data.Location
-		"""From PyComm p
-		Cross apply dbo.Split(p.Parts, ',') b
-		Inner join Parts n
-		on b.items = n.PartNum
-		Where p.[Serial Number] = @SN
-		"""
 
 	def __repr__(self):
 		return f"<Part object; {self.part_number}x{self.quantity}>"
@@ -59,9 +54,25 @@ class Unit:
 		self._mssql = mssql
 		self._slsql = slsql
 		self.version = config.get('DEFAULT', 'version')
-		self.id, self.serial_number, self.build, self.suffix, self.operation, self.operator, \
+		self.id, self.serial_number, build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, self._status = args
-		self._serial_number_prefix = self._product = self._whole_build = self._operator_initials = \
+		log.debug(f"Attribute id={self.id}")
+		log.debug(f"Attribute serial_number='{self.serial_number}'")
+		log.debug(f"Attribute suffix='{self.suffix}'")
+		log.debug(f"Attribute operation='{self.operation}'")
+		log.debug(f"Attribute operator='{self.operator}'")
+		log.debug(f"Attribute notes='{self.notes}'")
+		log.debug(f"Attribute _status='{self._status}'")
+		log.debug(f"Property parts='{self.parts}'")
+		log.debug(f"Property datetime='{self.datetime}'")
+		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
+		"""From PyComm p
+				Cross apply dbo.Split(p.Parts, ',') b
+				Inner join Parts n
+				on b.items = n.PartNum
+				Where p.[Serial Number] = @SN
+		"""
+		self._serial_number_prefix = self._product = self.whole_build = self._operator_initials = \
 		self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
 		self.parts_transacted = []
 		self.timer = TestTimer()
@@ -76,31 +87,37 @@ class Unit:
 		self.sro_transactions_timer = TestTimer()
 		self.misc_issue_timer = TestTimer()
 		self.update_sl_data()
-		self._regex_dict = REGEX_BUILD.match(self.whole_build).groupdict(default='-')
-		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
-		self.carrier = carrier_dict[self._regex_dict['carrier']]
-		log.debug(f"Attribute id={self.id}")
-		log.debug(f"Attribute serial_number='{self.serial_number}'")
-		log.debug(f"Attribute build='{self._regex_dict['build'][:3]}'")
-		log.debug(f"Attribute carrier='{self.carrier}'")
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
-		log.debug(f"Attribute suffix='{self.suffix}'")
-		log.debug(f"Attribute operation='{self.operation}'")
-		log.debug(f"Attribute operator='{self.operator}'")
-		log.debug(f"Attribute notes='{self.notes}'")
-		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
-		log.debug(f"Property parts='{self.parts}'")
-		log.debug(f"Property datetime='{self.datetime}'")
+		gc, item, loc, whse = self._slsql.execute("select ser_num, item, "
+		                                          "Case when loc is null then 'None' "
+		                                          "else loc "
+		                                          "end as [Inv_Stat], whse "
+		                                         f"from serial (nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}'")
+		self._regex_dict = REGEX_BUILD.fullmatch(item.upper()).groupdict(default='-')
+		try:
+			loc = literal_eval(loc)
+		except ValueError:
+			pass
+		finally:
+			self.location = loc
+		log.debug(f"Attribute location='{self.location}'")
+		self.warehouse = whse
+		log.debug(f"Attribute warehouse='{self.warehouse}'")
+		self.build = self._regex_dict['build'][:3]
+		log.debug(f"Attribute build='{self.build}'")
+		self.whole_build = item.upper()
+		log.debug(f"Attribute whole_build='{self.whole_build}'")
+		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
+		self.carrier = carrier_dict[self._regex_dict['carrier']]
+		log.debug(f"Attribute carrier='{self.carrier}'")
 		log.debug(f"Property product='{self.product}'")
-		log.debug(f"Property whole_build='{self.whole_build}'")
 		log.debug(f"Property operator_initials='{self.operator_initials}'")
-		self.start()
-		# 'hh:mm:ss.nnn'
-		# 'YYYY-MM-DD'
+		if self._status.lower() != 'scrap':  # Because they're done in batches by a single computer, no risk of overlap
+			self.start()
 
 	def start(self):
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
@@ -263,34 +280,6 @@ class Unit:
 			self._datetime = datetime.datetime.strptime(value, "%m/%d/%Y %I:%M:%S %p")
 		else:
 			self._datetime = value
-
-	@property
-	def whole_build(self):
-		if self._whole_build is None:
-			data = self._mssql.execute(f"SELECT [ItemNumber],[Carrier],[Suffix] FROM UnitData WHERE [SerialNumber] = '{self.serial_number}'")
-			if not data:
-				raise ValueError
-			item, carrier, sfx = data
-			if carrier == 'None':
-				build = item
-			else:
-				if sfx == 'Direct':
-					if not (item.endswith('S') or item.endswith('V')):
-						build = f"{item}{carrier[0].upper()}"
-					else:
-						build = item
-				else:
-					start, end = item.rsplit('-', 1)
-					if not (start.endswith('S') or start.endswith('V')):
-						build = f"{start}{carrier[0].upper()}-{end}"
-					else:
-						build = f"{start}-{end}"
-			self._whole_build = build
-		return self._whole_build
-
-	@whole_build.setter
-	def whole_build(self, value):
-		self._whole_build = value
 
 	@property
 	def operator_initials(self):
@@ -607,7 +596,7 @@ REGEX_CREDIT_HOLD = re.compile(r"Credit Hold is Yes.*\[Customer\w*(?P<customer>\
 REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?P<item>\d+-\d{2}-\d{5}-\d+)\].*\[Location: (?P<location>[a-zA-Z0-9_-]+)\]")
 REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/-](?P<month>[01]\d)[/-](?P<day>[0-3]\d)")
 REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
-REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R))?")
+REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R))?")
 # - - - - - - - - - - - - - - - - - - - - COMMON  - - - - - - - - - - - - - - - - - - - -
 CELLULAR_UNIT_BUILDS = ('EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',

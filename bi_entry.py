@@ -8,7 +8,7 @@ from exceptions import *
 
 def main():
 	from transact import Transact
-	from scrap import scrap
+	from scrap import Scrap
 	from reason import reason
 	from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
 	from sql import MS_SQL
@@ -105,9 +105,12 @@ def main():
 			log.info(f"Successfully logged in as '{usr}'")
 			app.logged_in = True
 		if app.logged_in:
-			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [Id] ASC")
-			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [Id] ASC")
-			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Serial Number] = '1160324'")
+			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
+			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
+			if '3' in usr:
+				result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC")
+				if result2:
+					result = result2
 			if result is None:
 				log.info("No valid results, waiting...")
 				sleep(10)
@@ -119,7 +122,7 @@ def main():
 				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
 				continue
 			log.info(f"Unit object created with serial_number={unit.serial_number}'")
-			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': scrap}
+			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap}
 			try:
 				if unit.SRO_Line_status == 'Closed':
 					raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")

@@ -53,10 +53,6 @@ setup(
 	description='',
 	executables=executables
 )
-args = {'x': '9',
-        's': '4g',
-        'he': 'on',
-        'mt': '2'}
 # subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
 # files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
 # with open('bi_entry.exe', mode='w+b') as f:
