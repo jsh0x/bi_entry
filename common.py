@@ -86,6 +86,8 @@ class Unit:
 		self.sro_operations_timer = TestTimer()
 		self.sro_transactions_timer = TestTimer()
 		self.misc_issue_timer = TestTimer()
+		log.debug(f"Property product='{self.product}'")
+		log.debug(f"Property operator_initials='{self.operator_initials}'")
 		sn1 = sn2 = f"{self.serial_number_prefix}{self.serial_number}"
 		if self.serial_number_prefix == 'BE':
 			sn2 = f"ACB{self.serial_number}"
@@ -108,6 +110,7 @@ class Unit:
 			self.serial_number_prefix = 'BE'
 		elif gc.upper().startswith('ACB'):
 			self.serial_number_prefix = 'ACB'
+		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
 		self.update_sl_data()
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
@@ -126,9 +129,6 @@ class Unit:
 		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
 		self.carrier = carrier_dict[self._regex_dict['carrier']]
 		log.debug(f"Attribute carrier='{self.carrier}'")
-		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
-		log.debug(f"Property product='{self.product}'")
-		log.debug(f"Property operator_initials='{self.operator_initials}'")
 		if self._status.lower() != 'scrap':  # Because they're done in batches by a single computer, no risk of overlap
 			self.start()
 
