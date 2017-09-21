@@ -107,10 +107,10 @@ def main():
 		if app.logged_in:
 			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
 			result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
-			if '3' in usr:
-				result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC")
-				if result2:
-					result = result2
+			# if '3' in usr:
+			# 	result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC")
+			# 	if result2:
+			# 		result = result2
 			if result is None:
 				log.info("No valid results, waiting...")
 				sleep(10)

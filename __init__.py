@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.1.10'
+__version__ = '1.1.11'
 
 import struct
 import configparser
