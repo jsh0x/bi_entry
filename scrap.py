@@ -3,8 +3,8 @@ from time import sleep
 import sys
 from typing import List
 
-from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex, center,\
-	REGEX_NEGATIVE_ITEM as negative_item_regex, REGEX_BUILD as build_regex
+from common import Application, Unit
+from constants import REGEX_BUILD as build_regex
 from exceptions import *
 
 from common import timer, access_grid

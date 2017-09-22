@@ -2,14 +2,13 @@ import logging.config
 from time import sleep
 import sys
 
-from common import Application, Unit, REGEX_ROW_NUMBER as row_number_regex, center, REGEX_NEGATIVE_ITEM as negative_item_regex
-from exceptions import *
-
-from common import timer, access_grid
 import pyautogui as pag
 from pywinauto import mouse, keyboard
 import pywinauto.timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
+
+from exceptions import *
+from common import timer, access_grid, Application, Unit, center
 
 
 logging.config.fileConfig('config.ini')
@@ -76,51 +75,21 @@ def Transact(app: Application, unit: Unit):
 							button.click()
 							log.debug(f"Pop-up button '{specific_method}' clicked")
 						sleep(0.2)
-			for i in range(2):
-				try:
-					sl_win.UnitEdit.set_text(unit.serial_number_prefix+unit.serial_number)  # Input serial number
-					sleep(0.2)
-					sl_win.send_keystrokes('{F4}')  # Filter in Place
-					count = 0
-					# or (not sl_uia.UnitEdit.legacy_properties()['IsReadOnly'])
-					while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix+unit.serial_number) and sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
-						if count >= 30:
-							raise SyteLineFilterInPlaceError(f"SyteLine had trouble entering serial number '{unit.serial_number_prefix+unit.serial_number}'")
-						sleep(0.4)
-						count += 1
-					else:
-						count = 0
-					if sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix+unit.serial_number:
-						if not sl_win.UnitEdit.texts()[0].strip():
-							raise InvalidSerialNumberError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned None")
-						else:
-							raise SyteLineFilterInPlaceError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
-				except InvalidSerialNumberError as ex:
-					if i < 1:
-						sl_win.send_keystrokes('{F4}')
-						sl_win.send_keystrokes('{F5}')
-						if unit.serial_number_prefix == 'BE':
-							unit._serial_number_prefix = 'ACB'
-						elif unit.serial_number_prefix == 'ACB':
-							unit._serial_number_prefix = 'BE'
-					else:
-						raise ex
-				except SyteLineFilterInPlaceError as ex:
-					if i < 1:
-						sl_win.send_keystrokes('{F4}')
-						sl_win.send_keystrokes('{F5}')
-					else:
-						raise ex
+			sl_win.UnitEdit.set_text(unit.serial_number_prefix+unit.serial_number)  # Input serial number
+			sleep(0.2)
+			sl_win.send_keystrokes('{F4}')  # Filter in Place
+			count = 0
+			# or (not sl_uia.UnitEdit.legacy_properties()['IsReadOnly'])
+			while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix+unit.serial_number) and sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
+				if count >= 30:
+					raise SyteLineFilterInPlaceError(f"SyteLine had trouble entering serial number '{unit.serial_number_prefix+unit.serial_number}'")
+				sleep(0.4)
+				count += 1
+			if sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix+unit.serial_number:
+				if not sl_win.UnitEdit.texts()[0].strip():
+					raise InvalidSerialNumberError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned None")
 				else:
-					if unit.serial_number_prefix == 'ACB':
-						if '650' in unit.build:
-							unit.build = '660'
-							unit._whole_build = None
-					elif unit.serial_number_prefix == 'BE':
-						if '660' in unit.build:
-							unit.build = '650'
-							unit._whole_build = None
-					break
+					raise SyteLineFilterInPlaceError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
 			unit.start()
 			log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 			if not sl_win.ServiceOrderLinesButton.is_enabled():

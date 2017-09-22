@@ -45,7 +45,7 @@ DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
-executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
+executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry1.ico")]
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',

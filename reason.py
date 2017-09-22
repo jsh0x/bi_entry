@@ -1,7 +1,8 @@
 import logging.config
 from time import sleep
 
-from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_WINDOW_MENU_FORM_NAME, Application, Unit
+from common import timer, access_grid, Application, Unit, center
+from constants import REGEX_ROW_NUMBER as row_number_regex, REGEX_NEGATIVE_ITEM as negative_item_regex
 
 import pywinauto as pwn
 # from pywinauto import Application, application
@@ -12,9 +13,6 @@ Timings.Fast()
 logging.config.fileConfig('config.ini')
 log = logging
 
-replace_session_regex = REGEX_REPLACE_SESSION
-user_session_regex = REGEX_USER_SESSION_LIMIT
-form_name_regex = REGEX_WINDOW_MENU_FORM_NAME
 
 def reason(app):
 	print(app)

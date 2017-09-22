@@ -1,15 +1,14 @@
 import logging.config
-from collections import namedtuple
 import re
 import decimal
 import datetime
-from typing import Union, Tuple, NamedTuple, Optional
+from typing import Tuple, NamedTuple, overload
 # import sqlite3
 
 import pymssql
 
-sql_date_regex = re.compile(r"(?P<year>\d{4})[/\-](?P<month>[01]\d)[/\-](?P<day>[0-3]\d)")
-sql_time_regex = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
+from constants import REGEX_SQL_TIME as sql_time_regex, REGEX_SQL_DATE as sql_date_regex
+
 
 logging.config.fileConfig("config.ini")
 log = logging
@@ -31,7 +30,15 @@ def adapt_type(x):
 
 
 class _SQL:
-	def execute(self, command: str, fetchall: Optional[bool]=None) -> Union[NamedTuple, Tuple[NamedTuple, ...], None]:
+	@overload
+	def execute(self, command: str, fetchall: bool) -> Tuple[NamedTuple, ...]:
+		...
+
+	@overload
+	def execute(self, command: str, fetchall: None=None) -> NamedTuple:
+		...
+
+	def execute(self, command, fetchall: bool=None):
 		c = self._conn.cursor()
 		if command.upper().startswith('SELECT'):
 			log.debug(f"Executing SQL query: '{command}'")

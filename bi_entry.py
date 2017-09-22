@@ -6,11 +6,12 @@ from time import sleep
 import sys
 from exceptions import *
 
+
 def main():
 	from transact import Transact
 	from scrap import Scrap
 	from reason import reason
-	from common import REGEX_REPLACE_SESSION, REGEX_USER_SESSION_LIMIT, REGEX_INVALID_LOGIN, REGEX_PASSWORD_EXPIRE, Application, Unit
+	from common import Application, Unit
 	from sql import MS_SQL
 	from crypt import decrypt
 
@@ -24,12 +25,6 @@ def main():
 	_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
 	mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
 	slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
-
-	replace_session_regex = REGEX_REPLACE_SESSION
-	user_session_regex = REGEX_USER_SESSION_LIMIT
-	invalid_login_regex = REGEX_INVALID_LOGIN
-	password_expire_regex = REGEX_PASSWORD_EXPIRE
-
 	config = configparser.ConfigParser()
 	logging.config.fileConfig('config.ini')
 	log = logging
@@ -123,7 +118,7 @@ def main():
 				continue
 			except UnitClosedError:
 				log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
-				mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
 				continue
 			log.info(f"Unit object created with serial_number={unit.serial_number}'")
 			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap}
