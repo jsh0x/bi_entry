@@ -2,12 +2,12 @@ import logging.config
 from time import sleep
 import sys
 from typing import List
+from collections import Counter
 
-from common import Application, Unit
+from common import Application, Unit, timer, access_grid
 from constants import REGEX_BUILD as build_regex
 from exceptions import *
 
-from common import timer, access_grid
 import pyautogui as pag
 from pywinauto import mouse, keyboard
 import pywinauto.timings
@@ -40,11 +40,18 @@ def Scrap(app: Application, units: List[Unit]):
 			if form not in app.forms:
 				raise ValueError()
 	# Sort Units by build and location, and order by serial number ascending
-	sub_units = {unit.whole_build: unit for unit in units if (not unit.whole_build.lower().startswith('sl')) or
-	                                                         (not unit.whole_build.lower().startswith('cl'))}.update(
-		{build_regex.match(unit.whole_build): unit for unit in units if unit.whole_build.lower().startswith('sl') or
-		                                              unit.whole_build.lower().startswith('cl')}
-		)
+	sub_units = {str(unit.whole_build)+'_'+str(unit.location): unit for unit in units if (not unit.whole_build.lower().startswith('sl')) or
+	                                                         (not unit.whole_build.lower().startswith('cl'))}.update({unit.whole_build.replace(build_regex.match(unit.whole_build).group('build'), build_regex.match(unit.whole_build).group('build')[:3])+'_'+str(unit.location): unit for unit in units if unit.whole_build.lower().startswith('sl') or
+		                                              unit.whole_build.lower().startswith('cl')})
+	count = Counter(dict(zip(sub_units.keys(), map(len, sub_units.values()))))
+	for k in range(1, len(count.keys())+1):
+		if sum([x[1] for x in count.most_common(k)]) >= 10:
+			break
+	else:
+		raise ValueError()
+	units = [{z.serial_number: z for z in [sub_units[y] for y in [x[0] for x in count.most_common(k)]]}[a] for a in sorted({z.serial_number: z for z in [sub_units[y] for y in [x[0] for x in count.most_common(k)]]})[:10]]
+	map(Unit.start, units)
+
 	try:
 		try:
 			pass

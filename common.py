@@ -115,6 +115,8 @@ class Unit:
 		self.update_sl_data()
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
+		log.info(f"Unit sro_num='{self.sro_num}'")
+		log.info(f"Unit sro_line='{self.sro_line}'")
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
@@ -178,7 +180,9 @@ class Unit:
 		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
 		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
 		                    f"{life_time},'{process}','Completed','{self.version}')")
-		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'C1' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		# self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def skip(self, reason: Optional[str]=None):
 		value = self.sro_operations_timer.stop()
@@ -383,6 +387,8 @@ class Unit2:
 		self.update_sl_data()
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
+		log.info(f"Unit sro_num='{self.sro_num}'")
+		log.info(f"Unit sro_line='{self.sro_line}'")
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
@@ -433,12 +439,22 @@ class Unit2:
 		if value is not None:
 			life_time = value.total_seconds()
 		else:
-			life_time = None
+			life_time = 0
 		if self._status == 'Queued':
 			process = 'Transaction'
 		else:
 			process = self._status
+		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		t_parts_ref = {Part(self._mssql, x) for x in self.parts_transacted}
+		misc_issue_total = self.misc_issue_time.total_seconds()
+		sro_op_total = self.sro_operations_time.total_seconds()
+		sro_tr_total = self.sro_transactions_time.total_seconds()
+		misc_issue_time = sigfig(misc_issue_total, misc_issue_total / len(self.ids))
+		life_time = sigfig(life_time, life_time / len(self.ids))
+		sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
+		base_tr_time = sigfig(sro_tr_total, self._mssql.execute(""
+		                                   "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[0] / len(self.ids))
+		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
 		for ID in self.ids:
 			opr, opn, prt, dt = self._mssql.execute(
 				f"SELECT [Operator],[Operation],[Parts],[DateTime] PyComm WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
@@ -457,18 +473,12 @@ class Unit2:
 				parts = 'None'
 				t_parts = 'None'
 				parts_qty = t_parts_qty = 0
-			sro_op_total = self.sro_operations_time.total_seconds()
-			sro_tr_total = self.sro_transactions_time.total_seconds()
-			sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
-			"SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t" \
-			"WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)"
-
+			'''"SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)"
 			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[Total Time]) AS numeric (18, 3)) AS [Average Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]"
-			sro_tr_time = sigfig(sro_tr_total, sro_tr_total / len())
-			self.sro_transactions_time.total_seconds()
-			self.misc_issue_time.total_seconds()
-			datetime.datetime.now().time().strftime('%H:%M:%S.%f')
-			life_time
+			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)) GROUP BY s.[Version]"'''
+			sro_tr_time = base_tr_time
+			if t_parts_qty > 0:
+				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
 			self._mssql.execute("INSERT INTO [Statistics]"
 			                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 			                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
@@ -477,10 +487,10 @@ class Unit2:
 			                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
 			                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
 			                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-			                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
-			                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
+			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
 			                    f"{life_time},'{process}','Completed','{self.version}')")
-		self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+			self._mssql.execute(f"UPDATE PyComm SET [Status] = 'C1' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
+		# self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def skip(self, reason: Optional[str] = None):
 		value = self.sro_operations_timer.stop()
@@ -499,29 +509,59 @@ class Unit2:
 			life_time = 0
 		if reason is None:
 			reason = 'Skipped'
-		if len(self.parts_transacted) > 0:
-			try:
-				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
-			except TypeError:
-				t_parts = 'None'
-		else:
-			t_parts = 'None'
 		if self._status == 'Queued':
 			process = 'Transaction'
 		else:
 			process = self._status
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		if self._status == 'Queued':
+			process = 'Transaction'
+		else:
+			process = self._status
+		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		t_parts_ref = {Part(self._mssql, x) for x in self.parts_transacted}
+		misc_issue_total = self.misc_issue_time.total_seconds()
+		sro_op_total = self.sro_operations_time.total_seconds()
+		sro_tr_total = self.sro_transactions_time.total_seconds()
+		misc_issue_time = sigfig(misc_issue_total, misc_issue_total / len(self.ids))
+		life_time = sigfig(life_time, life_time / len(self.ids))
+		sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
+		base_tr_time = sigfig(sro_tr_total, self._mssql.execute(""
+		                                   "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[0] / len(self.ids))
+		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
+		for ID in self.ids:
+			opr, opn, prt, dt = self._mssql.execute(
+				f"SELECT [Operator],[Operation],[Parts],[DateTime] PyComm WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
+			if type(dt) is str:
+				dt = datetime.datetime.strptime(dt, "%m/%d/%Y %I:%M:%S %p")
+			if prt:
+				parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt})
+				parts_qty = len({Part(self._mssql, x) for x in prt})
+				t_parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt} if y in t_parts_ref)
+				if not t_parts:
+					t_parts = 'None'
+					t_parts_qty = 0
+				else:
+					t_parts_qty = len({Part(self._mssql, x) for x in prt if Part(self._mssql, x) in t_parts_ref})
+			else:
+				parts = 'None'
+				t_parts = 'None'
+				parts_qty = t_parts_qty = 0
+			'''"SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)"
+			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[Total Time]) AS numeric (18, 3)) AS [Average Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]"
+			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)) GROUP BY s.[Version]"'''
+			sro_tr_time = base_tr_time
+			if t_parts_qty > 0:
+				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
 		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
 		                    "[Total Time],[Process],[Results],[Reason],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
-		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
-		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
-		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
-		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
+		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
+		                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
+		                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+		                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
 		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
 	def reset(self):

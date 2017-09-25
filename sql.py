@@ -52,6 +52,14 @@ class _SQL:
 					results = SQL_Results(*[adapt_type(y) for y in results])
 			log.debug(f"SQL query successful, value(s) returned: {results}")
 			return results
+		elif 'DELETE' in command.upper():
+			log.debug(f"Executing SQL transaction: '{command}'")
+			log.info(f"Executing SQL transaction: '{command}'")
+			c.execute(command)
+			self._conn.commit()
+			log.debug("SQL transaction successful")
+			log.info("SQL transaction successful")
+			return None
 		else:
 			log.debug(f"Executing SQL transaction: '{command}'")
 			c.execute(command)
