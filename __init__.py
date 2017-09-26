@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.1.18'
+__version__ = '1.1.21'
 
 import struct
 import configparser
@@ -108,7 +108,8 @@ def update_config():
 # 	return retval
 
 
-def write_config(usr: str='???', pwd: str='???', fp: str=find_file('WinStudio.exe')):
+def write_config(usr: str='???', pwd: str='???', fp: str=None):
+	fp = find_file('WinStudio.exe') if fp is None else fp
 	path = (os.path.dirname(sys.executable)).replace('\\', '/')+"/Scripts/pip3.6.exe"
 	log_dir.mkdir(exist_ok=True)
 	info_log_dir = str(log_dir / 'info.log').replace('\\', '/')
@@ -119,12 +120,13 @@ def write_config(usr: str='???', pwd: str='???', fp: str=find_file('WinStudio.ex
 	# 	if mod in module_list:
 	# 		pass  # Update it
 	config['DEFAULT'] = {'version': __version__,
+	                     'flow': 'ASC',
 	                     'printer': 'None',
 						 'min_sl_instances': '1',
 						 'max_sl_instances': '1',
 						 'multiprocess': 'False'}
-	config['Schedule'] = {'active_days': ','.join(str(i) for i in range(1, 6)),
-	                      'active_hours': ','.join(str(i) for i in range(5, 18))
+	config['Schedule'] = {'active_days': '1,2,3,4,5,6',
+	                      'active_hours': '0,1,2,5,6,7,8,9,10,11,12,13,14,15,18,19,20,22,23'
 	                      }
 	config['Paths'] = {'sl_exe': fp,
 					   'pip_exe': path,

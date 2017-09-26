@@ -18,24 +18,14 @@ log = logging
 def Transact(app: Application, unit: Unit):
 	pywinauto.timings.Timings.Fast()
 	log.info(f"Starting Transact script with unit: {unit.serial_number_prefix+unit.serial_number}")
-	form = 'Units'
 	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
 	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
 	if not sl_win.exists():
 		unit.reset()
 		sys.exit(1)
 	log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-	if form not in app.forms:  # If required form is not open
-		sl_win.send_keystrokes('^o')
-		app.win32.SelectForm.AllContainingEdit.set_text(form)
-		app.win32.SelectForm.set_focus()
-		app.win32.SelectForm.FilterButton.click()
-		common_controls.ListViewWrapper(app.win32.SelectForm.ListView).item(form).click()
-		app.win32.SelectForm.set_focus()
-		app.win32.SelectForm.OKButton.click()
-		sleep(4)
-		if form not in app.forms:
-			raise ValueError()
+	app.verify_form('Units')
+	sleep(0.2)
 	# TODO: Check if 'Units' form is focused, if not, do so
 	try:
 		try:
@@ -249,6 +239,7 @@ def Transact(app: Application, unit: Unit):
 						sl_win.PostBatchButton.click()
 						sl_win.PostBatchButton.wait('ready', 2, 0.09)
 						handle_popup()
+						# TODO: Catch if unit is on credit hold(parts are saved, but not posted)
 						log.debug("Batch posted")
 						sl_win.set_focus()
 						save.click()
@@ -306,6 +297,8 @@ def Transact(app: Application, unit: Unit):
 				pag.click(*c_coords)
 				handle_popup()
 				q = []
+				# if last_row2.General_Reason is None:
+				# 	q.append((c_coords, '1000'))
 				if last_row2.Specific_Reason is None:
 					spec_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Reason')).element_info)
 					spec_resn_i = spec_resn.rectangle()
