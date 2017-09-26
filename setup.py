@@ -51,15 +51,14 @@ executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_
 packages = ['psutil', 'win32api', 'pyautogui',
             'pymssql', 'pywinauto', 'win32gui',
             'easygui', '_mssql', 'uuid', 'subprocess',
-            'comtypes']
+            'comtypes', 'sqlite3']
 include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
                  r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd']
-excludes = ["tkinter", "PyQt4.QtSql", "sqlite3",
-            "scipy.lib.lapack.flapack",
+excludes = ["tkinter", "PyQt4.QtSql", "numpy",
+            "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
-            "numpy.core._dotblas", "PyQt5", "matplotlib",
-            "colorama", "pygments", "mpl-data", "numpy",
-            "PIL", "email"]
+            "numpy.core._dotblas", "PyQt5", "PIL",
+            "colorama", "pygments", "mpl-data", "email"]
 
 options = {
 	'build_exe': {

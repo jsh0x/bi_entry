@@ -5,15 +5,16 @@ import datetime
 import configparser
 import logging.config
 from sys import exc_info
+from time import sleep
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
-from typing import NamedTuple, Union, Tuple, Optional, Iterable, List, Any
+from typing import NamedTuple, Union, Tuple, Optional, Iterable, List, Any, overload
 from ast import literal_eval
 
 import psutil
 import pywinauto as pwn
-from pywinauto.controls import uia_controls
+from pywinauto.controls import uia_controls, common_controls
 import win32gui
 
 from exceptions import *
@@ -31,6 +32,8 @@ On LEFT(ser_num,LEN(p.Prefix)) = p.Prefix
 Where Right(ser_num, Len(ser_num) - len(p.Prefix)) IN 
 (('SN1'),('SN2'),('SN3')...)
 """
+
+completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
@@ -58,6 +61,14 @@ class Unit:
 		self.version = config.get('DEFAULT', 'version')
 		self.id, self.serial_number, build, self.suffix, self.operation, self.operator, \
 		self.parts, self.datetime, self.notes, self._status = args
+		if self.suffix:
+			self.suffix = self.suffix.strip()
+		if self.operation:
+			self.operation = self.operation.strip()
+		if self.operator:
+			self.operator = self.operator.strip()
+		if self.notes:
+			self.notes = self.notes.strip()
 		log.debug(f"Attribute id={self.id}")
 		log.debug(f"Attribute serial_number='{self.serial_number}'")
 		log.debug(f"Attribute suffix='{self.suffix}'")
@@ -105,14 +116,22 @@ class Unit:
 												"end as [Inv_Stat], whse "
 										   f"from serial (nolock) where ser_num = '{sn2}') t")
 		if build_data is None:
-			raise UnitClosedError(f"Unit '{self.serial_number}' has no SROs")
-		gc, item, loc, whse = build_data
-		if gc.upper().startswith('BE'):
-			self.serial_number_prefix = 'BE'
-		elif gc.upper().startswith('ACB'):
-			self.serial_number_prefix = 'ACB'
-		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
-		self.update_sl_data()
+			if self._status.lower() != 'scrap':
+				raise UnitClosedError(f"Unit '{self.serial_number}' has no SROs")
+			loc, whse = 'Out of Inventory', None
+			gc, item = self.get_serial_build()
+			log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
+			self.update_sl_data()
+		else:
+			gc, item, loc, whse = build_data
+			if gc.upper().startswith('BE'):
+				self.serial_number_prefix = 'BE'
+			elif gc.upper().startswith('ACB'):
+				self.serial_number_prefix = 'ACB'
+			log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
+			self.update_sl_data()
+		if self.sl_data is None:
+			self.sro_num, self.sro_line, self.eff_date, self.SRO_Line_status, self.SRO_Operations_status = None, None, None, 'Closed', 'Closed'
 		log.debug(f"Attribute sro_num='{self.sro_num}'")
 		log.debug(f"Attribute sro_line='{self.sro_line}'")
 		log.info(f"Unit sro_num='{self.sro_num}'")
@@ -132,7 +151,7 @@ class Unit:
 		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
 		self.carrier = carrier_dict[self._regex_dict['carrier']]
 		log.debug(f"Attribute carrier='{self.carrier}'")
-		if self._status.lower() != 'scrap':  # Because they're done in batches by a single computer, no risk of overlap
+		if self._status.lower() != 'scrap':
 			self.start()
 
 	def start(self):
@@ -142,273 +161,7 @@ class Unit:
 		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
 
-	def complete(self):
-		value = self.sro_operations_timer.stop()
-		if value is not None:
-			self.sro_operations_time += value
-		value = self.sro_transactions_timer.stop()
-		if value is not None:
-			self.sro_transactions_time += value
-		value = self.misc_issue_timer.stop()
-		if value is not None:
-			self.misc_issue_time += value
-		value = self._life_timer.stop()
-		if value is not None:
-			life_time = value.total_seconds()
-		else:
-			life_time = None
-		if len(self.parts_transacted) > 0:
-			try:
-				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
-			except TypeError:
-				t_parts = 'None'
-		else:
-			t_parts = 'None'
-		if self._status == 'Queued':
-			process = 'Transaction'
-		else:
-			process = self._status
-		self._mssql.execute("INSERT INTO [Statistics]"
-		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
-		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
-		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
-		                    "[Total Time],[Process],[Results],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
-		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
-		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
-		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
-		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
-		                    f"{life_time},'{process}','Completed','{self.version}')")
-
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'C1' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-		# self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-
-	def skip(self, reason: Optional[str]=None):
-		value = self.sro_operations_timer.stop()
-		if value is not None:
-			self.sro_operations_time += value
-		value = self.sro_transactions_timer.stop()
-		if value is not None:
-			self.sro_transactions_time += value
-		value = self.misc_issue_timer.stop()
-		if value is not None:
-			self.misc_issue_time += value
-		value = self._life_timer.stop()
-		if value is not None:
-			life_time = value.total_seconds()
-		else:
-			life_time = 0
-		if reason is None:
-			reason = 'Skipped'
-		if len(self.parts_transacted) > 0:
-			try:
-				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
-			except TypeError:
-				t_parts = 'None'
-		else:
-			t_parts = 'None'
-		if self._status == 'Queued':
-			process = 'Transaction'
-		else:
-			process = self._status
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-		self._mssql.execute("INSERT INTO [Statistics]"
-		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
-		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
-		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
-		                    "[Total Time],[Process],[Results],[Reason],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
-		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
-		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
-		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
-		                    f"{self.misc_issue_time.total_seconds()},'{datetime.datetime.now().time().strftime('%H:%M:%S.%f')}',"
-		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
-
-	def reset(self):
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-
-	def update_sl_data(self):
-		try:
-			self.sro_num, self.sro_line, self.eff_date, self.SRO_Operations_status, self.SRO_Line_status = self.sl_data
-		except TypeError as ex:
-			if re.search(r"NoneType.*not iterable", str(exc_info()[1])) is None:
-				raise ex
-
-	@property
-	def sl_data(self) -> NamedTuple:
-		return self._slsql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
-									"Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
-									"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
-									"From fs_sro s (nolock) "
-									"Inner join fs_sro_line l (nolock) "
-									"on s.sro_num = l.sro_num "
-									"Inner join fs_unit_cons c (nolock) "
-									"on l.ser_num = c.ser_num "
-									"Inner join fs_sro_oper o (nolock) "
-									"on l.sro_num = o.sro_num and l.sro_line = o.sro_line "
-									"Left join fs_unit_cons c2 (nolock) "
-									"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
-									"Where c2.eff_date IS NULL AND "
-									f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
-									"Order by s.open_date DESC")
-
-	@property
-	def serial_number_prefix(self) -> str:
-		try:
-			if self._serial_number_prefix is None:
-				value = self._mssql.execute(f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[0]
-			else:
-				value = self._serial_number_prefix
-		except Exception as ex:
-			raise ex
-		except (ValueError, KeyError, IndexError):
-			value = None
-		finally:
-			self._serial_number_prefix = value
-			return self._serial_number_prefix
-
-	@serial_number_prefix.setter
-	def serial_number_prefix(self, value: str):
-		self._serial_number_prefix = value
-
-	@property
-	def parts(self) -> List[Part]:
-		return self._parts
-
-	@parts.setter
-	def parts(self, value):
-		if value:
-			value = value.split(',')
-			if value != ['']:
-				self._parts = list({Part(self._mssql, x) for x in value})
-		else:
-			self._parts = None
-
-	@property
-	def datetime(self) -> datetime.datetime:
-		return self._datetime
-
-	@datetime.setter
-	def datetime(self, value: str):
-		if type(value) is str:
-			self._datetime = datetime.datetime.strptime(value, "%m/%d/%Y %I:%M:%S %p")
-		else:
-			self._datetime = value
-
-	@property
-	def operator_initials(self):
-		if self._operator_initials is None:
-			first, last = self._mssql.execute(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{self.operator}'")
-			self._operator_initials = first.strip()[0].upper() + last.strip()[0].upper()
-		return self._operator_initials
-
-	@operator_initials.setter
-	def operator_initials(self, value):
-		self._operator_initials = value
-
-	@property
-	def product(self):
-		if self._product is None:
-			data = self._mssql.execute(f"SELECT [Product] FROM Prefixes WHERE [Prefix] = '{self.serial_number_prefix}'")
-			if not data:
-				raise ValueError
-			self._product = data[0]
-		return self._product
-
-	@product.setter
-	def product(self, value):
-		self._product = value
-
-
-class Unit2:
-	def __init__(self, mssql: MS_SQL, slsql: MS_SQL, args: NamedTuple):
-		config.read_file(open('config.ini'))
-		self._mssql = mssql
-		self._slsql = slsql
-		self.version = config.get('DEFAULT', 'version')
-		self.id, self.serial_number, build, self.suffix, self.operation, self.operator, \
-		self.parts, self.datetime, self.notes, self._status = args
-		log.debug(f"Attribute id={self.id}")
-		log.debug(f"Attribute serial_number='{self.serial_number}'")
-		log.debug(f"Attribute suffix='{self.suffix}'")
-		log.debug(f"Attribute operation='{self.operation}'")
-		log.debug(f"Attribute operator='{self.operator}'")
-		log.debug(f"Attribute notes='{self.notes}'")
-		log.debug(f"Attribute _status='{self._status}'")
-		log.debug(f"Property parts='{self.parts}'")
-		log.debug(f"Property datetime='{self.datetime}'")
-		"""From PyComm p
-				Cross apply dbo.Split(p.Parts, ',') b
-				Inner join Parts n
-				on b.items = n.PartNum
-				Where p.[Serial Number] = @SN
-		"""
-		self._serial_number_prefix = self._product = self.whole_build = self._operator_initials = \
-			self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
-		self.parts_transacted = []
-		self.timer = TestTimer()
-		self._life_timer = TestTimer()
-		self._life_timer.start()
-		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
-		self.sro_operations_time = datetime.timedelta(0)
-		self.sro_transactions_time = datetime.timedelta(0)
-		self.misc_issue_time = datetime.timedelta(0)
-		self.sro_operations_timer = TestTimer()
-		self.sro_transactions_timer = TestTimer()
-		self.misc_issue_timer = TestTimer()
-		log.debug(f"Property product='{self.product}'")
-		log.debug(f"Property operator_initials='{self.operator_initials}'")
-		sn1 = sn2 = f"{self.serial_number_prefix}{self.serial_number}"
-		if self.serial_number_prefix == 'BE':
-			sn2 = f"ACB{self.serial_number}"
-		build_data = self._slsql.execute("Select top 1 * from ("
-		                                 "select ser_num, item, "
-		                                 "Case when loc is null then 'Out of Inventory' "
-		                                 "else loc "
-		                                 "end as [Inv_Stat], whse "
-		                                 f"from serial (nolock) where ser_num = '{sn1}' "
-		                                 "Union All "
-		                                 "select ser_num, item, "
-		                                 "Case when loc is null then 'Out of Inventory' "
-		                                 "else loc "
-		                                 "end as [Inv_Stat], whse "
-		                                 f"from serial (nolock) where ser_num = '{sn2}') t")
-		if build_data is None:
-			raise UnitClosedError(f"Unit '{self.serial_number}' has no SROs")
-		gc, item, loc, whse = build_data
-		if gc.upper().startswith('BE'):
-			self.serial_number_prefix = 'BE'
-		elif gc.upper().startswith('ACB'):
-			self.serial_number_prefix = 'ACB'
-		log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
-		self.update_sl_data()
-		log.debug(f"Attribute sro_num='{self.sro_num}'")
-		log.debug(f"Attribute sro_line='{self.sro_line}'")
-		log.info(f"Unit sro_num='{self.sro_num}'")
-		log.info(f"Unit sro_line='{self.sro_line}'")
-		log.debug(f"Attribute eff_date='{self.eff_date}'")
-		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
-		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
-		self._regex_dict = REGEX_BUILD.match(item.upper()).groupdict(default='-')
-		self.location = loc
-		log.debug(f"Attribute location='{self.location}'")
-		self.warehouse = whse
-		log.debug(f"Attribute warehouse='{self.warehouse}'")
-		self.build = self._regex_dict['build'][:3]
-		log.debug(f"Attribute build='{self.build}'")
-		self.whole_build = item.upper()
-		log.debug(f"Attribute whole_build='{self.whole_build}'")
-		carrier_dict = {'V': 'Verizon', 'S': 'Sprint', '-': None}
-		self.carrier = carrier_dict[self._regex_dict['carrier']]
-		log.debug(f"Attribute carrier='{self.carrier}'")
-		if self._status.lower() != 'scrap':  # Because they're done in batches by a single computer, no risk of overlap
-			self.start()
-
-	def start(self):
-		# self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+	def start_serial_number(self):
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status})' WHERE [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
 		results = self._mssql.execute(f"SELECT [Id],[Operation],[Parts] PyComm WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}'", fetchall=True)
 		self.ids, self.operations, partsets = [[x[i] for x in results] for i in range(3)]
@@ -420,12 +173,42 @@ class Unit2:
 			if parts != self.parts:
 				self._parts = parts
 				log.debug(f"Parts list updated from {qty_parts} to {len(parts)}")
-		self._life_timer = TestTimer()
-		self._life_timer.start()
-		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
+		self.start()
 
-	def complete(self):
+	def complete(self, batch_amt=10):
+		self.sro_operations_time += self.sro_operations_timer.stop()
+		self.sro_transactions_time += self.sro_transactions_timer.stop()
+		self.misc_issue_time += self.misc_issue_timer.stop()
+		life_time = self._life_timer.stop().total_seconds()
+		if len(self.parts_transacted) > 0:
+			try:
+				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			except TypeError:
+				t_parts = 'None'
+		else:
+			t_parts = 'None'
+		if self._status == 'Queued':
+			process = 'Transaction'
+		else:
+			process = self._status
+		if self._status.lower() == 'scrap':
+			life_time /= batch_amt
+		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		self._mssql.execute("INSERT INTO [Statistics]"
+		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
+		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
+		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
+		                    "[Total Time],[Process],[Results],[Version])"
+		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
+		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
+		                    f"{self.misc_issue_time.total_seconds()},'{end_time}',"
+		                    f"{life_time},'{process}','Completed','{self.version}')")
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+
+	def complete_serial_number(self):
 		value = self.sro_operations_timer.stop()
 		if value is not None:
 			self.sro_operations_time += value
@@ -453,7 +236,8 @@ class Unit2:
 		life_time = sigfig(life_time, life_time / len(self.ids))
 		sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
 		base_tr_time = sigfig(sro_tr_total, self._mssql.execute(""
-		                                   "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[0] / len(self.ids))
+		                                                        "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[
+			0] / len(self.ids))
 		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
 		for ID in self.ids:
 			opr, opn, prt, dt = self._mssql.execute(
@@ -490,9 +274,43 @@ class Unit2:
 			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
 			                    f"{life_time},'{process}','Completed','{self.version}')")
 			self._mssql.execute(f"UPDATE PyComm SET [Status] = 'C1' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
-		# self._mssql.execute(f"DELETE FROM PyComm WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
-	def skip(self, reason: Optional[str] = None):
+	def skip(self, reason: Optional[str]=None, batch_amt=10):
+		self.sro_operations_time += self.sro_operations_timer.stop()
+		self.sro_transactions_time += self.sro_transactions_timer.stop()
+		self.misc_issue_time += self.misc_issue_timer.stop()
+		life_time = self._life_timer.stop().total_seconds()
+		if reason is None:
+			reason = 'Skipped'
+		if len(self.parts_transacted) > 0:
+			try:
+				t_parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts_transacted)
+			except TypeError:
+				t_parts = 'None'
+		else:
+			t_parts = 'None'
+		if self._status == 'Queued':
+			process = 'Transaction'
+		else:
+			process = self._status
+		if self._status.lower() == 'scrap':
+			life_time /= batch_amt
+		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute("INSERT INTO [Statistics]"
+		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
+		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
+		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
+		                    "[Total Time],[Process],[Results],[Reason],[Version])"
+		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
+		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
+		                    f"{self.misc_issue_time.total_seconds()},'{end_time}',"
+		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
+
+	def skip_serial_number(self, reason: Optional[str] = None):
 		value = self.sro_operations_timer.stop()
 		if value is not None:
 			self.sro_operations_time += value
@@ -509,10 +327,6 @@ class Unit2:
 			life_time = 0
 		if reason is None:
 			reason = 'Skipped'
-		if self._status == 'Queued':
-			process = 'Transaction'
-		else:
-			process = self._status
 		if self._status == 'Queued':
 			process = 'Transaction'
 		else:
@@ -552,20 +366,24 @@ class Unit2:
 			sro_tr_time = base_tr_time
 			if t_parts_qty > 0:
 				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
-		self._mssql.execute("INSERT INTO [Statistics]"
-		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
-		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
-		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
-		                    "[Total Time],[Process],[Results],[Reason],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
-		                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
-		                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-		                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
-		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
+			self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
+			self._mssql.execute("INSERT INTO [Statistics]"
+			                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
+			                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
+			                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
+			                    "[Total Time],[Process],[Results],[Reason],[Version])"
+			                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
+			                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
+			                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
+			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
+			                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
 	def reset(self):
 		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+
+	def reset_serial_number(self):
+		for ID in self.ids:
+			self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status}' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 
 	def update_sl_data(self):
 		try:
@@ -577,27 +395,34 @@ class Unit2:
 	@property
 	def sl_data(self) -> NamedTuple:
 		return self._slsql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
-		                           "Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
-		                           "Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
-		                           "From fs_sro s (nolock) "
-		                           "Inner join fs_sro_line l (nolock) "
-		                           "on s.sro_num = l.sro_num "
-		                           "Inner join fs_unit_cons c (nolock) "
-		                           "on l.ser_num = c.ser_num "
-		                           "Inner join fs_sro_oper o (nolock) "
-		                           "on l.sro_num = o.sro_num and l.sro_line = o.sro_line "
-		                           "Left join fs_unit_cons c2 (nolock) "
-		                           "on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
-		                           "Where c2.eff_date IS NULL AND "
-		                           f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
-		                           "Order by s.open_date DESC")
+									"Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
+									"Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
+									"From fs_sro s (nolock) "
+									"Inner join fs_sro_line l (nolock) "
+									"on s.sro_num = l.sro_num "
+									"Inner join fs_unit_cons c (nolock) "
+									"on l.ser_num = c.ser_num "
+									"Inner join fs_sro_oper o (nolock) "
+									"on l.sro_num = o.sro_num and l.sro_line = o.sro_line "
+									"Left join fs_unit_cons c2 (nolock) "
+									"on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
+									"Where c2.eff_date IS NULL AND "
+									f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
+									"Order by s.open_date DESC")
+
+	def get_serial_build(self) -> NamedTuple:
+		return self._slsql.execute("Select top 1 * from "
+		                           "(Select ser_num, item from serial "
+		                          f"(nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}' "
+		                           "Union All "
+		                           "Select ser_num, item from fs_unit "
+		                          f"(nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}') t")
 
 	@property
 	def serial_number_prefix(self) -> str:
 		try:
 			if self._serial_number_prefix is None:
-				value = self._mssql.execute(
-					f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[0]
+				value = self._mssql.execute(f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[0]
 			else:
 				value = self._serial_number_prefix
 		except Exception as ex:
@@ -619,6 +444,7 @@ class Unit2:
 	@parts.setter
 	def parts(self, value):
 		if value:
+			value = value.strip()
 			value = value.split(',')
 			if value != ['']:
 				self._parts = list({Part(self._mssql, x) for x in value})
@@ -662,9 +488,10 @@ class Unit2:
 
 
 class Application(psutil.Process):
-	def __init__(self, fp: Union[str, pathlib.Path], exclude: Optional[Union[int, Iterable[int]]] = None):
+	def __init__(self, fp: Union[str, pathlib.Path], exclude: Union[int, Iterable[int]] = None):
 		if type(fp) is pathlib.Path:
 			fp = str(fp)
+		# TODO: Improve catching already open and available application instances
 		if is_running(fp, exclude):
 			super().__init__(process_pid(fp, exclude))
 		else:
@@ -724,50 +551,22 @@ class Application(psutil.Process):
 		coord = {'left': left, 'top': top, 'right': right, 'bottom': bottom}
 		win32gui.MoveWindow(self._hwnd, int(coord['left']) - 7, coord['top'], coord['right']-coord['left'], coord['bottom']-coord['top'], True)
 
-	def open_form(self, name: str, alias: Optional[str] = None):
-		self._win.send_keystrokes('^o')
-		# pag.hotkey('ctrl', 'o')
-		# win = self._win.child_window(title='Select Form')
-		self._win.send_keystrokes('%c')
-		# pag.hotkey('alt', 'c')
-		# pag.typewrite(name)
-		self._win.send_keystrokes(name)
-		self._win.send_keystrokes('%f')
-		# pag.hotkey('alt', 'f')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{TAB}')
-		self._win.send_keystrokes('{SPACE}')
-		# pag.press('tab', 6)###
-		# pag.press('space')###
-		lb = self._win.child_window(auto_id='formsListView')
-		# lb.click_input()
-		# pag.press([name[0], 'up'])
-		# selection = lb.get_selection()[0]
-		# if selection.name != name:
-		# 	start = selection.name
-		# 	current = None
-		# 	limit = 10
-		# 	count = 0
-		# 	while current != start and count < limit:
-		# 		count += 1
-		# 		pag.press('down')
-		# 		selection = lb.get_selection()[0]
-		# 		if selection.name == name:
-		# 			break
-		# 		current = selection.name
-		# 	else:
-		# 		raise ValueError(f"Could not find form '{name}'")
-		self._win.send_keystrokes('{DOWN}')
-		self._win.send_keystrokes('{ENTER}')
-		# pag.press('down')###
-		# pag.press('enter')
-		if alias:
-			name = alias
-		self._visible_form = name
+	def open_form(self, *names):
+		open_forms = self.forms.keys()
+		log.debug(f"Opening form(s): {', '.join(names)}")
+		for name in names:
+			if name in open_forms:
+				raise ValueError(f"Form '{name}' already open")
+			sl_win = self.win32.window(title_re='Infor ERP SL (EM)*')
+			sl_win.send_keystrokes('^o')
+			self.win32.SelectForm.AllContainingEdit.set_text(name)
+			self.win32.SelectForm.set_focus()
+			self.win32.SelectForm.FilterButton.click()
+			common_controls.ListViewWrapper(self.win32.SelectForm.ListView).item(name).click()
+			self.win32.SelectForm.set_focus()
+			self.win32.SelectForm.OKButton.click()
+			log.debug(f"Form '{name}' opened")
+			sleep(4)
 
 	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
 		sl_win = self.win32.window(title_re='Infor ERP SL (EM)*')
@@ -782,13 +581,50 @@ class Application(psutil.Process):
 		find_window.set_focus()
 		find_window.OKButton.click()
 
-	def change_forms(self):
-		pass
+	def change_form(self, name: str):
+		forms = self.forms
+		if name in forms:
+			if name == self.get_focused_form():
+				pass
+			else:
+				forms[name].select()
+		else:
+			raise ValueError(f"Form '{name}' not open")
 
 	@property
 	def forms(self):
+		# TODO: Possible form object including 'is_checked' property
 		sl_uia = self.uia.window(title_re='Infor ERP SL (EM)*')
-		return {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items() if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
+		retval = {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items()
+		        if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
+		log.debug(f"Forms open: {', '.join(retval.keys())}")
+		return retval
+
+	def get_focused_form(self):
+		"""0x100000  1048576  0b100000000000000000000  focusable
+		   0x100004  1048580  0b100000000000000000100  focusable, focused
+		   0x100084  1048708  0b100000000000010000100  focusable, focused, hot-tracked
+		   0x100094  1048724  0b100000000000010010100  focusable, focused, hot-tracked, checked
+		   0x100010  1048592  0b100000000000000010000  focusable, checked
+
+		   0x000004  0000004  0b000000000000000000100  focused
+		   0x000010  0000016  0b000000000000000010000  checked
+		   0x000040  0000064  0b000000000000001000000  read-only
+		   0x000080  0000128  0b000000000000010000000  hot-tracked
+		   0x100000  1048576  0b100000000000000000000  focusable"""
+		for item in self.forms.items():
+			name, form = item
+			state = form.legacy_properties()['State']
+			bin_state = bin(state)
+			log.debug(f"Form State: {state}")
+			if int(bin_state[-5], base=2):  # If the fifth bit == 1
+				return name
+
+	def verify_form(self, name: str):
+		if name not in self.forms.keys():
+			self.open_form(name)
+		if name != self.get_focused_form():
+			self.change_form(name)
 
 
 class PuppetMaster:
@@ -837,7 +673,7 @@ class TestTimer:
 			retval = datetime.datetime.now() - self._start_time
 			return retval
 		else:
-			return None
+			return datetime.timedelta(0)
 
 	def reset(self):
 		self._start_time = None

@@ -1,9 +1,9 @@
 import logging.config
-import re
 import decimal
 import datetime
+from collections import namedtuple
 from typing import Tuple, NamedTuple, overload
-# import sqlite3
+import sqlite3
 
 import pymssql
 
@@ -43,14 +43,24 @@ class _SQL:
 		if command.upper().startswith('SELECT'):
 			log.debug(f"Executing SQL query: '{command}'")
 			c.execute(command)
-			SQL_Results = NamedTuple('SQL_Results', [(x[0].replace(' ', '_'), type_codes[x[1]]) for x in c.description])
-			if fetchall:
-				results = tuple([SQL_Results(*[adapt_type(y) for y in x]) for x in c.fetchall() if x is not None])
+			if self.method == 'MS':
+				SQL_Results = NamedTuple('SQL_Results', [(x[0].replace(' ', '_'), type_codes[x[1]]) for x in c.description])
+				if fetchall:
+					results = tuple([SQL_Results(*[adapt_type(y) for y in x]) for x in c.fetchall() if x is not None])
+				else:
+					results = c.fetchone()
+					if results is not None:
+						results = SQL_Results(*[adapt_type(y) for y in results])
+				log.debug(f"SQL query successful, value(s) returned: {results}")
 			else:
-				results = c.fetchone()
-				if results is not None:
-					results = SQL_Results(*[adapt_type(y) for y in results])
-			log.debug(f"SQL query successful, value(s) returned: {results}")
+				SQL_Results = namedtuple('SQL_Results', [x[0].replace(' ', '_') for x in c.description])
+				if fetchall:
+					results = tuple([SQL_Results(*[y for y in x]) for x in c.fetchall() if x is not None])
+				else:
+					results = c.fetchone()
+					if results is not None:
+						results = SQL_Results(*[y for y in results])
+				log.debug(f"SQL query successful, value(s) returned: {results}")
 			return results
 		elif 'DELETE' in command.upper():
 			log.debug(f"Executing SQL transaction: '{command}'")
@@ -76,13 +86,15 @@ class MS_SQL(_SQL):
 			raise ConnectionError("Connection to SQL Server failed!")
 		else:
 			self._conn = conn
+			self.method = 'MS'
 
 
-# class SQL_Lite(_SQL):
-# 	def __init__(self, database: Union[bytes, str], detect_types: int=0):
-# 		try:
-# 			conn = sqlite3.connect(database=database, detect_types=detect_types)
-# 		except Exception:
-# 			raise ConnectionError("Connection to SQL Server failed!")
-# 		else:
-# 			self._conn = conn
+class SQL_Lite(_SQL):
+	def __init__(self, database: str, detect_types: int=0):
+		try:
+			conn = sqlite3.connect(database=database, detect_types=detect_types)
+		except Exception:
+			raise ConnectionError("Connection to SQL Server failed!")
+		else:
+			self._conn = conn
+			self.method = 'LITE'

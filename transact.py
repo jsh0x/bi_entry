@@ -18,24 +18,13 @@ log = logging
 def Transact(app: Application, unit: Unit):
 	pywinauto.timings.Timings.Fast()
 	log.info(f"Starting Transact script with unit: {unit.serial_number_prefix+unit.serial_number}")
-	form = 'Units'
 	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
 	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
 	if not sl_win.exists():
 		unit.reset()
 		sys.exit(1)
 	log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-	if form not in app.forms:  # If required form is not open
-		sl_win.send_keystrokes('^o')
-		app.win32.SelectForm.AllContainingEdit.set_text(form)
-		app.win32.SelectForm.set_focus()
-		app.win32.SelectForm.FilterButton.click()
-		common_controls.ListViewWrapper(app.win32.SelectForm.ListView).item(form).click()
-		app.win32.SelectForm.set_focus()
-		app.win32.SelectForm.OKButton.click()
-		sleep(4)
-		if form not in app.forms:
-			raise ValueError()
+	app.open_form('Units')
 	# TODO: Check if 'Units' form is focused, if not, do so
 	try:
 		try:
