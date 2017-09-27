@@ -279,11 +279,11 @@ def main():
 	while True:  # Core Loop
 		dt = datetime.datetime.now()
 		weekday = int(dt.__format__('%w'))
-		# if (weekday not in active_days) or (dt.hour not in active_hours):
-		if app.logged_in:
+		if (weekday not in active_days) or (dt.hour not in active_hours):
 			if app.logged_in:
 				sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
-				sl_uia.SignOutMenuItem.click()
+				so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
+				so.select()
 				app.logged_in = False
 			sleep(5)
 			continue
@@ -342,9 +342,11 @@ def main():
 			app.logged_in = True
 		if app.logged_in:
 			flow = config.get('DEFAULT', 'flow')
+			tbl_mod = config.get('DEFAULT', 'table')
+			table = 'PyComm' if int(tbl_mod) else 'PyComm2'
 			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
 			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
-			result = mssql.execute(f"SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Custom(Queued)' ORDER BY [DateTime] {flow}")
+			result = mssql.execute(f"SELECT TOP 1 * FROM {table} WHERE [Status] = 'Queued' OR [Status] = 'Custom(Queued)' ORDER BY [DateTime] {flow}")
 			# if '3' in usr:
 			# 	result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
 			# 	if result2:

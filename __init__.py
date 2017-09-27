@@ -120,6 +120,7 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 	# 	if mod in module_list:
 	# 		pass  # Update it
 	config['DEFAULT'] = {'version': __version__,
+	                     'table': '0',
 	                     'flow': 'ASC',
 	                     'printer': 'None',
 						 'min_sl_instances': '1',

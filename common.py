@@ -58,8 +58,11 @@ class Unit:
 		self._mssql = mssql
 		self._slsql = slsql
 		self.version = config.get('DEFAULT', 'version')
-		self.id, self.serial_number, build, suffix, self.operation, self.operator, \
-		self.parts, self.datetime, self.notes, self._status = args
+		tbl_mod = config.get('DEFAULT', 'table')
+		self._table = 'PyComm' if int(tbl_mod) else 'PyComm2'
+		self.id, self.serial_number, self.operation, self.operator, \
+		self.parts, self.datetime, self.notes, self._status = (args.Id, args.Serial_Number, args.Operation, args.Operator, args.Parts,
+		                                                       args.DateTime, args.Notes, args.Status)
 		self._status2 = self._status
 		self._status = 'Queued' if self._status2 == 'Custom(Queued)' else self._status
 		self.operation = self.operation.strip() if self.operation is not None else None
@@ -147,7 +150,7 @@ class Unit:
 		self.whole_build = item.upper()
 		log.debug(f"Attribute whole_build='{self.whole_build}'")
 		self.phone = self.whole_build in CELLULAR_BUILDS
-		log.debug(f"Attribute phone='{self.phone}'")
+		log.debug(f"Attribute phone={self.phone}")
 		self.carrier = CARRIER_DICT[self._regex_dict['carrier']]
 		log.debug(f"Attribute carrier='{self.carrier}'")
 		self.general_reason = 1000
@@ -162,15 +165,15 @@ class Unit:
 			self.start()
 
 	def start(self):
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = 'Started({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._life_timer = TestTimer()
 		self._life_timer.start()
 		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
 
 	def start_serial_number(self):
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = 'Started({self._status2})' WHERE [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
-		results = self._mssql.execute(f"SELECT [Id],[Operation],[Parts] PyComm WHERE [Status] = 'Started({self._status2})' AND [Serial Number] = '{self.serial_number}'", fetchall=True)
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = 'Started({self._status2})' WHERE [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
+		results = self._mssql.execute(f"SELECT [Id],[Operation],[Parts] {self._table} WHERE [Status] = 'Started({self._status2})' AND [Serial Number] = '{self.serial_number}'", fetchall=True)
 		self.ids, self.operations, partsets = [[x[i] for x in results] for i in range(3)]
 		if partsets:
 			parts_ = ','.join(ps[0] for ps in partsets)
@@ -210,7 +213,7 @@ class Unit:
 		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
 		                    f"{self.misc_issue_time.total_seconds()},'{end_time}',"
 		                    f"{life_time},'{process}','Completed','{self.version}')")
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def complete_serial_number(self):
 		value = self.sro_operations_timer.stop()
@@ -242,7 +245,7 @@ class Unit:
 		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
 		for ID in self.ids:
 			opr, opn, prt, dt = self._mssql.execute(
-				f"SELECT [Operator],[Operation],[Parts],[DateTime] PyComm WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
+				f"SELECT [Operator],[Operation],[Parts],[DateTime] {self._table} WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
 			if type(dt) is str:
 				dt = datetime.datetime.strptime(dt, "%m/%d/%Y %I:%M:%S %p")
 			if prt:
@@ -274,7 +277,7 @@ class Unit:
 			                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
 			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
 			                    f"{life_time},'{process}','Completed','{self.version}')")
-			self._mssql.execute(f"UPDATE PyComm SET [Status] = 'C1' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
+			self._mssql.execute(f"UPDATE {self._table} SET [Status] = 'C1' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 
 	def skip(self, reason: Optional[str]=None, batch_amt=10):
 		self.sro_operations_time += self.sro_operations_timer.stop()
@@ -293,7 +296,7 @@ class Unit:
 		if self._status.lower() == 'scrap':
 			life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
@@ -337,7 +340,7 @@ class Unit:
 		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
 		for ID in self.ids:
 			opr, opn, prt, dt = self._mssql.execute(
-				f"SELECT [Operator],[Operation],[Parts],[DateTime] PyComm WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
+				f"SELECT [Operator],[Operation],[Parts],[DateTime] {self._table} WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
 			if type(dt) is str:
 				dt = datetime.datetime.strptime(dt, "%m/%d/%Y %I:%M:%S %p")
 			if prt:
@@ -359,7 +362,7 @@ class Unit:
 			sro_tr_time = base_tr_time
 			if t_parts_qty > 0:
 				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
-			self._mssql.execute(f"UPDATE PyComm SET [Status] = '{reason}({self._status2})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
+			self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 			self._mssql.execute("INSERT INTO [Statistics]"
 			                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 			                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
@@ -372,11 +375,11 @@ class Unit:
 			                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
 	def reset(self):
-		self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status2}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def reset_serial_number(self):
 		for ID in self.ids:
-			self._mssql.execute(f"UPDATE PyComm SET [Status] = '{self._status2}' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
+			self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 
 	def update_sl_data(self):
 		try:
