@@ -2,6 +2,7 @@ import logging.config
 from time import sleep
 import sys
 from typing import Union, List
+import warnings
 
 import pyautogui as pag
 from pywinauto import mouse, keyboard
@@ -10,7 +11,7 @@ from pywinauto.controls import uia_controls, win32_controls, common_controls
 
 from exceptions import *
 from common import timer, access_grid, Application, Unit, center, TestTimer
-from constants import SYTELINE_WINDOW_TITLE
+from constants import SYTELINE_WINDOW_TITLE, REGEX_CREDIT_HOLD, REGEX_NEGATIVE_ITEM
 
 
 logging.config.fileConfig('config.ini')
@@ -64,7 +65,7 @@ def Transact(app: Application, units: List[Unit]):
 		t_temp = timer.stop()
 		log.debug(f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 		app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro_num)
-		dlg = app.get_popup()
+		dlg = app.get_popup(0.5)
 		count = 0
 		while dlg:
 			log.debug(f"Lines Find SRO dialog text: '{dlg.Text}'")
@@ -122,7 +123,7 @@ def Transact(app: Application, units: List[Unit]):
 				log.debug(transaction_grid.get_properties())
 				posted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], condition=('Posted', True), requirement='Item')
 				log.debug(f"Posted parts: {posted_parts}")
-				posted_part_numbers= {p.Item for p in posted_parts}
+				posted_part_numbers = {p.Item for p in posted_parts}
 				sl_win.IncludePostedButton.click()
 				timer.start()
 				sl_win.ApplyFilterButton.click()
@@ -131,8 +132,7 @@ def Transact(app: Application, units: List[Unit]):
 				log.debug(f"Time waited for second Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 				unposted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
 				log.debug(f"Unposted parts: {unposted_parts}")
-				unposted_part_numbers= {p.Item for p in unposted_parts}
-				# TODO: Based on already posted and unposted, transact accordingly
+				unposted_part_numbers = {p.Item for p in unposted_parts}
 				row_i = None
 				top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 				log.debug(F"Columns: {top_row.children_texts()[1:10]}")
@@ -224,12 +224,19 @@ def Transact(app: Application, units: List[Unit]):
 			except Exception as ex:  # Placeholder
 				raise ex
 			else:
-				if len(all_transacted_parts) > 0:
+				if (len(all_transacted_parts) + len(unposted_part_numbers)) > 0:
 					save = sl_uia.SaveButton
-					wait_seconds = 2 + (2 * (len(all_transacted_parts) // 4))
+					total_parts = (len(all_transacted_parts) + len(unposted_part_numbers))
+					# TODO: Work on slimming down unneeded transaction time
+					if total_parts < 4:
+						wait_seconds = 4
+					elif total_parts < 8:
+						wait_seconds = 6
+					else:
+						wait_seconds = 8
 					sl_win.set_focus()
 					save.click()
-					dlg = app.get_popup(wait_seconds)
+					dlg = app.get_popup(2)
 					while dlg:
 						log.debug(f"Transaction Save dialog text: '{dlg.Text}'")
 						dlg[0].close()
@@ -240,10 +247,20 @@ def Transact(app: Application, units: List[Unit]):
 					dlg = app.get_popup(wait_seconds)
 					while dlg:
 						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
-						dlg[0].close()
-						dlg = app.get_popup()
+						m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
+						m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
+						if m1 is not None:
+							dlg[0].close()
+							raise SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
+						elif m2 is not None:
+							dlg[0].close()
+							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'), loc=m2.group('location')))
+							log.warning("Negative Quantity!")
+							dlg = app.get_popup(wait_seconds)
+						else:
+							dlg = app.get_popup()
+							dlg[0].close()
 					sl_win.PostBatchButton.wait('ready', 2, 0.09)
-					# TODO: Catch if unit is on credit hold(parts are saved, but not posted)
 					log.debug("Batch posted")
 					sl_win.set_focus()
 					save.click()
@@ -409,6 +426,10 @@ def Transact(app: Application, units: List[Unit]):
 			log.exception("No Open SRO Error!")
 			for x in units:
 				x.skip(reason='No Open SRO', batch_amt=len(units))
+		elif issubclass(type(ex), SyteLineCreditHoldError):
+			log.exception("Credit Hold Error!")
+			for x in units:
+				x.skip(reason='Credit Hold', batch_amt=len(units))
 		else:
 			log.exception("SOMETHING HAPPENED!!!")
 			for x in units:

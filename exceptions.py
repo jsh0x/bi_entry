@@ -1,3 +1,20 @@
+class BI_EntryWarning(Warning):
+	"""Base warning class. All other warnings inherit
+	from this one.
+	"""
+
+	def __init__(self, msg=""):
+		Warning.__init__(self, msg)
+		self.msg = msg
+
+	def __repr__(self):
+		ret = "%s.%s %s" % (self.__class__.__module__,
+		                    self.__class__.__name__, self.msg)
+		return ret.strip()
+
+	__str__ = __repr__
+
+
 class BI_EntryError(Exception):
 	"""Base exception class. All other exceptions inherit
 	from this one.
@@ -113,5 +130,17 @@ class SyteLineFormError(SyteLineError):
 class SyteLineLogInError(SyteLineError):
 	def __init__(self, usr: str, msg=""):
 		msg2 = f"Login failed for user '{usr}'"
+		super().__init__("%s\n%s" % (msg2, msg))
+
+
+class SyteLineCreditHoldError(SyteLineError):
+	def __init__(self, cust: str, msg=""):
+		msg2 = f"Customer '{cust}' on credit hold"
+		super().__init__("%s\n%s" % (msg2, msg))
+
+
+class NegativeQuantityWarning(BI_EntryWarning):
+	def __init__(self, part: str, qty: int, loc: str, msg=""):
+		msg2 = f"Quantity for part '{part}' = -{qty}.000 in location '{loc}'"
 		super().__init__("%s\n%s" % (msg2, msg))
 # - - - - - - - - - - - - - - - - - - - - - - - -
