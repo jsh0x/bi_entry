@@ -27,7 +27,6 @@ def main():
 	config = configparser.ConfigParser()
 	logging.config.fileConfig('config.ini')
 	log = logging
-
 	sleep(randint(10, 20) / 10)
 	log.info("Attempting to read 'config.ini'")
 	config.read_file(open('config.ini'))
@@ -352,15 +351,19 @@ def main():
 					all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
 					                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)' OR"
 					                            f" [Status] = 'Custom(Queued)' OR [Status] = 'No Open SRO(Custom(Queued))' OR [Status] = 'Skipped(Custom(Queued))')", fetchall=True)
-					counter = {'SRO': 0, 'Skip': 0, 'C_SRO': 0, 'C_Skip': 0}
+					counter = {'SRO': 0, 'OSRO': 0, 'Skip': 0, 'C_SRO': 0, 'C_OSRO': 0, 'C_Skip': 0}
 					for res in all_results:
 						if 'Custom' in res.Status:
 							if 'No Open SRO' in res.Status:
+								counter['C_OSRO'] += 1
+							elif 'No SRO' in res.Status:
 								counter['C_SRO'] += 1
 							elif 'Skipped' in res.Status:
 								counter['C_Skip'] += 1
 						else:
 							if 'No Open SRO' in res.Status:
+								counter['OSRO'] += 1
+							elif 'No SRO' in res.Status:
 								counter['SRO'] += 1
 							elif 'Skipped' in res.Status:
 								counter['Skip'] += 1
@@ -375,6 +378,9 @@ def main():
 							if 'SRO' in counter_key:
 								log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
 								mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+							if 'OSRO' in counter_key:
+								log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
+								mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
 							elif 'Skip' in counter_key:
 								log.exception(f"Other entries with skipped status exist for serial number: {result.Serial_Number}")
 								mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
@@ -383,30 +389,18 @@ def main():
 					log.debug(f"Unit group created: {units}")
 					log.debug(f"Unit group created: {', '.join(f'{x.id}, {x.parts}, {x.operation}' for x in units)}")
 					unit = units[0]
-				except ValueError:
-					log.exception("EARLY ERROR!!!")
-					mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				except NoSROError as ex:
+					log.exception("No SRO Error!")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'No SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
 					continue
-				except UnitClosedError:
-					log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
-					mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+				except NoOpenSROError as ex:
+					log.exception("No Open SRO Error!")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})({ex.sro})' WHERE [Serial Number] = '{result.Serial_Number}'")
 					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
 				script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
-				try:
-					if unit.SRO_Line_status == 'Closed':
-						raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")
-					if unit.sro_num is None:
-						raise UnitClosedError(f"Unit '{unit.serial_number}' has no SROs")
-					script_dict.get(result.Status, lambda x,y: None)(app, units)
-				except UnitClosedError:
-					for x in units:
-						x.skip('No Open SRO', batch_amt=len(units))
-				# except pag.FailSafeException:
-				# 	mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
-				# 	sys.exit(1)
-				finally:
-					log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+				script_dict.get(result.Status, lambda x,y: None)(app, units)
+				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 
 
 if __name__ == '__main__':

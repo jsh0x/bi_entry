@@ -7,14 +7,14 @@ import logging.config
 from time import sleep
 from sys import exc_info
 from random import choice
-from string import ascii_lowercase
+from string import ascii_lowercase, punctuation
 from collections import defaultdict, namedtuple
 from typing import NamedTuple, Union, Tuple, Optional, Iterable, List, Any, Dict
 
 import psutil
 import pywinauto as pwn
 import pyautogui as pag
-from pywinauto.controls import uia_controls, common_controls
+from pywinauto.controls import uia_controls, common_controls, win32_controls
 import win32gui
 
 from exceptions import *
@@ -34,6 +34,9 @@ Where Right(ser_num, Len(ser_num) - len(p.Prefix)) IN
 """
 
 completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
+
+
+Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str), ('Buttons', Dict[str, win32_controls.ButtonWrapper])])
 
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
@@ -116,7 +119,7 @@ class Unit:
 										   f"from serial (nolock) where ser_num = '{sn2}') t")
 		if build_data is None:
 			if self._status.lower() != 'scrap':
-				raise UnitClosedError(f"Unit '{self.serial_number}' has no SROs")
+				raise NoSROError(serial_number=self.serial_number)
 			loc, whse = 'Out of Inventory', None
 			gc, item = self.get_serial_build()
 			log.debug(f"Property serial_number_prefix='{self.serial_number_prefix}'")
@@ -154,11 +157,16 @@ class Unit:
 		log.debug(f"Attribute phone={self.phone}")
 		self.carrier = CARRIER_DICT[self._regex_dict['carrier']]
 		log.debug(f"Attribute carrier='{self.carrier}'")
+		if self._status.lower() != 'scrap' and self.SRO_Line_status == 'Closed':
+			if self.sro_num is None:
+				raise NoSROError(serial_number=self.serial_number)
+			else:
+				raise NoOpenSROError(serial_number=self.serial_number, sro=self.sro_num)
 		self.general_reason = 1000
 		self.specific_reason = 20
 		self.general_resolution = 10000
 		self.specific_resolution = 100
-		if self._status.lower() != 'queued' and REGEX_RESOLUTION.match(self.notes):
+		if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
 			self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
 			self.specific_resolution_name = self._status.upper()
 			self.general_resolution_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
@@ -225,7 +233,8 @@ class Unit:
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		len_parts = len(self.parts) if self.parts is not None else 0
 		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
-		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		addon = f"({sro})" if reason == 'No Open SRO' else ""
+		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2}){addon}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
@@ -361,7 +370,7 @@ class Application(psutil.Process):
 		self.logged_in = False
 
 	def log_in(self, usr: str, pwd: str):
-		if not self.logged_in:
+		if not self.logged_in and self.win32.SignIn.exists(10, 0.09):
 			log.info("SyteLine not logged in, starting login procedure")
 			self.win32.SignIn.UserLoginEdit.set_text(usr)
 			self.win32.SignIn.PasswordEdit.set_text(pwd)
@@ -376,7 +385,7 @@ class Application(psutil.Process):
 				log.warning(f"Login attempt as '{usr}' unsuccessful")
 
 	def log_out(self):
-		if self.logged_in:
+		if self.logged_in and self.uia.window(title_re=SYTELINE_WINDOW_TITLE).exists(10, 0.09):
 			log.info("SyteLine logged in, starting logout procedure")
 			sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
@@ -474,9 +483,15 @@ class Application(psutil.Process):
 		if name != self.get_focused_form():
 			self.change_form(name)
 
-	def get_popup(self) -> pwn.WindowSpecification:
-		return self.win32.window(class_name="#32770")
-
+	def get_popup(self, timeout=2) -> Dialog:
+		dlg = self.win32.window(class_name="#32770")
+		if dlg.exists(timeout, 0.09):
+			title = ''.join(text.strip() for text in dlg.texts())
+			text = ''.join(text.replace('\r\n\r\n', '\r\n').strip() for cls in dlg.children() if cls.friendly_class_name() == 'Static' for text in cls.texts())
+			buttons = {text.strip(punctuation+' '): cls for cls in dlg.children() if cls.friendly_class_name() == 'Button' for text in cls.texts()}
+			return Dialog(dlg, title, text, buttons)
+		else:
+			return None
 
 class PuppetMaster:
 	_children = set()

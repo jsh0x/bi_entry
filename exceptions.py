@@ -1,81 +1,117 @@
-import datetime
+class BI_EntryError(Exception):
+	"""Base exception class. All other exceptions inherit
+	from this one.
+	"""
+	def __init__(self, msg=""):
+		Exception.__init__(self, msg)
+		self.msg = msg
 
+	def __repr__(self):
+		ret = "%s.%s %s" % (self.__class__.__module__,
+                            self.__class__.__name__, self.msg)
+		return ret.strip()
 
-class Warn(Warning):
-	def __init__(self, data):
-		self.debug_data = data
-		self.data = data
+	__str__ = __repr__
 
-
-class SROClosedWarning(Warn):
-	def __init__(self, data):
-		super().__init__(data)
-
-
-class PopupWarning(Warn):
-	def __init__(self, data):
-		super().__init__(data)
-
-
-# ----------------------------------------------------
-
-class Error(Exception):
-	def __init__(self, data, message):
-		self.debug_data = data
-		self.message = message
-		self.timestamp = datetime.datetime.now()
 
 # General/Input-caused error - - - - - - - - - - - - - -
-class UnitClosedError(Error):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+class NoSROError(BI_EntryError):
+	def __init__(self, serial_number: str, msg=""):
+		msg2 = f"No SROs exist for unit '{serial_number}'"
+		super().__init__("%s\n%s" % (msg2, msg))
+		self.serial_number = serial_number
 
 
-class InvalidSerialNumberError(Error):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+class NoOpenSROError(BI_EntryError):
+	def __init__(self, serial_number: str, sro: str, msg=""):
+		msg2 = f"No SROs are open at the Line-level for unit '{serial_number}'"
+		super().__init__("%s\n%s" % (msg2, msg))
+		self.serial_number = serial_number
+		self.sro = sro
+
+class InvalidSerialNumberError(BI_EntryError, ValueError):
+	def __init__(self, serial_number: str, msg=""):
+		msg2 = f"'{serial_number}' is not a valid serial number"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.serial_number = serial_number
 
 
-class InvalidPartNumberError(Error):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+class InvalidSROError(BI_EntryError, ValueError):
+	def __init__(self, serial_number: str, sro: str, msg=""):
+		msg2 = f"'{sro}' is not a valid SRO for unit '{serial_number}'"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.sro = sro
 
 
-class InvalidReasonCodeError(Error):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+class InvalidPartNumberError(BI_EntryError, ValueError):
+	def __init__(self, part_number: str, msg=""):
+		msg2 = f"'{part_number}' is not a valid part number"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.part_number = part_number
+
+
+class InvalidReasonCodeError(BI_EntryError, ValueError):
+	def __init__(self, reason_code: str, msg=""):
+		msg2 = f"'{reason_code}' is not a valid reason code"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.reason_code = reason_code
+# - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+# SQL-caused error  - - - - - - - - - - - - - - -
+class SQLError(BI_EntryError):
+	def __init__(self, msg=""):
+		msg2 = ""
+		super().__init__("%s\n%s" % (msg2, msg))
+
+
+class SQLConnectionError(SQLError, ConnectionError):
+	def __init__(self, msg=""):
+		msg2 = f"Connection to SQL server failed"
+		ConnectionError.__init__(self, "%s\n%s" % (msg2, msg))
+
+
+class SQLSyntaxError(SQLError, SyntaxError):
+	def __init__(self, cmd: str, msg=""):
+		msg2 = f"Invalid SQL command syntax for command '{cmd}'"
+		ConnectionError.__init__(self, "%s\n%s" % (msg2, msg))
+
+
+class SQLValueError(SQLError, ValueError):
+	def __init__(self, value, cmd: str, msg=""):
+		msg2 = f"'{value}' is not a valid value for SQL command '{cmd}'"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+
+
+class SQLResultError(SQLError, ValueError):
+	def __init__(self, cmd: str, msg=""):
+		msg2 = f"Invalid response from query '{cmd}'"
+		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
 # SyteLine-caused error - - - - - - - - - - - - -
-class SyteLineError(Error):
-	def __init__(self, data, message):
-		super().__init__(data, message)
+class SyteLineError(BI_EntryError):
+	def __init__(self, msg=""):
+		msg2 = ""
+		super().__init__("%s\n%s" % (msg2, msg))
 
 
 class SyteLineFilterInPlaceError(SyteLineError):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+	def __init__(self, value, msg=""):
+		msg2 = f"'Filter In Place' failed for value '{value}'"
+		super().__init__("%s\n%s" % (msg2, msg))
 
 
-class SyteLineFormContainerError(SyteLineError):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+class SyteLineFormError(SyteLineError):
+	def __init__(self, form: str, msg=""):
+		msg2 = f"Form '{form}' not responding"
+		super().__init__("%s\n%s" % (msg2, msg))
+		self.form = form
 
 
 class SyteLineLogInError(SyteLineError):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
+	def __init__(self, usr: str, msg=""):
+		msg2 = f"Login failed for user '{usr}'"
+		super().__init__("%s\n%s" % (msg2, msg))
 # - - - - - - - - - - - - - - - - - - - - - - - -
-
-
-# Control-caused error - - - - - - - - - - - - -
-class ControlError(Error):
-	def __init__(self, data, message):
-		super().__init__(data, message)
-
-
-class DataGridError(ControlError):
-	def __init__(self, data, message: str=None):
-		super().__init__(data, message)
-# - - - - - - - - - - - - - - - - - - - - - - -

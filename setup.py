@@ -1,6 +1,7 @@
 # from distutils.core import setup
 from __init__ import __version__
 import configparser
+import subprocess
 import sys
 import os
 
