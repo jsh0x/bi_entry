@@ -4,8 +4,8 @@ import pathlib
 import datetime
 import configparser
 import logging.config
-from sys import exc_info
 from time import sleep
+from sys import exc_info
 from random import choice
 from string import ascii_lowercase
 from collections import defaultdict, namedtuple
@@ -13,12 +13,13 @@ from typing import NamedTuple, Union, Tuple, Optional, Iterable, List, Any, Dict
 
 import psutil
 import pywinauto as pwn
+import pyautogui as pag
 from pywinauto.controls import uia_controls, common_controls
 import win32gui
 
 from exceptions import *
 from sql import MS_SQL
-from constants import REGEX_WINDOW_MENU_FORM_NAME, REGEX_BUILD, CARRIER_DICT, CELLULAR_BUILDS, SUFFIX_DICT, REGEX_RESOLUTION
+from constants import REGEX_WINDOW_MENU_FORM_NAME, REGEX_BUILD, REGEX_BUILD_ALT, CARRIER_DICT, CELLULAR_BUILDS, SUFFIX_DICT, REGEX_RESOLUTION, SYTELINE_WINDOW_TITLE
 logging.config.fileConfig('config.ini')
 log = logging
 
@@ -137,7 +138,7 @@ class Unit:
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
-		self._regex_dict = REGEX_BUILD.match(item.upper()).groupdict(default='-')
+		self._regex_dict = REGEX_BUILD_ALT.match(item.upper()).groupdict(default='-') if REGEX_BUILD_ALT.match(item.upper()) is not None else REGEX_BUILD.match(item.upper()).groupdict(default='-')
 		log.debug(self._regex_dict.items())
 		self.location = loc
 		log.debug(f"Attribute location='{self.location}'")
@@ -171,21 +172,9 @@ class Unit:
 		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		self._date = datetime.datetime.now().date().strftime("%Y-%m-%d")
 
-	def start_serial_number(self):
-		self._mssql.execute(f"UPDATE {self._table} SET [Status] = 'Started({self._status2})' WHERE [Serial Number] = '{self.serial_number}' AND [Status] = '{self._status}'")
-		results = self._mssql.execute(f"SELECT [Id],[Operation],[Parts] {self._table} WHERE [Status] = 'Started({self._status2})' AND [Serial Number] = '{self.serial_number}'", fetchall=True)
-		self.ids, self.operations, partsets = [[x[i] for x in results] for i in range(3)]
-		if partsets:
-			parts_ = ','.join(ps[0] for ps in partsets)
-			log.debug(f"Partsets found: {parts_}")
-			parts = list({Part(self._mssql, x) for x in parts_.split(',')})
-			qty_parts = len(self.parts)
-			if parts != self.parts:
-				self._parts = parts
-				log.debug(f"Parts list updated from {qty_parts} to {len(parts)}")
-		self.start()
-
-	def complete(self, batch_amt=10):
+	def complete(self, batch_amt: int=None):
+		if batch_amt is None:
+			batch_amt = 10 if self._status.lower() == 'scrap' else 1
 		self.sro_operations_time += self.sro_operations_timer.stop()
 		self.sro_transactions_time += self.sro_transactions_timer.stop()
 		self.misc_issue_time += self.misc_issue_timer.stop()
@@ -198,88 +187,27 @@ class Unit:
 		else:
 			t_parts = 'None'
 		process = 'Transaction' if self._status == 'Queued' else self._status
-		if self._status.lower() == 'scrap':
-			life_time /= batch_amt
+		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		len_parts = len(self.parts) if self.parts is not None else 0
+		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
 		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
 		                    "[Total Time],[Process],[Results],[Version])"
 		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
-		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
-		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{parts}',"
+		                    f"'{t_parts}',{len_parts},{len(self.parts_transacted)},"
 		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
 		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
 		                    f"{self.misc_issue_time.total_seconds()},'{end_time}',"
 		                    f"{life_time},'{process}','Completed','{self.version}')")
 		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
-	def complete_serial_number(self):
-		value = self.sro_operations_timer.stop()
-		if value is not None:
-			self.sro_operations_time += value
-		value = self.sro_transactions_timer.stop()
-		if value is not None:
-			self.sro_transactions_time += value
-		value = self.misc_issue_timer.stop()
-		if value is not None:
-			self.misc_issue_time += value
-		value = self._life_timer.stop()
-		if value is not None:
-			life_time = value.total_seconds()
-		else:
-			life_time = 0
-		process = 'Transaction' if self._status == 'Queued' else self._status
-		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		t_parts_ref = {Part(self._mssql, x) for x in self.parts_transacted}
-		misc_issue_total = self.misc_issue_time.total_seconds()
-		sro_op_total = self.sro_operations_time.total_seconds()
-		sro_tr_total = self.sro_transactions_time.total_seconds()
-		misc_issue_time = sigfig(misc_issue_total, misc_issue_total / len(self.ids))
-		life_time = sigfig(life_time, life_time / len(self.ids))
-		sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
-		base_tr_time = sigfig(sro_tr_total, self._mssql.execute(""
-		                                                        "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[
-			0] / len(self.ids))
-		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
-		for ID in self.ids:
-			opr, opn, prt, dt = self._mssql.execute(
-				f"SELECT [Operator],[Operation],[Parts],[DateTime] {self._table} WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
-			if type(dt) is str:
-				dt = datetime.datetime.strptime(dt, "%m/%d/%Y %I:%M:%S %p")
-			if prt:
-				parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt})
-				parts_qty = len({Part(self._mssql, x) for x in prt})
-				t_parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt} if y in t_parts_ref)
-				if not t_parts:
-					t_parts = 'None'
-					t_parts_qty = 0
-				else:
-					t_parts_qty = len({Part(self._mssql, x) for x in prt if Part(self._mssql, x) in t_parts_ref})
-			else:
-				parts = 'None'
-				t_parts = 'None'
-				parts_qty = t_parts_qty = 0
-			'''"SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)"
-			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[Total Time]) AS numeric (18, 3)) AS [Average Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]"
-			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)) GROUP BY s.[Version]"'''
-			sro_tr_time = base_tr_time
-			if t_parts_qty > 0:
-				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
-			self._mssql.execute("INSERT INTO [Statistics]"
-			                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
-			                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
-			                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
-			                    "[Total Time],[Process],[Results],[Version])"
-			                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
-			                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
-			                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
-			                    f"{life_time},'{process}','Completed','{self.version}')")
-			self._mssql.execute(f"UPDATE {self._table} SET [Status] = 'C1' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
-
-	def skip(self, reason: Optional[str]=None, batch_amt=10):
+	def skip(self, reason: Optional[str]=None, batch_amt: int=None):
+		if batch_amt is None:
+			batch_amt = 10 if self._status.lower() == 'scrap' else 1
 		self.sro_operations_time += self.sro_operations_timer.stop()
 		self.sro_transactions_time += self.sro_transactions_timer.stop()
 		self.misc_issue_time += self.misc_issue_timer.stop()
@@ -293,9 +221,10 @@ class Unit:
 		else:
 			t_parts = 'None'
 		process = 'Transaction' if self._status == 'Queued' else self._status
-		if self._status.lower() == 'scrap':
-			life_time /= batch_amt
+		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
+		len_parts = len(self.parts) if self.parts is not None else 0
+		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
 		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
@@ -303,83 +232,15 @@ class Unit:
 		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
 		                    "[Total Time],[Process],[Results],[Reason],[Version])"
 		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
-		                    f"'{self.suffix}','{self.operator}','{self.operation}','{', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts)}',"
-		                    f"'{t_parts}',{len(self.parts)},{len(self.parts_transacted)},"
+		                    f"'{self.suffix}','{self.operator}','{self.operation}','{parts}',"
+		                    f"'{t_parts}',{len_parts},{len(self.parts_transacted)},"
 		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
 		                    f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
 		                    f"{self.misc_issue_time.total_seconds()},'{end_time}',"
 		                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
-	def skip_serial_number(self, reason: Optional[str] = None):
-		value = self.sro_operations_timer.stop()
-		if value is not None:
-			self.sro_operations_time += value
-		value = self.sro_transactions_timer.stop()
-		if value is not None:
-			self.sro_transactions_time += value
-		value = self.misc_issue_timer.stop()
-		if value is not None:
-			self.misc_issue_time += value
-		value = self._life_timer.stop()
-		if value is not None:
-			life_time = value.total_seconds()
-		else:
-			life_time = 0
-		reason = 'Skipped' if reason is None else reason
-		process = 'Transaction' if self._status == 'Queued' else self._status
-		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		t_parts_ref = {Part(self._mssql, x) for x in self.parts_transacted}
-		misc_issue_total = self.misc_issue_time.total_seconds()
-		sro_op_total = self.sro_operations_time.total_seconds()
-		sro_tr_total = self.sro_transactions_time.total_seconds()
-		misc_issue_time = sigfig(misc_issue_total, misc_issue_total / len(self.ids))
-		life_time = sigfig(life_time, life_time / len(self.ids))
-		sro_op_time = sigfig(sro_op_total, sro_op_total / len(self.ids))
-		base_tr_time = sigfig(sro_tr_total, self._mssql.execute(""
-		                                   "SELECT CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p))")[0] / len(self.ids))
-		sro_tr_total = sigfig(sro_tr_total, (sro_tr_total - base_tr_time) / len(self.parts_transacted))
-		for ID in self.ids:
-			opr, opn, prt, dt = self._mssql.execute(
-				f"SELECT [Operator],[Operation],[Parts],[DateTime] {self._table} WHERE [Status] = 'Started({self._status})' AND [Serial Number] = '{self.serial_number}' AND [Id] = {ID}")
-			if type(dt) is str:
-				dt = datetime.datetime.strptime(dt, "%m/%d/%Y %I:%M:%S %p")
-			if prt:
-				parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt})
-				parts_qty = len({Part(self._mssql, x) for x in prt})
-				t_parts = ', '.join(y.part_number + ' x ' + str(y.quantity) for y in {Part(self._mssql, x) for x in prt} if y in t_parts_ref)
-				if not t_parts:
-					t_parts = 'None'
-					t_parts_qty = 0
-				else:
-					t_parts_qty = len({Part(self._mssql, x) for x in prt if Part(self._mssql, x) in t_parts_ref})
-			else:
-				parts = 'None'
-				t_parts = 'None'
-				parts_qty = t_parts_qty = 0
-			'''"SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)"
-			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[Total Time]) AS numeric (18, 3)) AS [Average Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]"
-			"SELECT s.[Version], COUNT(s.ID) AS [Completed Count],  CAST(AVG(s.[SRO Transactions Time]) AS numeric (18, 3)) AS [Average Tr Time] FROM [Statistics] s WHERE s.[Results] = 'Completed' AND s.[Parts Transacted] = 0 AND s.[Version] = (SELECT t.[Version] FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) t WHERE t.[Count] = (SELECT MAX(p.[Count]) FROM (SELECT s.[Version], COUNT(s.[ID]) AS [Count] FROM [Statistics] s WHERE s.[Results] = 'Completed' GROUP BY s.[Version]) p)) GROUP BY s.[Version]"'''
-			sro_tr_time = base_tr_time
-			if t_parts_qty > 0:
-				sro_tr_time += sigfig(sro_tr_total, sro_tr_total * t_parts_qty)
-			self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2})' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
-			self._mssql.execute("INSERT INTO [Statistics]"
-			                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
-			                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
-			                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
-			                    "[Total Time],[Process],[Results],[Reason],[Version])"
-			                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self.build}',"
-			                    f"'{self.suffix}','{opr}','{opn}','{parts}','{t_parts}',{parts_qty},{t_parts_qty},"
-			                    f"'{dt.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
-			                    f"{sro_op_time},{sro_tr_time},{misc_issue_time},'{end_time}',"
-			                    f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
-
 	def reset(self):
 		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
-
-	def reset_serial_number(self):
-		for ID in self.ids:
-			self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {ID} AND [Serial Number] = '{self.serial_number}'")
 
 	def update_sl_data(self):
 		try:
@@ -499,46 +360,37 @@ class Application(psutil.Process):
 		self._user = None
 		self.logged_in = False
 
-	# def log_in(self, usr: str = None, pwd: str = None):
-	# 	if pwd is None:
-	# 		raise ValueError()
-	# 	if usr is None:
-	# 		if self._user is not None:
-	# 			usr = self._user
-	# 		else:
-	# 			raise ValueError()
-	# 	else:
-	# 		self._user = usr
-	# 	login_win = self.app_win32['Sign In']
-	# 	login_win.set_focus()
-	# 	login_win.Edit3.SetEditText(usr)
-	# 	login_win.Edit2.SetEditText(pwd)
-	# 	login_win.OKButton.Click()
-	# 	if self._error.exists():
-	# 		message = self._error.Static2.texts()[0]
-	# 		if ('count limit' in message) and ('exceeded' in message):
-	# 			self._error.OKButton.Click()
-	# 	while self._notification.exists():
-	# 		try:
-	# 			message2 = self._notification.Static2.texts()[0]
-	# 			if (f"session for user '{usr}'" in message2) and ('already exists' in message2):
-	# 				self._notification['&YesButton'].Click()
-	# 			elif ('Exception initializing form' in message2) and ('executable file vbc.exe cannot be found' in message2):
-	# 				self._notification.OKButton.Click()
-	# 				raise SyteLineFormContainerError("SyteLine window's form container is corrupt/non-existent")
-	# 			sleep(1)
-	# 		except Exception:
-	# 			break
-	# 	CV_Config.__init__(self, self._win)
-	# 	self.logged_in = True
-	#
-	# def log_out(self, force_quit=True):
-	# 	if force_quit:
-	# 		self._win2.child_window(best_match='Sign OutMenuItem').select()
-	# 	else:
-	# 		# Close out each individual open form properly
-	# 		pass
-	# 	self.logged_in = False
+	def log_in(self, usr: str, pwd: str):
+		if not self.logged_in:
+			log.info("SyteLine not logged in, starting login procedure")
+			self.win32.SignIn.UserLoginEdit.set_text(usr)
+			self.win32.SignIn.PasswordEdit.set_text(pwd)
+			self.win32.SignIn.set_focus()
+			self.win32.SignIn.OKButton.click()
+			if not self.win32.SignIn.exists(10, 0.09):
+				self.win32.window(title_re=SYTELINE_WINDOW_TITLE).wait('ready', 2, 0.09)
+				self.logged_in = True
+				log.info(f"Successfully logged in as '{usr}'")
+				sleep(4)
+			else:
+				log.warning(f"Login attempt as '{usr}' unsuccessful")
+
+	def log_out(self):
+		if self.logged_in:
+			log.info("SyteLine logged in, starting logout procedure")
+			sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
+			sl_uia.set_focus()
+			r_i = so.rectangle()
+			c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+			pag.click(*c_coords)
+			if self.win32.SignIn.exists(10, 0.09):
+				self.win32.SignIn.wait('ready', 2, 0.09)
+				self.logged_in = False
+				log.info(f"Successfully logged out")
+				sleep(4)
+			else:
+				log.warning(f"Logout attempt unsuccessful")
 
 	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
 		self._hwnd = self.win32.handle
@@ -553,7 +405,7 @@ class Application(psutil.Process):
 		for name in names:
 			if name in open_forms:
 				raise ValueError(f"Form '{name}' already open")
-			sl_win = self.win32.window(title_re='Infor ERP SL (EM)*')
+			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 			sl_win.send_keystrokes('^o')
 			self.win32.SelectForm.AllContainingEdit.set_text(name)
 			self.win32.SelectForm.set_focus()
@@ -565,7 +417,7 @@ class Application(psutil.Process):
 			sleep(4)
 
 	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
-		sl_win = self.win32.window(title_re='Infor ERP SL (EM)*')
+		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 		sl_win.send_keystrokes('%e')
 		sl_win.send_keystrokes('v')
 		find_window = self.win32['Find']
@@ -590,7 +442,7 @@ class Application(psutil.Process):
 	@property
 	def forms(self) -> Dict[str, uia_controls.MenuItemWrapper]:
 		# TODO: Possible form object including 'is_checked' property
-		sl_uia = self.uia.window(title_re='Infor ERP SL (EM)*')
+		sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 		retval = {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items()
 		        if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
 		log.debug(f"Forms open: {', '.join(retval.keys())}")
@@ -771,6 +623,7 @@ def center(x1: int, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 	return x1 + (x2 // 2), y1 + (y2 // 2)
 
 
+# noinspection SpellCheckingInspection
 def sigfig(template, x):
 	x_str, y_str = map(str, [template, x])
 	x_len = len(x_str.split('.', 1)[1].strip())
@@ -783,5 +636,30 @@ def sigfig(template, x):
 	return y_new
 # def center(x: int, y: int, w: int, h: int) -> Tuple[int, int]:
 # 	return x + (w // 2), y + (h // 2)
-timer = TestTimer()
 
+
+def parse_numeric_ranges(x: Union[str, List[int]], sep: str=',') -> List[Tuple[int, int]]:
+	"""Inclusive (min, max) range parser"""
+	nums = sorted([int(y) for y in x.split(sep)]) if type(x) is str else sorted(x)
+	retval = []
+	temp_set = set([])
+	for x in nums:
+		if not temp_set:
+			temp_set.add(x)
+		elif max(temp_set) + 1 == x:
+			temp_set.add(x)
+		else:
+			if len(temp_set) > 1:
+				retval.append((min(temp_set), max(temp_set)))
+			else:
+				retval.append((max(temp_set), max(temp_set)))
+			temp_set = {x}
+	else:
+		if len(temp_set) > 1:
+			retval.append((min(temp_set), max(temp_set)))
+		elif len(temp_set) == 1:
+			retval.append((max(temp_set), max(temp_set)))
+	return retval
+
+
+timer = TestTimer()

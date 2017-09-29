@@ -1,6 +1,7 @@
 import logging.config
 from time import sleep
 import sys
+from typing import Union, List
 
 import pyautogui as pag
 from pywinauto import mouse, keyboard
@@ -8,20 +9,25 @@ import pywinauto.timings
 from pywinauto.controls import uia_controls, win32_controls, common_controls
 
 from exceptions import *
-from common import timer, access_grid, Application, Unit, center
+from common import timer, access_grid, Application, Unit, center, TestTimer
+from constants import SYTELINE_WINDOW_TITLE
 
 
 logging.config.fileConfig('config.ini')
 log = logging
 
 
-def Transact(app: Application, unit: Unit):
+def Transact(app: Application, unit: List[Unit]):
 	pywinauto.timings.Timings.Fast()
+	units = unit if type(unit) is list else [unit]
+	unit = units[0]
+	has_qc = True if [x for x in units if x.operation == 'QC'] else False
 	log.info(f"Starting Transact script with unit: {unit.serial_number_prefix+unit.serial_number}")
-	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
-	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
+	sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+	sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 	if not sl_win.exists():
-		unit.reset()
+		for x in units:
+			x.reset()
 		sys.exit(1)
 	log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
 	app.verify_form('Units')
@@ -80,7 +86,8 @@ def Transact(app: Application, unit: Unit):
 					raise InvalidSerialNumberError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned None")
 				else:
 					raise SyteLineFilterInPlaceError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
-			unit.start()
+			for x in units:
+				x.start()
 			log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 			if not sl_win.ServiceOrderLinesButton.is_enabled():
 				raise UnitClosedError("Service Order Lines Button is disabled")
@@ -119,10 +126,15 @@ def Transact(app: Application, unit: Unit):
 				save.click()
 			sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 			sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
-			if unit.parts:
+			transaction_units = [(y, i) for i,x in enumerate(units) if x.parts for y in x.parts]
+			log.debug(f"Total parts: {', '.join([str(p[0]) for p in transaction_units])}")
+			if transaction_units:
 				try:
-					unit.sro_operations_time += unit.sro_operations_timer.stop()
-					unit.sro_transactions_timer.start()
+					sroo_time = unit.sro_operations_timer.stop() / len(units)
+					for temp in units:
+						temp.sro_operations_time += sroo_time
+					transactions_timer = TestTimer()
+					transactions_timer.start()
 					sl_win.set_focus()
 					timer.start()
 					sl_win.SROTransactionsButton.click()
@@ -162,10 +174,13 @@ def Transact(app: Application, unit: Unit):
 						bc = 'Contract'
 					else:
 						bc = 'No Charge'
-					for part in unit.parts:
+					all_transacted_parts = []
+					for part,i in transaction_units:
 						# pag._failSafeCheck()
+						unit = units[i]
 						if (part.part_number in posted_part_numbers) or (part.part_number in unposted_part_numbers):
 							continue
+						unit.sro_transactions_timer.start()
 						if row_i is None:
 							if unposted_parts:
 								row_i = -1
@@ -187,16 +202,20 @@ def Transact(app: Application, unit: Unit):
 						r_loc = location.rectangle()
 						r_qty = quantity.rectangle()
 						r_bill = billcode.rectangle()
-						loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), str(part.location)))
+						loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), str(part.location), i))
 						if part.quantity > 1:
-							qty_rec_list.append((center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom), str(part.quantity)))
-						bc_rec_list.append((center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom), bc))
+							qty_rec_list.append((center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom), str(part.quantity), i))
+						bc_rec_list.append((center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom), bc, i))
 						pag.typewrite(str(part.part_number))
 						sleep(0.5)
 						pag.press('enter', 10, interval=0.05)
 						pag.click(*c_coords)
 						unit.parts_transacted.append(part)
-					for coord,qty in qty_rec_list:
+						all_transacted_parts.append(part)
+						unit.sro_transactions_time += unit.sro_transactions_timer.stop()
+					for coord,qty,i in qty_rec_list:
+						unit = units[i]
+						unit.sro_transactions_timer.start()
 						pag.click(*coord)
 						sleep(0.2)
 						pag.press('backspace', 20)
@@ -206,7 +225,10 @@ def Transact(app: Application, unit: Unit):
 						sleep(0.2)
 						pag.press('enter')
 						sleep(0.5)
-					for coord,loc in loc_rec_list:
+						unit.sro_transactions_time += unit.sro_transactions_timer.stop()
+					for coord,loc,i in loc_rec_list:
+						unit = units[i]
+						unit.sro_transactions_timer.start()
 						pag.click(*coord)
 						sleep(0.2)
 						pag.press('backspace', 20)
@@ -216,7 +238,10 @@ def Transact(app: Application, unit: Unit):
 						sleep(0.2)
 						pag.press('enter')
 						sleep(0.5)
-					for coord,bc in bc_rec_list:
+						unit.sro_transactions_time += unit.sro_transactions_timer.stop()
+					for coord,bc,i in bc_rec_list:
+						unit = units[i]
+						unit.sro_transactions_timer.start()
 						pag.click(*coord)
 						sleep(0.2)
 						pag.press('backspace', 20)
@@ -226,10 +251,11 @@ def Transact(app: Application, unit: Unit):
 						sleep(0.2)
 						pag.press('enter')
 						sleep(0.5)
+						unit.sro_transactions_time += unit.sro_transactions_timer.stop()
 				except Exception as ex:  # Placeholder
 					raise ex
 				else:
-					if len(unit.parts_transacted) > 0:
+					if len(all_transacted_parts) > 0:
 						save = sl_uia.SaveButton
 						sl_win.set_focus()
 						save.click()
@@ -255,33 +281,41 @@ def Transact(app: Application, unit: Unit):
 				sl_win.SROLinesButton.wait('visible', 2, 0.09)
 				t_temp = timer.stop()
 				log.debug(f"Time waited for Service Order Lines(part 2): {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
-				unit.sro_transactions_time += unit.sro_transactions_timer.stop()
+				i2 = [i for i,x in enumerate(units) if x.parts]
+				srot_time = unit.sro_transactions_timer.stop() / len(i2)
+				for i in i2:
+					unit = units[i]
+					unit.sro_transactions_time += srot_time
+				unit = units[0]
 				unit.sro_operations_timer.start()
 			log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 			log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
 			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
+			i2 = {x.datetime: i for i,x in enumerate(units)}
+			newest_unit = units[i2[max(list(i2.keys()))]]
+			oldest_unit = units[i2[min(list(i2.keys()))]]
 			if not sl_win.ReceivedDateEdit.texts()[0].strip():
 				sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
 				sl_win.ReceivedDateEdit.send_keystrokes('^s')
 			if not sl_win.FloorDateEdit.texts()[0].strip():
-				sl_win.FloorDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.FloorDateEdit.set_text(oldest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 				sl_win.FloorDateEdit.send_keystrokes('^s')
-			if not sl_win.CompletedDateEdit.texts()[0].strip() and unit.operation == 'QC':
-				sl_win.CompletedDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+			if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
+				sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 			sl_win.CompletedDateEdit.send_keystrokes('^s')
 			sleep(0.5)
 			log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 			log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
 			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
-			if not sl_win.CompletedDateEdit.texts()[0].strip() and unit.operation == 'QC':
-				sl_win.CompletedDateEdit.set_text(unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+			if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
+				sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 				sl_win.CompletedDateEdit.send_keystrokes('^s')
 				sleep(2)
 			log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 			log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
 			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 			common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
-			if unit.operation == 'QC':
+			if has_qc:
 				reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 				reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'], requirement='General Reason')
 				last_row_i = len(reason_rows)-1
@@ -331,20 +365,28 @@ def Transact(app: Application, unit: Unit):
 				pag.press('enter')
 				pag.typewrite("[PASSED ALL TESTS]")
 			reso_notes = sl_win.ResolutionNotesEdit
-			if unit.parts:
-				reso_string = ", ".join([p.display_name for p in unit.parts])
+			if transaction_units:
+				all_part_units = [i for i,x in enumerate(units) if x.parts]
 				reso_notes.click_input()
 				pag.press('end', 30)
 				if reso_notes.texts()[0].strip():
 					pag.press('enter')
-				pag.typewrite(f"[{reso_string}]")
-				pag.press('enter')
-				pag.typewrite(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+				for i in all_part_units:
+					unit = units[i]
+					reso_string = ", ".join([p.display_name for p in unit.parts])
+					pag.typewrite(f"[{reso_string}]")
+					pag.press('enter')
+					pag.typewrite(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+					if len(units) > 1:
+						pag.press('enter')
+				else:
+					if len(units) > 1:
+						pag.press('backspace')
 			pag.hotkey('ctrl', 's')
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			status.send_keystrokes('^s')
 			status.wait_for_idle()
-			if unit.operation == 'QC':
+			if has_qc:
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 				sl_win.set_focus()
 				status.set_keyboard_focus()
@@ -356,7 +398,10 @@ def Transact(app: Application, unit: Unit):
 					pass
 				finally:
 					keyboard.SendKeys('{ESC}')
-			unit.sro_operations_time += unit.sro_operations_timer.stop()
+			unit = units[0]
+			sroo_time = unit.sro_operations_timer.stop() / len(units)
+			for temp in units:
+				temp.sro_operations_time += sroo_time
 			for presses in range(2):
 				sl_uia.CancelCloseButton.click()
 			sl_win.UnitEdit.wait('visible', 2, 0.09)
@@ -372,7 +417,8 @@ def Transact(app: Application, unit: Unit):
 	# 	sys.exit(1)
 	except Exception:  # Placeholder
 		log.exception("SOMETHING HAPPENED!!!")
-		unit.skip()
+		for x in units:
+			x.skip(batch_amt=len(units))
 		if 'SRO Transactions' in app.forms:
 			sl_uia.CancelCloseButton.click()
 			handle_popup()
@@ -385,7 +431,9 @@ def Transact(app: Application, unit: Unit):
 		sl_win.send_keystrokes('{F4}')
 		sl_win.send_keystrokes('{F5}')
 	else:
-		unit.complete()
+		log.info(f"Unit: {unit.serial_number_prefix+unit.serial_number} completed")
+		for x in units:
+			x.complete(batch_amt=len(units))
 
 
 """Select m.Item, m.matl_qty from fs_sro_matl m(nolock)

@@ -14,13 +14,17 @@ REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?
 REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/-](?P<month>[01]\d)[/-](?P<day>[0-3]\d)")
 REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
 REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R|T))?")
-# REGEX_BUILd = re.compile(r"(?P<prefix>[A-Z]{2})-(?:(?P<build>(?P<carrier>[VS])\d{3})|(?P<build>\d{3}(?P<carrier>[VS])?))(?:-(?P<suffix>M|DEMO|R|T))?")
-
+REGEX_BUILD_ALT = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>(?P<carrier>\d)\d{3})(?:-(?P<suffix>M|DEMO|R|T))?")
 
 REGEX_RESOLUTION = re.compile(r"(?P<general>\d+),(?P<specific>\d+)")
 
 
 # - - - - - - - - - - - - - - - - - - - - COMMON  - - - - - - - - - - - - - - - - - - - -
+# noinspection SpellCheckingInspection
+# language=RegExp
+SYTELINE_WINDOW_TITLE = r'Infor ERP SL \(EM\).*'
+
+
 CELLULAR_BUILDS = ('EX-600-M', 'EX-625S-M', 'EX-600-T', 'EX-600', 'EX-625-M', 'EX-600-DEMO', 'EX-600S', 'EX-600S-DEMO', 'EX-600V-M',
 						'EX-600V', 'EX-680V-M', 'EX-600V-DEMO', 'EX-680V', 'EX-680S', 'EX-680V-DEMO', 'EX-600V-R', 'EX-680S-M', 'HG-2200-M',
 						'CL-4206-DEMO', 'CL-3206-T', 'CL-3206', 'CL-4206', 'CL-4206', 'CL-3206-DEMO', 'CL-4206-M', 'CL-3206-M', 'HB-110',
@@ -33,4 +37,3 @@ SUFFIX_DICT = {'M': 'Monitoring', 'R': 'Refurb',
 
 CARRIER_DICT = {'V': 'Verizon', 'S': 'Sprint', '-': None,
                 '3': 'Verizon', '4': 'Sprint', '2': None}
-

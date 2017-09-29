@@ -3,17 +3,15 @@ from __init__ import __version__
 import configparser
 import sys
 import os
-import subprocess
+
 from cx_Freeze import setup, Executable
 
-os.chdir(os.getcwd() + '\\GitHub\\bi_entry')
 config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
 
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
 version = f"{major}.{minor}.{micro+1}"
 
-print(os.getcwd())
 def update_init(vers):
 	from tempfile import mkstemp
 	from shutil import move
@@ -45,7 +43,7 @@ DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
-executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry1.ico")]
+executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',
@@ -53,7 +51,8 @@ packages = ['psutil', 'win32api', 'pyautogui',
             'easygui', '_mssql', 'uuid', 'subprocess',
             'comtypes', 'sqlite3']
 include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
-                 r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd']
+                 r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
+                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry.ico']
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",

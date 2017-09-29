@@ -1,15 +1,16 @@
 __author__ = 'jsh0x'
-__version__ = '1.1.21'
+__version__ = '1.2.0'
 
 import struct
 import configparser
 from sys import version_info as version
 import os
 import sys
-from typing import Sequence
+from typing import Sequence, Union
 from tempfile import mkstemp
 from shutil import move
 from os import fdopen, remove
+from win32com.client import Dispatch
 import logging.config
 import logging.handlers
 import pathlib
@@ -56,8 +57,9 @@ os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 loggers = ['root']
 handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler']
 formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter']
-cwd = pathlib.WindowsPath.cwd().parent.parent
+cwd = pathlib.WindowsPath.cwd()
 log_dir = cwd / 'logs'
+
 
 def list_to_string(iterable: Sequence, sep: str=','):
 	retval = ''
@@ -93,7 +95,6 @@ def update_config():
 	remove('config.ini')
 	# Move new file
 	move(abs_path, 'config.ini')
-
 # def get_outdated_modules(pip_dir) -> dict:
 # 	retval = {}
 # 	mods = str(subprocess.Popen([pip_dir, 'list', '--format=legacy', '--outdated'], stdout=subprocess.PIPE).communicate()[0])
@@ -112,8 +113,8 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 	fp = find_file('WinStudio.exe') if fp is None else fp
 	path = (os.path.dirname(sys.executable)).replace('\\', '/')+"/Scripts/pip3.6.exe"
 	log_dir.mkdir(exist_ok=True)
-	info_log_dir = str(log_dir / 'info.log').replace('\\', '/')
-	debug_log_dir = str(log_dir / 'dbg.log').replace('\\', '/')
+	info_log_dir = log_dir / 'info.log'
+	debug_log_dir = log_dir / 'dbg.log'
 	config = configparser.ConfigParser(interpolation=None)
 	module_list = packages
 	# for mod in get_outdated_modules(path).keys():
@@ -127,11 +128,11 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 						 'max_sl_instances': '1',
 						 'multiprocess': 'False'}
 	config['Schedule'] = {'active_days': '1,2,3,4,5,6',
-	                      'active_hours': '0,1,2,5,6,7,8,9,10,11,12,13,14,15,18,19,20,22,23'
+	                      'active_hours': '0,1,5,6,7,8,9,10,11,12,13,14,15,18,19,20,21,22,23'
 	                      }
 	config['Paths'] = {'sl_exe': fp,
 					   'pip_exe': path,
-	                   'cwd': str(cwd).replace('\\', '/')}
+	                   'cwd': cwd.as_posix()}
 	config['Login'] = {'username': usr,
 					   'password': pwd}
 	config['loggers'] = {'keys': list_to_string(loggers)}
@@ -156,11 +157,11 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 	config['handler_infoHandler'] = {'class': "handlers.TimedRotatingFileHandler",
 									 'level': "INFO",
 									 'formatter': "infoFormatter",
-									 'args': f"('{info_log_dir}', 'D', 7, 3)"}
+									 'args': f"('{info_log_dir.as_posix()}', 'D', 7, 3)"}
 	config['handler_debugHandler'] = {'class': "FileHandler",
 									  'level': "DEBUG",
 									  'formatter': "debugFormatter",
-									  'args': f"('{debug_log_dir}', 'w')"}
+									  'args': f"('{debug_log_dir.as_posix()}', 'w')"}
 	config['handler_consoleHandler'] = {'class': "StreamHandler",
 										'level': "DEBUG",
 										'formatter': "debugFormatter",
@@ -168,20 +169,42 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 	config['logger_root'] = {'level': 'DEBUG',
 							 'handlers': list_to_string(handlers[:4]),
 							 'qualname': 'root'}
-	with open(str(cwd).replace('\\', '/') + '/config.ini', 'w') as configfile:
+	with open(cwd / 'config.ini', 'w') as configfile:
 		config.write(configfile)
 
 
-if 'config.ini' not in os.listdir(str(cwd).replace('\\', '/')):
+def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.PathLike], startin: Union[str, bytes, pathlib.Path, os.PathLike], icon_path: Union[str, bytes, pathlib.Path, os.PathLike]):
+	shell = Dispatch('WScript.Shell')
+	# shortcut_file = pathlib.WindowsPath.home() / 'Desktop' / name + '.lnk'
+	home = pathlib.WindowsPath.home()
+	desktop = tuple(home.glob('./Desktop'))[0] if tuple(home.glob('./Desktop')) else None
+	assert desktop is not None
+	shortcut_file = desktop / (name + '.lnk')
+	exe_path = exe_path.as_posix() if issubclass(type(exe_path), pathlib.Path) else exe_path
+	startin = startin.as_posix() if issubclass(type(startin), pathlib.Path) else startin
+	icon_path = icon_path.as_posix() if issubclass(type(icon_path), pathlib.Path) else icon_path
+	shortcut = shell.CreateShortCut(shortcut_file.as_posix())
+	shortcut.Targetpath = exe_path
+	shortcut.WorkingDirectory = startin
+	shortcut.IconLocation = icon_path
+	shortcut.save()
+
+
+desktop = pathlib.WindowsPath.home() / 'Desktop'
+shortcut = desktop / 'bi_entry.lnk'
+if not shortcut.exists():
+	create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe', startin=pathlib.WindowsPath.home() / 'Desktop' / 'build', icon_path=pathlib.WindowsPath.cwd() / 'bi_entry.ico')
+	sys.exit()
+
+if 'config.ini' not in os.listdir(cwd.as_posix()):
 	write_config()
 
+# cwd = pathlib.WindowsPath.home() / 'Desktop' / 'build'
 config = configparser.ConfigParser()
-config.read_file(open(str(cwd).replace('\\', '/')+'/config.ini'))
-os.chdir(config.get('Paths', 'cwd'))
+config.read_file(open('config.ini'))
 update_config()
+
+
 
 bit = 8*struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro
-
-# TODO: Any time there is a major update, do a screen calibration
-# TODO: If missing control in db, get it

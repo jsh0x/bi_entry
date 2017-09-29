@@ -3,7 +3,6 @@ import logging.config
 import configparser
 from random import randint
 from time import sleep
-import sys
 from exceptions import *
 
 
@@ -11,7 +10,7 @@ def main():
 	from transact import Transact
 	from scrap import Scrap
 	from reason import reason
-	from common import Application, Unit
+	from common import Application, Unit, parse_numeric_ranges
 	from sql import MS_SQL
 	from crypt import decrypt
 
@@ -50,8 +49,8 @@ def main():
 		sleep(5)
 		log.info(f"Successfully logged in as '{usr}'")
 		app.logged_in = True
-		sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
-		sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
+		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 		app.open_form('Units', 'Miscellaneous Issue')
 
 		results = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
@@ -271,117 +270,144 @@ def main():
 				note_txt.type_keys(f"{unit.datetime.strftime('%m/%d/%Y')}]")
 		quit()"""
 
-	active_days = [int(x) for x in config.get('Schedule', 'active_days').split(',')]
-	active_hours = [int(x) for x in config.get('Schedule', 'active_hours').split(',')]
-	# active_days = list(range(7))  # TEMP
-	# active_hours = list(range(24))  # TEMP
+	config_days = parse_numeric_ranges(config.get('Schedule', 'active_days'))
+	config_hours = parse_numeric_ranges(config.get('Schedule', 'active_hours'))
+	total_days = set(range(7))
+	total_hours = set(range(24))
+	active_days = {z for y in [list(range(x[0], x[1] + 1)) for x in config_days] for z in y}
+	active_hours = {z for y in [list(range(x[0], x[1] + 1)) for x in config_hours] for z in y}
+	inactive_days = total_days - active_days
+	inactive_hours = total_hours - active_hours
 	# Switch between Reason, Scrap, and Transaction
 	while True:  # Core Loop
-		dt = datetime.datetime.now()
-		weekday = int(dt.__format__('%w'))
-		if (weekday not in active_days) or (dt.hour not in active_hours):
+		current_weekday = int(format(datetime.datetime.now(), '%w'))
+		current_hour = datetime.datetime.now().hour
+		if (current_weekday in inactive_days) or (current_hour in inactive_hours):
 			if app.logged_in:
-				sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
-				so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
-				so.select()
-				app.logged_in = False
-			sleep(5)
+				app.log_out()
+			sleep(60)
 			continue
-		if not app.logged_in:
-			log.info("SyteLine not logged in, starting login procedure")
-			"""try:
-				app.win32.SignIn.wait('ready')
-				while app.win32.SignIn.exists():
-					app.win32.SignIn.UserLoginEdit.set_text(usr)
-					app.win32.SignIn.PasswordEdit.set_text(pwd)
-					if (app.win32.SignIn.UserLoginEdit.texts()[0] != usr) or (app.win32.SignIn.PasswordEdit.texts()[0] != pwd) or (not app.win32.SignIn.OKButton.exists()):
-						raise ValueError()
-					app.win32.SignIn.set_focus()
-					app.win32.SignIn.OKButton.click()
-					Dialog2 = app.uia.top_window()
-					while Dialog2.exists():
-						# Get dialog info
-						Dialog = Dialog2.children()[0]
-						title = Dialog.texts()
-						buttons = {ctrl.texts()[0].strip('!@#$%^&*()_ ').replace(' ', '_').lower() + '_button': ctrl for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Button'}
-						text = [ctrl.texts()[0].capitalize() for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Static' and ctrl.texts()[0]]
-						if not text:
-							break
-						log.debug([title, buttons, text, replace_session_regex.search(text[0]), user_session_regex.search(text[0])])
-						if replace_session_regex.search(text[0]):  # Handle better in future
-							if 'yes_button' in buttons:
-								Dialog.set_focus()
-								buttons['yes_button'].click()
-						elif password_expire_regex.search(text[0]):  # Handle better in future
-							if 'ok_button' in buttons:
-								Dialog.set_focus()
-								buttons['ok_button'].click()
-						elif user_session_regex.search(text[0]):  # Handle better in future
-							if 'ok_button' in buttons:
-								Dialog.set_focus()
-								buttons['ok_button'].click()
-						elif invalid_login_regex.search(text[0]):  # Handle better in future
-							if 'ok_button' in buttons:
-								Dialog.set_focus()
-								buttons['ok_button'].click()
-								raise SyteLineLogInError('')
-						else:
+		elif (current_weekday in active_days) and (current_hour in active_hours):
+			if not app.logged_in:
+				app.log_in(usr, pwd)
+				"""try:
+					app.win32.SignIn.wait('ready')
+					while app.win32.SignIn.exists():
+						app.win32.SignIn.UserLoginEdit.set_text(usr)
+						app.win32.SignIn.PasswordEdit.set_text(pwd)
+						if (app.win32.SignIn.UserLoginEdit.texts()[0] != usr) or (app.win32.SignIn.PasswordEdit.texts()[0] != pwd) or (not app.win32.SignIn.OKButton.exists()):
 							raise ValueError()
-			except ValueError:
-				continue  # Handle better in future
-			else:
-				log.info(f"Successfully logged in as '{usr}'")
-				app.logged_in = True"""
-			sleep(4)
-			app.win32.SignIn.UserLoginEdit.set_text(usr)
-			app.win32.SignIn.PasswordEdit.set_text(pwd)
-			app.win32.SignIn.set_focus()
-			app.win32.SignIn.OKButton.click()
-			sleep(10)
-			log.info(f"Successfully logged in as '{usr}'")
-			app.logged_in = True
-		if app.logged_in:
-			flow = config.get('DEFAULT', 'flow')
-			tbl_mod = config.get('DEFAULT', 'table')
-			table = 'PyComm' if int(tbl_mod) else 'PyComm2'
-			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
-			# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
-			result = mssql.execute(f"SELECT TOP 1 * FROM {table} WHERE [Status] = 'Queued' OR [Status] = 'Custom(Queued)' ORDER BY [DateTime] {flow}")
-			# if '3' in usr:
-			# 	result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
-			# 	if result2:
-			# 		result = result2
-			if result is None:
-				log.info("No valid results, waiting...")
-				sleep(10)
-				continue
-			try:
-				unit = Unit(mssql, slsql, result)
-			except ValueError:
-				log.exception("EARLY ERROR!!!")
-				mssql.execute(f"UPDATE PyComm SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
-				continue
-			except UnitClosedError:
-				log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
-				mssql.execute(f"UPDATE PyComm SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
-				continue
-			log.info(f"Unit object created with serial_number={unit.serial_number}'")
-			script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
-			try:
-				if unit.SRO_Line_status == 'Closed':
-					raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")
-				if unit.sro_num is None:
-					raise UnitClosedError(f"Unit '{unit.serial_number}' has no SROs")
-				script_dict.get(result.Status, lambda x,y: None)(app, unit)
-			except UnitClosedError:
-				unit.skip('No Open SRO')
-			# except pag.FailSafeException:
-			# 	mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
-			# 	sys.exit(1)
-			else:
-				log.info(f"Unit: {unit.serial_number_prefix+unit.serial_number} completed")
-			finally:
-				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+						app.win32.SignIn.set_focus()
+						app.win32.SignIn.OKButton.click()
+						Dialog2 = app.uia.top_window()
+						while Dialog2.exists():
+							# Get dialog info
+							Dialog = Dialog2.children()[0]
+							title = Dialog.texts()
+							buttons = {ctrl.texts()[0].strip('!@#$%^&*()_ ').replace(' ', '_').lower() + '_button': ctrl for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Button'}
+							text = [ctrl.texts()[0].capitalize() for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Static' and ctrl.texts()[0]]
+							if not text:
+								break
+							log.debug([title, buttons, text, replace_session_regex.search(text[0]), user_session_regex.search(text[0])])
+							if replace_session_regex.search(text[0]):  # Handle better in future
+								if 'yes_button' in buttons:
+									Dialog.set_focus()
+									buttons['yes_button'].click()
+							elif password_expire_regex.search(text[0]):  # Handle better in future
+								if 'ok_button' in buttons:
+									Dialog.set_focus()
+									buttons['ok_button'].click()
+							elif user_session_regex.search(text[0]):  # Handle better in future
+								if 'ok_button' in buttons:
+									Dialog.set_focus()
+									buttons['ok_button'].click()
+							elif invalid_login_regex.search(text[0]):  # Handle better in future
+								if 'ok_button' in buttons:
+									Dialog.set_focus()
+									buttons['ok_button'].click()
+									raise SyteLineLogInError('')
+							else:
+								raise ValueError()
+				except ValueError:
+					continue  # Handle better in future
+				else:
+					log.info(f"Successfully logged in as '{usr}'")
+					app.logged_in = True"""
+			if app.logged_in:
+				flow = config.get('DEFAULT', 'flow')
+				tbl_mod = config.get('DEFAULT', 'table')
+				table = 'PyComm' if int(tbl_mod) else 'PyComm2'  # if table == 1: PyComm, else: PyComm2
+				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
+				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
+				result = mssql.execute(f"SELECT TOP 1 * FROM {table} WHERE [Status] = 'Queued' OR [Status] = 'Custom(Queued)' ORDER BY [DateTime] {flow}")
+				# if '3' in usr:
+				# 	result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
+				# 	if result2:
+				# 		result = result2
+				if result is None:
+					log.info("No valid results, waiting...")
+					sleep(10)
+					continue
+				try:
+					all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
+					                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)' OR"
+					                            f" [Status] = 'Custom(Queued)' OR [Status] = 'No Open SRO(Custom(Queued))' OR [Status] = 'Skipped(Custom(Queued))')", fetchall=True)
+					counter = {'SRO': 0, 'Skip': 0, 'C_SRO': 0, 'C_Skip': 0}
+					for res in all_results:
+						if 'Custom' in res.Status:
+							if 'No Open SRO' in res.Status:
+								counter['C_SRO'] += 1
+							elif 'Skipped' in res.Status:
+								counter['C_Skip'] += 1
+						else:
+							if 'No Open SRO' in res.Status:
+								counter['SRO'] += 1
+							elif 'Skipped' in res.Status:
+								counter['Skip'] += 1
+					if sum(counter.values()):
+						counter_key = None
+						max_count = max(counter.values())
+						for k,v in counter.items():
+							if v == max_count:
+								counter_key = k
+								break
+						if counter_key:
+							if 'SRO' in counter_key:
+								log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
+								mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+							elif 'Skip' in counter_key:
+								log.exception(f"Other entries with skipped status exist for serial number: {result.Serial_Number}")
+								mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+							continue
+					units = list({unit.operation: unit for unit in [Unit(mssql, slsql, x) for x in all_results]}.values())
+					log.debug(f"Unit group created: {units}")
+					log.debug(f"Unit group created: {', '.join(f'{x.id}, {x.parts}, {x.operation}' for x in units)}")
+					unit = units[0]
+				except ValueError:
+					log.exception("EARLY ERROR!!!")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped(VALUE_ERROR)({result.Status})' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+					continue
+				except UnitClosedError:
+					log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+					continue
+				log.info(f"Unit object created with serial_number={unit.serial_number}'")
+				script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
+				try:
+					if unit.SRO_Line_status == 'Closed':
+						raise UnitClosedError(f"Unit '{unit.serial_number}' closed on SRO Lines level")
+					if unit.sro_num is None:
+						raise UnitClosedError(f"Unit '{unit.serial_number}' has no SROs")
+					script_dict.get(result.Status, lambda x,y: None)(app, units)
+				except UnitClosedError:
+					for x in units:
+						x.skip('No Open SRO', batch_amt=len(units))
+				# except pag.FailSafeException:
+				# 	mssql.execute(f"UPDATE PyComm SET [Status] = '{result.Status}' WHERE [Id] = {result.Id} AND [Serial Number] = '{result.Serial_Number}'")
+				# 	sys.exit(1)
+				finally:
+					log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+
 
 if __name__ == '__main__':
 	main()

@@ -5,7 +5,7 @@ from typing import List
 from operator import attrgetter
 
 from common import Application, Unit, timer, access_grid, center
-from constants import REGEX_BUILD as build_regex, CELLULAR_BUILDS
+from constants import SYTELINE_WINDOW_TITLE
 from exceptions import *
 from crypt import decrypt
 from sql import SQL_Lite, MS_SQL
@@ -22,8 +22,8 @@ reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
 def Scrap(app: Application, units: List[Unit]):
 	pywinauto.timings.Timings.Fast()
 	log.debug(f"Starting Scrap script with units: {', '.join(unit.serial_number_prefix+unit.serial_number for unit in units)}")
-	sl_win = app.win32.window(title_re='Infor ERP SL (EM)*')
-	sl_uia = app.uia.window(title_re='Infor ERP SL (EM)*')
+	sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+	sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 	if not sl_win.exists():
 		map(lambda x: x.reset(), units)
 		sys.exit(1)
