@@ -44,7 +44,8 @@ DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
-executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
+executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico"),
+               Executable(script="eom_closeout.py", base="Console", targetName="EOM.exe", icon="bi_entry2.ico")]
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',
@@ -53,7 +54,8 @@ packages = ['psutil', 'win32api', 'pyautogui',
             'comtypes', 'sqlite3']
 include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
                  r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
-                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry.ico']
+                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry.ico',
+                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry2.ico']
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
@@ -82,13 +84,13 @@ setup(
 	description='',
 	executables=executables
 )
-# subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
-# files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
-# with open('bi_entry.exe', mode='w+b') as f:
-# 	for fn in files:
-# 		with open(fn, mode='rb') as f2:
-# 			buffer_ = f2.readline()
-# 			while buffer_:
-# 				f.write(buffer_)
-# 				buffer_ = f2.readline()
-# subprocess.run([r'C:\Program Files\UPX\upx', '--ultra-brute', '--compress-icons=1', 'bi_entry.exe'])
+subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
+files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
+with open('EOM.exe', mode='w+b') as f:
+	for fn in files:
+		with open(fn, mode='rb') as f2:
+			buffer_ = f2.readline()
+			while buffer_:
+				f.write(buffer_)
+				buffer_ = f2.readline()
+subprocess.run([r'C:\Program Files\UPX\upx', '--ultra-brute', '--compress-icons=1', 'EOM.exe'])

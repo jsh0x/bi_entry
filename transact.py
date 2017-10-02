@@ -250,16 +250,16 @@ def Transact(app: Application, units: List[Unit]):
 						m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
 						m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
 						if m1 is not None:
-							dlg[0].close()
+							pag.press('enter')
 							raise SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
 						elif m2 is not None:
-							dlg[0].close()
+							pag.press('enter')
 							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'), loc=m2.group('location')))
 							log.warning("Negative Quantity!")
 							dlg = app.get_popup(wait_seconds)
 						else:
 							dlg = app.get_popup()
-							dlg[0].close()
+							pag.press('enter')
 					sl_win.PostBatchButton.wait('ready', 2, 0.09)
 					log.debug("Batch posted")
 					sl_win.set_focus()
