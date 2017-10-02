@@ -236,7 +236,8 @@ def Transact(app: Application, units: List[Unit]):
 						wait_seconds = 8
 					sl_win.set_focus()
 					save.click()
-					dlg = app.get_popup(2)
+					# dlg = app.get_popup(2)
+					dlg = app.get_popup()
 					while dlg:
 						log.debug(f"Transaction Save dialog text: '{dlg.Text}'")
 						dlg[0].close()
@@ -244,22 +245,28 @@ def Transact(app: Application, units: List[Unit]):
 					log.debug("Saved")
 					sl_win.set_focus()
 					sl_win.PostBatchButton.click()
-					dlg = app.get_popup(wait_seconds)
+					# dlg = app.get_popup(wait_seconds)
+					dlg = app.get_popup(4)
+					error = None
 					while dlg:
 						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
 						m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
 						m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
 						if m1 is not None:
 							pag.press('enter')
-							raise SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
+							error = SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
+							dlg = app.get_popup(2)
 						elif m2 is not None:
 							pag.press('enter')
 							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'), loc=m2.group('location')))
 							log.warning("Negative Quantity!")
-							dlg = app.get_popup(wait_seconds)
+							dlg = app.get_popup(2)
 						else:
 							dlg = app.get_popup()
 							pag.press('enter')
+					else:
+						if error is not None:
+							raise error
 					sl_win.PostBatchButton.wait('ready', 2, 0.09)
 					log.debug("Batch posted")
 					sl_win.set_focus()
@@ -430,6 +437,7 @@ def Transact(app: Application, units: List[Unit]):
 			log.exception("Credit Hold Error!")
 			for x in units:
 				x.skip(reason='Credit Hold', batch_amt=len(units))
+			# pag.press('esc', 40)
 		else:
 			log.exception("SOMETHING HAPPENED!!!")
 			for x in units:

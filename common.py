@@ -41,9 +41,14 @@ Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str)
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 class Part:
-	def __init__(self, sql: MS_SQL, part_number: str, quantity: int=1):
+	def __init__(self, sql: MS_SQL, part_number: str, quantity: int=1, spec_build: str=None):
 		self.part_number = part_number
-		_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+		if spec_build:
+			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")
+		else:
+			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
+			 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
+			 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		self.quantity = quantity * _data.Qty
 		self.display_name = _data.DispName
 		self.part_name = _data.PartName
@@ -65,7 +70,7 @@ class Unit:
 		tbl_mod = config.get('DEFAULT', 'table')
 		self._table = 'PyComm' if int(tbl_mod) else 'PyComm2'
 		self.id, self.serial_number, self.operation, self.operator, \
-		self.parts, self.datetime, self.notes, self._status = (args.Id, args.Serial_Number, args.Operation, args.Operator, args.Parts,
+		self.datetime, self.notes, self._status = (args.Id, args.Serial_Number, args.Operation, args.Operator,
 		                                                       args.DateTime, args.Notes, args.Status)
 		self._status2 = self._status
 		self._status = 'Queued' if self._status2 == 'Custom(Queued)' else self._status
@@ -78,7 +83,6 @@ class Unit:
 		log.debug(f"Attribute operator='{self.operator}'")
 		log.debug(f"Attribute notes='{self.notes}'")
 		log.debug(f"Attribute _status='{self._status}'")
-		log.debug(f"Property parts='{self.parts}'")
 		log.debug(f"Property datetime='{self.datetime}'")
 		"""From PyComm p
 				Cross apply dbo.Split(p.Parts, ',') b
@@ -162,6 +166,8 @@ class Unit:
 				raise NoSROError(serial_number=self.serial_number)
 			else:
 				raise NoOpenSROError(serial_number=self.serial_number, sro=self.sro_num)
+		self.parts = args.Parts
+		log.debug(f"Property parts='{self.parts}'")
 		self.general_reason = 1000
 		self.specific_reason = 20
 		self.general_resolution = 10000
@@ -313,7 +319,12 @@ class Unit:
 			value = value.strip()
 			value = value.split(',')
 			if value != ['']:
-				self._parts = list({Part(self._mssql, x) for x in value})
+				if '206' in self.whole_build:
+					self._parts = list({Part(self._mssql, x, spec_build='206') for x in value})
+				elif '200' in self.whole_build:
+					self._parts = list({Part(self._mssql, x, spec_build='200') for x in value})
+				else:
+					self._parts = list({Part(self._mssql, x) for x in value})
 		else:
 			self._parts = None
 
