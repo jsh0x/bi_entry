@@ -246,7 +246,7 @@ def Transact(app: Application, units: List[Unit]):
 					sl_win.set_focus()
 					sl_win.PostBatchButton.click()
 					# dlg = app.get_popup(wait_seconds)
-					dlg = app.get_popup(4)
+					dlg = app.get_popup(2)
 					error = None
 					while dlg:
 						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
@@ -398,7 +398,7 @@ def Transact(app: Application, units: List[Unit]):
 		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 		status.send_keystrokes('^s')
 		status.wait_for_idle()
-		if has_qc:
+		if has_qc or units[0].SRO_Operations_status == 'Closed':
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			sl_win.set_focus()
 			status.set_keyboard_focus()

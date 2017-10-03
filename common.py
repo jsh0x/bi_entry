@@ -43,8 +43,16 @@ Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str)
 class Part:
 	def __init__(self, sql: MS_SQL, part_number: str, quantity: int=1, spec_build: str=None):
 		self.part_number = part_number
+		"""# FOR 206's:
+			;With t as 
+			(Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = '206'
+			Union All
+			Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = 'All')
+			Select distinct * from t"""
 		if spec_build:
-			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")
+			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
+			 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
+			 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		else:
 			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
 			 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
@@ -205,12 +213,13 @@ class Unit:
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		len_parts = len(self.parts) if self.parts is not None else 0
 		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
+		carrier = self.carrier[0].upper() if self.carrier is not None else '-'
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
 		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
 		                    "[Total Time],[Process],[Results],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"VALUES ('{self.serial_number}','{carrier}','{self.build}',"
 		                    f"'{self.suffix}','{self.operator}','{self.operation}','{parts}',"
 		                    f"'{t_parts}',{len_parts},{len(self.parts_transacted)},"
 		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"
@@ -240,13 +249,14 @@ class Unit:
 		len_parts = len(self.parts) if self.parts is not None else 0
 		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
 		addon = f"({sro})" if reason == 'No Open SRO' else ""
+		carrier = self.carrier[0].upper() if self.carrier is not None else '-'
 		self._mssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2}){addon}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._mssql.execute("INSERT INTO [Statistics]"
 		                    "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                    "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
 		                    "[Start Time],[SRO Operations Time],[SRO Transactions Time],[Misc Issue Time],[End Time],"
 		                    "[Total Time],[Process],[Results],[Reason],[Version])"
-		                    f"VALUES ('{self.serial_number}','{self._regex_dict['carrier']}','{self._regex_dict['build'][:3]}',"
+		                    f"VALUES ('{self.serial_number}','{carrier}','{self.build}',"
 		                    f"'{self.suffix}','{self.operator}','{self.operation}','{parts}',"
 		                    f"'{t_parts}',{len_parts},{len(self.parts_transacted)},"
 		                    f"'{self.datetime.strftime('%m/%d/%Y %H:%M:%S')}','{self._date}','{self._start_time}',"

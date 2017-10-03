@@ -22,13 +22,22 @@ def in_out_check(func):
 
 
 class DSL_Reader(UserList):
+	def __init__(self, initlist=None):
+		super().__init__(initlist)
+		print(self.data)
+		if all([type(i) is bytes for i in self.data]):
+			self.data = [self.decode(val) for val in self.data]
+
 	@classmethod
 	def open(cls, fp: Union[str, bytes, PathLike]):
-		if not pathlib.Path(fp).suffix:
-			fp = pathlib.Path(fp).with_suffix('dsl')
-		if not fp.exists():
-			raise FileNotFoundError(f"Filepath {fp} does not exist")
-		return DSL_Reader()
+		path = pathlib.Path(fp)
+		if not path.suffix:
+			path = pathlib.Path(fp).with_suffix('.dsl')
+		if not path.exists():
+			raise FileNotFoundError(f"Filepath {path} does not exist")
+		with open(path.as_posix(), mode='rb') as f:
+			retlist = [line[:-2] for line in f]
+		return DSL_Reader(retlist)
 
 	def __enter__(self):
 		...
@@ -65,7 +74,6 @@ class DSL_Reader(UserList):
 		# byte_string = start_pad + rand_encoding[0] + ''.join(y for x in byte_string for y in x) + rand_encoding[1] + end_pad
 		start_pad, end_pad = self.randbits(3), self.randbits(3)
 		rand_encoding = self.randbits(2)
-		string = string.ljust(299)
 		byte_string = start_pad + rand_encoding[0] + ''.join(z for y in self._encoding_tuple[int(rand_encoding, base=2)](self.normalize_bit_length(x, 8) for x in string.encode(encoding='utf-8')) for z in y) + rand_encoding[1] + end_pad
 		return bytes([int(byte_string[i:i+8], base=2) for i in range(0, len(byte_string), 8)])
 
@@ -75,6 +83,11 @@ class DSL_Reader(UserList):
 		byte_string = byte_string[4:-4]
 		string = ''.join(y for x in self._encoding_tuple[int(rand_encoding, base=2)](byte_string[i:i+8] for i in range(0, len(byte_string), 8)) for y in x)
 		return ''.join(int(string[i:i + 8], base=2).to_bytes(1, 'little').decode() for i in range(0, len(string), 8))
+
+	def compile(self, filename: str):
+		with open(filename+'.dsl', mode='wb') as f:
+			for line in self.data:
+				f.write(self.encode(line+'\r\n'))
 
 	@staticmethod
 	def randbits(x: int) -> str:
@@ -159,13 +172,7 @@ class DSL_Reader(UserList):
 
 	_encoding_tuple = (whole_logic_switch_alt, whole_logic_switch_alt_offset, chunk_logic_switch_alt, chunk_logic_switch_alt_offset)
 
-test = DSL_Reader()
 
-a = ['This is a test', 'so is this', 'oh, and this too']
-with open('TEST.dsl', mode='rb') as f:
-	for line in f:
-		# Iterare through 100, 200, 300, etc... until passes
-		step = 300
-		for i in range(0, len(line), step):
-			print(line[i:i+step])
-			print(test.decode(line[i:i+step]).strip())
+reader = DSL_Reader.open(r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\TEST')
+reader.append('BLARGH')
+print(reader.data)
