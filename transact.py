@@ -246,7 +246,7 @@ def Transact(app: Application, units: List[Unit]):
 					sl_win.set_focus()
 					sl_win.PostBatchButton.click()
 					# dlg = app.get_popup(wait_seconds)
-					dlg = app.get_popup(2)
+					dlg = app.get_popup(4)
 					error = None
 					while dlg:
 						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
@@ -260,7 +260,7 @@ def Transact(app: Application, units: List[Unit]):
 							pag.press('enter')
 							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'), loc=m2.group('location')))
 							log.warning("Negative Quantity!")
-							dlg = app.get_popup(2)
+							dlg = app.get_popup(4)
 						else:
 							dlg = app.get_popup()
 							pag.press('enter')

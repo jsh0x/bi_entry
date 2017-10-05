@@ -109,9 +109,10 @@ def main():
 				                       f"LEFT JOIN {table} p2 "
 				                       f"ON p.[Serial Number] = p2.[Serial Number] AND p.Id < p2.Id "
 				                       f" WHERE p2.Id is null AND "
-				                       f"p.[DateTime] >= DATEADD(MINUTE, -5, GETDATE()) AND "
+				                       f"p.[DateTime] <= DATEADD(MINUTE, -5, GETDATE()) AND "
 				                       f"(p.[Status] = 'Queued' OR p.[Status] = 'Custom(Queued)') ORDER BY p.[DateTime] {flow}")
-				process = result.Status
+				if result:
+					process = result.Status
 				if 'scrap' in proc.lower():
 					result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
 					if result2:

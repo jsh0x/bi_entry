@@ -21,6 +21,7 @@ reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
 
 def Scrap(app: Application, units: List[Unit]):
 	try:
+		completed_units = []
 		pywinauto.timings.Timings.Fast()
 		log.debug(f"Starting Scrap script with units: {', '.join(unit.serial_number_prefix+unit.serial_number for unit in units)}")
 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
@@ -52,7 +53,6 @@ def Scrap(app: Application, units: List[Unit]):
 		results = sql.execute(f"SELECT build,location,COUNT(location) AS count FROM scrap GROUP BY build, location ORDER BY count DESC", fetchall=True)
 		sleep(1)
 		id_list = []
-		completed_units = []
 		for build, location, count in results:
 			for x in sql.execute(f"SELECT * FROM scrap WHERE build = '{build}' AND location = '{location}' ORDER BY datetime ASC", fetchall=True):
 				id_list.append(x.id)
@@ -129,7 +129,7 @@ def Scrap(app: Application, units: List[Unit]):
 					log.error(f"{text3} != 0")
 					raise ValueError()
 				sl_win.ProcessButton.click()
-				dlg = app.get_popup(4)
+				dlg = app.get_popup(10)
 				if dlg:
 					dlg[0].OKButton.click()
 					dlg[0].wait_not('exists', 2, 0.09)
