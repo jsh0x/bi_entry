@@ -136,6 +136,7 @@ class SyteLineLogInError(SyteLineError):
 class SyteLineCreditHoldError(SyteLineError):
 	def __init__(self, cust: str, msg=""):
 		msg2 = f"Customer '{cust}' on credit hold"
+		# self._cust = cust
 		super().__init__("%s\n%s" % (msg2, msg))
 
 

@@ -84,13 +84,13 @@ setup(
 	description='',
 	executables=executables
 )
-subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
-files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
-with open('EOM.exe', mode='w+b') as f:
-	for fn in files:
-		with open(fn, mode='rb') as f2:
-			buffer_ = f2.readline()
-			while buffer_:
-				f.write(buffer_)
-				buffer_ = f2.readline()
-subprocess.run([r'C:\Program Files\UPX\upx', '--ultra-brute', '--compress-icons=1', 'EOM.exe'])
+# subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
+# files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
+# with open('EOM.exe', mode='w+b') as f:
+# 	for fn in files:
+# 		with open(fn, mode='rb') as f2:
+# 			buffer_ = f2.readline()
+# 			while buffer_:
+# 				f.write(buffer_)
+# 				buffer_ = f2.readline()
+# subprocess.run([r'C:\Program Files\UPX\upx', '--ultra-brute', '--compress-icons=1', 'EOM.exe'])

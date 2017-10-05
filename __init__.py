@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.2.5'
+__version__ = '1.3.0'
 
 import struct
 import configparser
@@ -123,6 +123,7 @@ def write_config(usr: str='???', pwd: str='???', fp: str=None):
 	config['DEFAULT'] = {'version': __version__,
 	                     'table': '0',
 	                     'flow': 'ASC',
+	                     'process': 'None',
 	                     'printer': 'None',
 						 'min_sl_instances': '1',
 						 'max_sl_instances': '1',

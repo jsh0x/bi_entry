@@ -7,7 +7,9 @@ from typing import Union, List
 from random import getrandbits
 import binhex
 from string import (ascii_lowercase as char_lower, ascii_uppercase as char_upper,
-                    ascii_letters as char, digits as num, punctuation as sym)
+                    ascii_letters as char, digits as num, punctuation as sym,
+                    whitespace as w_space)
+space, tab = w_space[:2]
 
 
 def in_out_check(func):
@@ -22,10 +24,13 @@ def in_out_check(func):
 
 
 class DSL_Reader(UserList):
-	def __init__(self, initlist=None):
-		super().__init__(initlist)
-		print(self.data)
-		if all([type(i) is bytes for i in self.data]):
+	"""
+	Domain Specific Language Reader
+	"""
+	def __init__(self, *args, **kwargs):
+		super().__init__(args)
+		self.filepath = kwargs.get('fp', None)
+		if self.filepath and all([type(i) is bytes for i in self.data]):
 			self.data = [self.decode(val) for val in self.data]
 
 	@classmethod
@@ -35,9 +40,9 @@ class DSL_Reader(UserList):
 			path = pathlib.Path(fp).with_suffix('.dsl')
 		if not path.exists():
 			raise FileNotFoundError(f"Filepath {path} does not exist")
-		with open(path.as_posix(), mode='rb') as f:
+		with path.open(mode='rb') as f:
 			retlist = [line[:-2] for line in f]
-		return DSL_Reader(retlist)
+		return DSL_Reader(*retlist, fp=path)
 
 	def __enter__(self):
 		...
@@ -81,13 +86,27 @@ class DSL_Reader(UserList):
 		byte_string = ''.join(self.normalize_bit_length(x, 8) for x in bytes_)
 		rand_encoding = byte_string[3] + byte_string[-4]
 		byte_string = byte_string[4:-4]
+		# print(self._encoding_tuple[int(rand_encoding, base=2)].__name__)
 		string = ''.join(y for x in self._encoding_tuple[int(rand_encoding, base=2)](byte_string[i:i+8] for i in range(0, len(byte_string), 8)) for y in x)
 		return ''.join(int(string[i:i + 8], base=2).to_bytes(1, 'little').decode() for i in range(0, len(string), 8))
 
-	def compile(self, filename: str):
-		with open(filename+'.dsl', mode='wb') as f:
-			for line in self.data:
-				f.write(self.encode(line+'\r\n'))
+	def compile(self):
+		return [self.encode(x) + b'\r\n' for x in self.data]
+
+	def save(self, fp: Union[str, bytes, PathLike]=None):
+		if self.filepath and not fp:
+			fp = pathlib.Path(str(self.filepath))
+		elif fp:
+			fp = pathlib.Path(str(fp))
+			if not fp.suffix:
+				fp = fp.with_suffix('.dsl')
+			if not fp.exists():
+				raise FileNotFoundError(f"Filepath {fp} does not exist")
+		else:
+			raise ValueError("No value provided for value 'fp'")
+		with fp.open(mode='wb') as f:
+			for line in self.compile():
+				f.write(line)
 
 	@staticmethod
 	def randbits(x: int) -> str:
@@ -173,6 +192,96 @@ class DSL_Reader(UserList):
 	_encoding_tuple = (whole_logic_switch_alt, whole_logic_switch_alt_offset, chunk_logic_switch_alt, chunk_logic_switch_alt_offset)
 
 
-reader = DSL_Reader.open(r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\TEST')
-reader.append('BLARGH')
-print(reader.data)
+import numpy as np
+
+
+def normalize(x: str, length: int) -> str:
+	i = x.index('x') + 1
+	return x[:i] + x[i:].rjust(length, '0').upper()
+
+
+def apply(a: np.ndarray, func):
+	if a.ndim == 1:
+		return np.array([func(b) for b in a])
+	elif a.ndim == 2:
+		for i in a:
+			print(i)
+			for j in i:
+				print(j)
+		return np.array([[func(c) for c in b] for b in a])
+	elif a.ndim == 3:
+		return np.array([[[func(d) for d in c] for c in b] for b in a])
+	elif a.ndim == 4:
+		return np.array([[[[func(e) for e in d] for d in c] for c in b] for b in a])
+
+
+def temp():
+	gridspace = np.zeros((25, 40, 40))
+	gs = gridspace.view()
+	for i in np.arange(25):
+		gs[i] = np.random.randint(2, size=(40, 40))
+	np.set_printoptions(edgeitems=100, linewidth=1000)
+	# print(gs.sum(axis=0))
+	# for i in np.arange(25):
+	# 	for j in np.arange(40):
+	# 		for k in np.arange(40):
+	# 			if gs[i,j,k] == max(gs.sum(axis=0)):
+	# print(apply(gs.sum(axis=0), lambda x: int(x.all() == max(gs.sum(axis=0)))))
+	def compile_data(c, max_iter):
+		z = c
+		for n in np.arange(max_iter):
+			print(z)
+			if abs(z) > 2:
+				return n
+			z = (z*z) + c
+		else:
+			return max_iter
+	from matplotlib import pyplot as plt
+	ge = np.random.choice(2, size=(96, 96), p=[0.85, 0.15])
+	print(compile_data(complex(0.1, 1), 500))
+	for i in range(4):
+		print()
+		print()
+		for y in np.arange(1, ge.shape[0] - 1):
+			string = ''
+			for x in np.arange(1, ge.shape[1] - 1):
+				if ge[y, x] == 1:
+					string += '\u2591'
+				else:
+					string += '\u2588'
+			print(string)
+		ge2 = np.zeros_like(ge)
+		for y in np.arange(1, ge.shape[0]-1):
+			for x in np.arange(1, ge.shape[1]-1):
+				v_total, h_total = ge[y - 1:y + 2, x].sum(), ge[y, x - 1:x + 2].sum()
+				total = v_total + h_total
+				if ge[y, x]:
+					if 3 <= total < 4:
+						ge2[y, x] = 1
+					else:
+						ge2[y, x] = 0
+				else:
+					if 2 <= total:
+						ge2[y, x] = 1
+					else:
+						ge2[y, x] = 0
+		ge = ge2.copy()
+
+
+	# 2588, 2591, 2592, 2593
+	# 2581, 258F, 2594, 2595
+	# psbl = np.arange(25, dtype=np.int64).reshape((5,5))-1
+	# psbl[0,0] = 1
+	# b = np.full_like(psbl, 2)
+	# b[0,0] = 0
+	# psbl = np.power(b, psbl)
+	# print(psbl)
+	# a = apply(psbl, lambda x: normalize(hex(x), 6))
+	# print(a)
+
+temp()
+
+# test = DSL_Reader('This is a test', 'so is this', 'oh and this as well')
+# test.save(r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\TEST')
+# test = DSL_Reader.open(r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\TEST')
+# test.save()

@@ -366,7 +366,7 @@ def Transact(app: Application, units: List[Unit]):
 			for coord,num in q:
 				pag.click(*coord)
 				sleep(0.5)
-				pag.typewrite(num)
+				pag.typewrite(str(num))
 				sleep(0.5)
 			resn_notes = sl_win.ReasonNotesEdit
 			resn_notes.click_input()
@@ -435,8 +435,10 @@ def Transact(app: Application, units: List[Unit]):
 				x.skip(reason='No Open SRO', batch_amt=len(units))
 		elif issubclass(type(ex), SyteLineCreditHoldError):
 			log.exception("Credit Hold Error!")
+			string = 'Credit Hold'
+			# string = f"Credit Hold({ex._cust})"
 			for x in units:
-				x.skip(reason='Credit Hold', batch_amt=len(units))
+				x.skip(reason=string, batch_amt=len(units))
 			# pag.press('esc', 40)
 		else:
 			log.exception("SOMETHING HAPPENED!!!")

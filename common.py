@@ -803,8 +803,9 @@ def _adapt_cell(x):
 		return False
 	elif x == 'True':
 		return True
-	elif x.rsplit('.', 1)[0].isnumeric():
-		return int(x.rsplit('.', 1)[0].isnumeric())
+	elif '.' in x:
+			if x.rsplit('.', 1)[0].isnumeric():
+				return int(x.rsplit('.', 1)[0].isnumeric())
 	else:
 		return x
 
@@ -817,12 +818,12 @@ def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable
 	DataRow = namedtuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
 	if requirement is not None:
 		if condition is None:
-			return [DataRow(**{
+			retval = [DataRow(**{
 				col.replace(' ', '_'): _adapt_cell(
 					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
 				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()['Value'].strip()) != None]
 		else:
-			return [DataRow(**{
+			retval = [DataRow(**{
 				col.replace(' ', '_'): _adapt_cell(
 					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
 				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
@@ -830,12 +831,14 @@ def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable
 					'Value'].strip()) == condition[1] and _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()['Value'].strip()) != None]
 	else:
 		if condition is None:
-			return [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
+			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
 			                   for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):]]
 		else:
-			return [DataRow(**{
+			retval = [DataRow(**{
 			col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
 				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()['Value'].strip()) == condition[1]]
+	log.debug(f"Grid Accessed: {retval}")
+	return retval
 
 # Not one Item Price exists for Item that has
 # @overload
