@@ -171,19 +171,23 @@ class Unit:
 		log.debug(f"Attribute carrier='{self.carrier}'")
 		if self._status.lower() != 'scrap' and self.SRO_Line_status == 'Closed':
 			if self.sro_num is None:
-				raise NoSROError(serial_number=self.serial_number)
+				raise NoSROError(serial_number=str(self.serial_number))
 			else:
-				raise NoOpenSROError(serial_number=self.serial_number, sro=self.sro_num)
+				raise NoOpenSROError(serial_number=str(self.serial_number), sro=str(self.sro_num))
 		self.parts = args.Parts
 		log.debug(f"Property parts='{self.parts}'")
 		self.general_reason = 1000
 		self.specific_reason = 20
 		self.general_resolution = 10000
 		self.specific_resolution = 100
-		if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
-			self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
-			self.specific_resolution_name = self._status.upper()
-			self.general_resolution_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
+		try:
+			if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
+				self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
+				if 'scrap' in self._status.lower():
+					self.specific_resolution_name = self._status.upper()
+				self.general_resolution_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
+		except TypeError as ex:
+			raise InvalidReasonCodeError(reason_code=str(self.notes), msg=str(ex))
 		if self._status.lower() != 'scrap':
 			self.start()
 
@@ -197,6 +201,7 @@ class Unit:
 	def complete(self, batch_amt: int=None):
 		if batch_amt is None:
 			batch_amt = 10 if self._status.lower() == 'scrap' else 1
+		log.debug(f"Batch amount: {batch_amt}")
 		self.sro_operations_time += self.sro_operations_timer.stop()
 		self.sro_transactions_time += self.sro_transactions_timer.stop()
 		self.misc_issue_time += self.misc_issue_timer.stop()
@@ -231,6 +236,7 @@ class Unit:
 	def skip(self, reason: Optional[str]=None, batch_amt: int=None):
 		if batch_amt is None:
 			batch_amt = 10 if self._status.lower() == 'scrap' else 1
+		log.debug(f"Batch amount: {batch_amt}")
 		self.sro_operations_time += self.sro_operations_timer.stop()
 		self.sro_transactions_time += self.sro_transactions_timer.stop()
 		self.misc_issue_time += self.misc_issue_timer.stop()
@@ -540,6 +546,7 @@ class Application(psutil.Process):
 	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
 		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 		sl_win.send_keystrokes('%e')
+		sleep(0.02)
 		sl_win.send_keystrokes('v')
 		find_window = self.win32['Find']
 		find_window.InCollectionComboBox.select(collection)

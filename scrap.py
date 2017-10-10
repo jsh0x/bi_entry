@@ -20,8 +20,9 @@ log = logging
 reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
 
 def Scrap(app: Application, units: List[Unit]):
+	completed_units = []
+	global_units = []
 	try:
-		completed_units = []
 		pywinauto.timings.Timings.Fast()
 		log.debug(f"Starting Scrap script with units: {', '.join(unit.serial_number_prefix+unit.serial_number for unit in units)}")
 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
@@ -69,7 +70,6 @@ def Scrap(app: Application, units: List[Unit]):
 				unit_dict[unit.whole_build][unit.location] = []
 			unit_dict[unit.whole_build][unit.location].append(unit)
 			unit.start()
-		units_master = []
 		max_qty = 9999999
 		for build, v in unit_dict.items():
 			app.verify_form('Miscellaneous Issue')
@@ -81,7 +81,7 @@ def Scrap(app: Application, units: List[Unit]):
 				app.verify_form('Miscellaneous Issue')
 				if location.lower() == 'out of inventory':
 					for unit in units:
-						units_master.append(unit)
+						global_units.append(unit)
 					continue
 				operator = sql.execute(f"SELECT operator, COUNT(operator) AS count FROM scrap WHERE {' OR '.join([f'id = {x.id}' for x in units])} GROUP BY operator ORDER BY count DESC")
 				op = ''.join([x[0].upper() for x in mssql.execute(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{operator[0].strip()}'")])
@@ -115,7 +115,7 @@ def Scrap(app: Application, units: List[Unit]):
 					cell = sl_win.get_focus()
 					cell.send_keystrokes('{SPACE}')
 					unit.misc_issue_time += unit.misc_issue_timer.stop()
-					units_master.append(unit)
+					global_units.append(unit)
 				sl_win.SelectedQtyEdit.wait('ready', 2, 0.09)
 				text1, text2, text3 = [x.strip() for x in (sl_win.SelectedQtyEdit.texts()[0], sl_win.TargetQtyEdit.texts()[0], sl_win.RangeQtyEdit.texts()[0])]
 				if text1 == text2:
@@ -136,7 +136,7 @@ def Scrap(app: Application, units: List[Unit]):
 				sl_win.LocationEdit.wait('visible', 2, 0.09)
 		app.change_form('Units')
 		sl_win.UnitEdit.wait('ready', 2, 0.09)
-		for unit in units_master:
+		for unit in global_units:
 			app.verify_form('Units')
 			sl_win.UnitEdit.set_text(unit.serial_number_prefix + unit.serial_number)
 			sl_win.UnitEdit.send_keystrokes('{F4}')  # Filter in Place
@@ -206,28 +206,53 @@ def Scrap(app: Application, units: List[Unit]):
 				common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 				reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 				reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
-				last_row_i = len(reason_rows) - 1
-				last_row2 = reason_rows[last_row_i - 1]
+				full_row = None
+				empty_row_i = len(reason_rows) - 1
+				partial = False
+				for i, row in enumerate(reason_rows[::-1]):
+					if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None, None}:
+						empty_row_i = len(reason_rows) - (i + 1)
+						partial = False
+					elif {row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None}:
+						empty_row_i = len(reason_rows) - (i + 1)
+						partial = True
+						full_row = row
+					else:
+						if full_row is None:
+							full_row = row
+						break
 				top_row_i = reason_grid.children_texts().index('Top Row')
 				top_row = reason_grid.children()[top_row_i]
-				last_row = uia_controls.ListViewWrapper(reason_grid.children()[last_row_i + top_row_i + 1].element_info)
+				open_row = uia_controls.ListViewWrapper(reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
 
-				gen_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Reason')).element_info)
+				gen_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Reason')).element_info)
 				gen_resn_i = gen_resn.rectangle()
 				c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
-				# pag.click(*c_coords)
-				q = []
-				q.append((c_coords, str(last_row2.General_Reason)))
-				spec_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Reason')).element_info)
+
+				spec_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
 				spec_resn_i = spec_resn.rectangle()
+
+				gen_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Resolution')).element_info)
+				gen_reso_i = gen_reso.rectangle()
+
+				spec_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
+				spec_reso_i = spec_reso.rectangle()
+
+				pag.click(*c_coords)
+				dlg = app.get_popup()
+				while dlg:
+					log.debug(f"Operations Reason Grid dialog text: '{dlg.Text}'")
+					dlg[0].close()
+					dlg = app.get_popup()
+				q = []
+				if not partial:
+					q.append((c_coords, str(full_row.General_Reason)))
 				c_coords = center(x1=spec_resn_i.left, y1=spec_resn_i.top, x2=spec_resn_i.right, y2=spec_resn_i.bottom)
 				q.append((c_coords, str(unit.specific_reason)))
-				gen_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Resolution')).element_info)
-				gen_reso_i = gen_reso.rectangle()
+
 				c_coords = center(x1=gen_reso_i.left, y1=gen_reso_i.top, x2=gen_reso_i.right, y2=gen_reso_i.bottom)
 				q.append((c_coords, str(unit.general_resolution)))
-				spec_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
-				spec_reso_i = spec_reso.rectangle()
+
 				c_coords = center(x1=spec_reso_i.left, y1=spec_reso_i.top, x2=spec_reso_i.right, y2=spec_reso_i.bottom)
 				q.append((c_coords, str(unit.specific_resolution)))
 				for coord, num in q:
@@ -278,12 +303,12 @@ def Scrap(app: Application, units: List[Unit]):
 			sl_uia.CancelCloseButton.click()
 			sl_win.send_keystrokes('{F4}')
 			sl_win.send_keystrokes('{F5}')
-			unit.complete()
+			unit.complete(batch_amt=len(global_units))
 			completed_units.append(unit)
 	except Exception as ex:
 		log.exception("SOMETHING HAPPENED!!!")
-		for x in units:
+		for x in global_units:
 			if x in completed_units:
 				continue
-			x.skip(batch_amt=len(units))
+			x.skip(batch_amt=len(global_units))
 

@@ -9,7 +9,7 @@ from exceptions import *
 def main():
 	from transact import Transact
 	from scrap import Scrap
-	from reason import reason
+	from reason import Reason
 	from common import Application, Unit, parse_numeric_ranges
 	from sql import MS_SQL
 	from crypt import decrypt
@@ -118,12 +118,17 @@ def main():
 					if result2:
 						result = result2
 						process = 'Scrap'
+				elif 'reason' in proc.lower():
+					result2 = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
+					if result2:
+						result = result2
+						process = 'Reason'
 				if result is None:
 					log.info("No valid results, waiting...")
 					sleep(10)
 					continue
 				try:
-					if 'Queued' in process:
+					if 'queued' in process.lower():
 						all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
 						                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)' OR"
 						                            f" [Status] = 'Custom(Queued)' OR [Status] = 'No Open SRO(Custom(Queued))' OR [Status] = 'Skipped(Custom(Queued))')", fetchall=True)
@@ -162,6 +167,8 @@ def main():
 									mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
 								continue
 						units = list({unit.operation: unit for unit in [Unit(mssql, slsql, x) for x in all_results]}.values())
+					elif 'reason' in process.lower():
+						units = [Unit(mssql, slsql, result)]
 					else:
 						units = [Unit(mssql, slsql, x) for x in result]
 					log.debug(f"Unit group created: {units}")
@@ -175,8 +182,12 @@ def main():
 					log.exception("No Open SRO Error!")
 					mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})({ex.sro})' WHERE [Serial Number] = '{result.Serial_Number}'")
 					continue
+				except InvalidReasonCodeError as ex:
+					log.exception("Invalid Reason Code Error!")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}'")
+					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
-				script_dict = {'Queued': Transact, 'Reason': reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
+				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
 				script_dict.get(process, lambda x,y: None)(app, units)
 				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 

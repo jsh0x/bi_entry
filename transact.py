@@ -245,7 +245,6 @@ def Transact(app: Application, units: List[Unit]):
 					log.debug("Saved")
 					sl_win.set_focus()
 					sl_win.PostBatchButton.click()
-					# dlg = app.get_popup(wait_seconds)
 					dlg = app.get_popup(4)
 					error = None
 					while dlg:
