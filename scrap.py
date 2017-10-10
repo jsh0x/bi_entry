@@ -32,7 +32,8 @@ def Scrap(app: Application, units: List[Unit]):
 				unit.reset()
 			sys.exit(1)
 		log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-		app.open_form('Units', 'Miscellaneous Issue')
+		app.verify_form('Units')
+		app.verify_form('Miscellaneous Issue')
 		# Sort Units by build and location, and order by serial number ascending
 
 		_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
@@ -134,6 +135,9 @@ def Scrap(app: Application, units: List[Unit]):
 					dlg[0].OKButton.click()
 					dlg[0].wait_not('exists', 2, 0.09)
 				sl_win.LocationEdit.wait('visible', 2, 0.09)
+		# reset_units = set(units) - set(global_units)
+		# for unit in reset_units:
+		# 	unit.reset()
 		app.change_form('Units')
 		sl_win.UnitEdit.wait('ready', 2, 0.09)
 		for unit in global_units:
@@ -303,7 +307,6 @@ def Scrap(app: Application, units: List[Unit]):
 			sl_uia.CancelCloseButton.click()
 			sl_win.send_keystrokes('{F4}')
 			sl_win.send_keystrokes('{F5}')
-			unit.complete(batch_amt=len(global_units))
 			completed_units.append(unit)
 	except Exception as ex:
 		log.exception("SOMETHING HAPPENED!!!")
@@ -311,4 +314,7 @@ def Scrap(app: Application, units: List[Unit]):
 			if x in completed_units:
 				continue
 			x.skip(batch_amt=len(global_units))
-
+	finally:
+		for x in completed_units:
+			log.info(f"Unit: {x.serial_number_prefix+x.serial_number} completed")
+			x.complete(batch_amt=len(global_units))
