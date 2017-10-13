@@ -46,6 +46,7 @@ class NoOpenSROError(BI_EntryError):
 		self.serial_number = serial_number
 		self.sro = sro
 
+
 class InvalidSerialNumberError(BI_EntryError, ValueError):
 	def __init__(self, serial_number: str, msg=""):
 		msg2 = f"'{serial_number}' is not a valid serial number"
@@ -68,10 +69,11 @@ class InvalidPartNumberError(BI_EntryError, ValueError):
 
 
 class InvalidReasonCodeError(BI_EntryError, ValueError):
-	def __init__(self, reason_code: str, msg=""):
+	def __init__(self, reason_code: str, spec_id: str, msg=""):
 		msg2 = f"'{reason_code}' is not a valid reason code"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
 		self.reason_code = reason_code
+		self.spec_id = spec_id
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 

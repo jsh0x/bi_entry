@@ -41,7 +41,8 @@ class _SQL:
 	def execute(self, command, fetchall: bool=None):
 		c = self._conn.cursor()
 		if command.upper().startswith('SELECT'):
-			log.debug(f"Executing SQL query: '{command}'")
+			if not self.quiet:
+				log.debug(f"Executing SQL query: '{command}'")
 			c.execute(command)
 			if self.method == 'MS':
 				SQL_Results = NamedTuple('SQL_Results', [(x[0].replace(' ', '_'), type_codes[x[1]]) for x in c.description])
@@ -51,7 +52,8 @@ class _SQL:
 					results = c.fetchone()
 					if results is not None:
 						results = SQL_Results(*[adapt_type(y) for y in results])
-				log.debug(f"SQL query successful, value(s) returned: {results}")
+				if not self.quiet:
+					log.debug(f"SQL query successful, value(s) returned: {results}")
 			else:
 				SQL_Results = namedtuple('SQL_Results', [x[0].replace(' ', '_') for x in c.description])
 				if fetchall:
@@ -60,26 +62,31 @@ class _SQL:
 					results = c.fetchone()
 					if results is not None:
 						results = SQL_Results(*[y for y in results])
-				log.debug(f"SQL query successful, value(s) returned: {results}")
+				if not self.quiet:
+					log.debug(f"SQL query successful, value(s) returned: {results}")
 			return results
 		elif 'DELETE' in command.upper():
-			log.debug(f"Executing SQL transaction: '{command}'")
-			log.info(f"Executing SQL transaction: '{command}'")
+			if not self.quiet:
+				log.debug(f"Executing SQL transaction: '{command}'")
+				log.info(f"Executing SQL transaction: '{command}'")
 			c.execute(command)
 			self._conn.commit()
-			log.debug("SQL transaction successful")
-			log.info("SQL transaction successful")
+			if not self.quiet:
+				log.debug("SQL transaction successful")
+				log.info("SQL transaction successful")
 			return None
 		else:
-			log.debug(f"Executing SQL transaction: '{command}'")
+			if not self.quiet:
+				log.debug(f"Executing SQL transaction: '{command}'")
 			c.execute(command)
 			self._conn.commit()
-			log.debug("SQL transaction successful")
+			if not self.quiet:
+				log.debug("SQL transaction successful")
 			return None
 
 
 class MS_SQL(_SQL):
-	def __init__(self, address: str, username: str, password: str, database: str):
+	def __init__(self, address: str, username: str, password: str, database: str, quiet: bool=False):
 		try:
 			conn = pymssql.connect(server=address, user=username, password=password, database=database, login_timeout=10)
 		except Exception:
@@ -87,10 +94,11 @@ class MS_SQL(_SQL):
 		else:
 			self._conn = conn
 			self.method = 'MS'
+			self.quiet = quiet
 
 
 class SQL_Lite(_SQL):
-	def __init__(self, database: str, detect_types: int=0):
+	def __init__(self, database: str, detect_types: int=0, quiet: bool=False):
 		try:
 			conn = sqlite3.connect(database=database, detect_types=detect_types)
 		except Exception:
@@ -98,3 +106,4 @@ class SQL_Lite(_SQL):
 		else:
 			self._conn = conn
 			self.method = 'LITE'
+			self.quiet = quiet

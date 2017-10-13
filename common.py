@@ -180,14 +180,16 @@ class Unit:
 		self.specific_reason = 20
 		self.general_resolution = 10000
 		self.specific_resolution = 100
-		try:
-			if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
-				self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
-				if 'scrap' in self._status.lower():
-					self.specific_resolution_name = self._status.upper()
-				self.general_resolution_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
-		except TypeError as ex:
-			raise InvalidReasonCodeError(reason_code=str(self.notes), msg=str(ex))
+		if 'queued' not in self._status.lower():
+			try:
+				if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
+					self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
+					if 'scrap' in self._status.lower():
+						self.specific_resolution_name = self._status.upper()
+					self.general_resolution_name = mssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
+			except TypeError as ex:
+				raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.id), msg=str(ex))
+				# TODO: For HG, allow Invalid Reason Codes, just enter in operator initials
 		if self._status.lower() != 'scrap':
 			self.start()
 

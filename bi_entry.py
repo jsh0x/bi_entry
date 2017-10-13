@@ -128,10 +128,13 @@ def main():
 					sleep(10)
 					continue
 				try:
-					if 'queued' in process.lower():
-						all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
-						                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)' OR"
-						                            f" [Status] = 'Custom(Queued)' OR [Status] = 'No Open SRO(Custom(Queued))' OR [Status] = 'Skipped(Custom(Queued))')", fetchall=True)
+					if 'queued' in process.lower() or 'reason' in process.lower():
+						if 'queued' in process.lower():
+							all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
+							                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)')", fetchall=True)
+						elif 'reason' in process.lower():
+							all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
+							                            f"([Status] = 'Reason' OR [Status] = 'No Open SRO(Reason)' OR [Status] = 'Skipped(Reason)')", fetchall=True)
 						counter = {'SRO': 0, 'OSRO': 0, 'Skip': 0, 'C_SRO': 0, 'C_OSRO': 0, 'C_Skip': 0}
 						for res in all_results:
 							if 'Custom' in res.Status:
@@ -166,9 +169,10 @@ def main():
 									log.exception(f"Other entries with skipped status exist for serial number: {result.Serial_Number}")
 									mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
 								continue
-						units = list({unit.operation: unit for unit in [Unit(mssql, slsql, x) for x in all_results]}.values())
-					elif 'reason' in process.lower():
-						units = [Unit(mssql, slsql, result)]
+						if 'queued' in process.lower():
+							units = list({unit.operation: unit for unit in [Unit(mssql, slsql, x) for x in all_results]}.values())  # Removes and duplicate operations
+						elif 'reason' in process.lower():
+							units = [Unit(mssql, slsql, x) for x in all_results]
 					else:
 						units = [Unit(mssql, slsql, x) for x in result]
 					log.debug(f"Unit group created: {units}")
@@ -184,13 +188,12 @@ def main():
 					continue
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
-					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}'")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {ex.spec_id}")
 					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
 				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
 				script_dict.get(process, lambda x,y: None)(app, units)
 				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
-
 
 if __name__ == '__main__':
 	main()
