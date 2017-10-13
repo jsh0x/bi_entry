@@ -2,6 +2,7 @@ import datetime
 import logging.config
 import configparser
 from random import randint
+import random
 from time import sleep
 from exceptions import *
 
@@ -44,7 +45,9 @@ def main():
 	inactive_days = total_days - active_days
 	inactive_hours = total_hours - active_hours
 	# Switch between Reason, Scrap, and Transaction
+	current_hour = datetime.datetime.now().hour
 	while True:  # Core Loop
+		old_current_hour = current_hour
 		current_weekday = int(format(datetime.datetime.now(), '%w'))
 		current_hour = datetime.datetime.now().hour
 		if (current_weekday in inactive_days) or (current_hour in inactive_hours):
@@ -53,6 +56,26 @@ def main():
 			sleep(60)
 			continue
 		elif (current_weekday in active_days) and (current_hour in active_hours):
+			if old_current_hour != current_hour:
+				version = config.get('DEFAULT', 'version')
+				offset = mssql.execute(f"SELECT TOP 1 [Total Time] FROM [Statistics] WHERE [Version] = '{version}' ORDER BY [Total Time] DESC")
+				if offset is None:
+					offset = 5
+				else:
+					offset = (offset.Total_Time // 60) + 2
+				while datetime.datetime.now().minute < offset:
+					pass
+				else:
+					choice = random.choice(range(2, 10, 2))
+					random.seed(usr)
+					for i in range(choice):
+						random.randint(1, 20)
+					else:
+						sleep(random.randint(1, 20)/(choice * 2))
+					mssql.execute("UPDATE PyComm SET [Status] = 'Queued' WHERE [Status] = 'Started(Queued)'")
+					mssql.execute("UPDATE PyComm SET [Status] = 'Scrap' WHERE [Status] = 'Started(Scrap)'")
+					mssql.execute("UPDATE PyComm SET [Status] = 'Reason' WHERE [Status] = 'Started(Reason)'")
+					sleep(5)
 			if not app.logged_in:
 				app.log_in(usr, pwd)
 				"""try:
@@ -105,29 +128,26 @@ def main():
 				table = 'PyComm' if int(tbl_mod) else 'PyComm2'  # if table == 1: PyComm, else: PyComm2
 				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
 				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
-				result = mssql.execute(f"SELECT TOP 1 p.* FROM {table} p "
-				                       f"LEFT JOIN {table} p2 "
-				                       f"ON p.[Serial Number] = p2.[Serial Number] AND p.Id < p2.Id "
-				                       f" WHERE p2.Id is null AND "
-				                       f"p.[DateTime] <= DATEADD(MINUTE, -5, GETDATE()) AND "
-				                       f"(p.[Status] = 'Queued' OR p.[Status] = 'Custom(Queued)') ORDER BY p.[DateTime] {flow}")
-				if result:
-					process = result.Status
 				if 'scrap' in proc.lower():
-					result2 = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
-					if result2:
-						result = result2
-						process = 'Scrap'
+					process = 'Scrap'
+					result = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
 				elif 'reason' in proc.lower():
-					result2 = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
-					if result2:
-						result = result2
-						process = 'Reason'
-				if result is None:
+					process = 'Reason'
+					result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
+
+				else:
+					result = mssql.execute(f"SELECT TOP 1 * From PyComm "
+					                       f"WHERE [Status] = 'Queued' "
+					                       f"AND [DateTime] <= DATEADD(MINUTE, -5, GETDATE()) "
+					                       f"ORDER BY [DateTime] {flow}")
+					if result:
+						process = result.Status
+				if not result:
 					log.info("No valid results, waiting...")
 					sleep(10)
 					continue
 				try:
+					log.debug(f"Current process: {process}")
 					if 'queued' in process.lower() or 'reason' in process.lower():
 						if 'queued' in process.lower():
 							all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
