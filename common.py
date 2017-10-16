@@ -42,21 +42,25 @@ Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str)
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 class Part:
 	def __init__(self, sql: MS_SQL, part_number: str, quantity: int=1, spec_build: str=None):
-		self.part_number = part_number
-		"""# FOR 206's:
-			;With t as 
-			(Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = '206'
-			Union All
-			Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = 'All')
-			Select distinct * from t"""
-		if spec_build:
-			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
-			 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
-			 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+		if '-' in part_number:
+			self.part_number = part_number
+			"""# FOR 206's:
+				;With t as 
+				(Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = '206'
+				Union All
+				Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = 'All')
+				Select distinct * from t"""
+			if spec_build:
+				_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
+				 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'")\
+				 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+			else:
+				_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
+				 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
+				 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		else:
-			_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
-			 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
-			 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+			_data = sql.execute(f"SELECT [PartNum],[Qty],[DispName],[Location],[PartName] FROM Parts WHERE [ID] = {self.part_number}")
+			self.part_number = _data.PartNum
 		self.quantity = quantity * _data.Qty
 		self.display_name = _data.DispName
 		self.part_name = _data.PartName

@@ -94,6 +94,19 @@ def Reason(app: Application, units: List[Unit]):
 					done = True
 					break
 			if not done:
+				if len(reason_rows) >= 6:
+					top_row_temp = reason_grid.children()[reason_grid.children_texts().index('Top Row')]
+					open_row_temp = uia_controls.ListViewWrapper(reason_grid.children()[reason_grid.children_texts().index('Top Row') + 7].element_info)
+					gen_resn_temp = uia_controls.ListItemWrapper(open_row_temp.item(top_row_temp.children_texts().index('General Reason')).element_info)
+					gen_resn_temp_i = gen_resn_temp.rectangle()
+					c_coords = center(x1=gen_resn_temp_i.left, y1=gen_resn_temp_i.top, x2=gen_resn_temp_i.right, y2=gen_resn_temp_i.bottom)
+					pag.click(*c_coords)
+					log.debug("CLICKED")
+					pag.scroll(-(10*(len(reason_rows)//6)))
+					log.debug("SCROLLED")
+					reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
+					reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
+
 				full_row = None
 				empty_row_i = len(reason_rows) - 1
 				partial = False
