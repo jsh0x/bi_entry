@@ -59,7 +59,7 @@ class Part:
 				 if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'")\
 				 else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		else:
-			_data = sql.execute(f"SELECT [PartNum],[Qty],[DispName],[Location],[PartName] FROM Parts WHERE [ID] = {self.part_number}")
+			_data = sql.execute(f"SELECT [PartNum],[Qty],[DispName],[Location],[PartName] FROM Parts WHERE [ID] = {part_number}")
 			self.part_number = _data.PartNum
 		self.quantity = quantity * _data.Qty
 		self.display_name = _data.DispName
