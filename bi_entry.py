@@ -208,7 +208,7 @@ def main():
 					continue
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
-					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {ex.spec_id}")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
 					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
 				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}

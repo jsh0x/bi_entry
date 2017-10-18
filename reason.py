@@ -11,7 +11,7 @@ from pywinauto.controls import uia_controls, win32_controls, common_controls
 from exceptions import *
 from common import timer, access_grid, Application, Unit, center
 from constants import SYTELINE_WINDOW_TITLE
-
+pag.FAILSAFE = False
 
 logging.config.fileConfig('config.ini')
 log = logging
@@ -96,7 +96,10 @@ def Reason(app: Application, units: List[Unit]):
 			if not done:
 				if len(reason_rows) >= 6:
 					top_row_temp = reason_grid.children()[reason_grid.children_texts().index('Top Row')]
-					open_row_temp = uia_controls.ListViewWrapper(reason_grid.children()[reason_grid.children_texts().index('Top Row') + 7].element_info)
+					try:
+						open_row_temp = uia_controls.ListViewWrapper(reason_grid.children()[reason_grid.children_texts().index('Top Row') + 7].element_info)
+					except IndexError:
+						open_row_temp = uia_controls.ListViewWrapper(reason_grid.children()[reason_grid.children_texts().index('Top Row') + 6].element_info)
 					gen_resn_temp = uia_controls.ListItemWrapper(open_row_temp.item(top_row_temp.children_texts().index('General Reason')).element_info)
 					gen_resn_temp_i = gen_resn_temp.rectangle()
 					c_coords = center(x1=gen_resn_temp_i.left, y1=gen_resn_temp_i.top, x2=gen_resn_temp_i.right, y2=gen_resn_temp_i.bottom)
