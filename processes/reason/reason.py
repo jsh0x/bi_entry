@@ -126,6 +126,7 @@ def Reason(app: Application, units: List[Unit]):
 						break
 				top_row_i = reason_grid.children_texts().index('Top Row')
 				top_row = reason_grid.children()[top_row_i]
+				first_row = uia_controls.ListViewWrapper(reason_grid.children()[top_row_i + 1].element_info)
 				open_row = uia_controls.ListViewWrapper(reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
 
 				gen_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Reason')).element_info)
@@ -164,6 +165,13 @@ def Reason(app: Application, units: List[Unit]):
 					pag.typewrite(str(num))
 					sleep(0.5)
 				pag.hotkey('ctrl', 's')
+				if len(reason_rows) >= 6:
+					pag.click(*coord)
+					pag.scroll(10 * (len(reason_rows) // 6))
+				gen_resn = uia_controls.ListItemWrapper(first_row.item(top_row.children_texts().index('General Reason')).element_info)
+				gen_resn_i = gen_resn.rectangle()
+				c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
+				pag.click(*c_coords)
 				if int(sub_unit.general_resolution) == 10000 and int(sub_unit.specific_resolution) == 100:
 					if sl_win.ReasonNotesEdit.texts()[0].strip():
 						sl_win.ReasonNotesEdit.set_text(sl_win.ReasonNotesEdit.texts()[0].strip() +

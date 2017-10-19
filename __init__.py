@@ -3,7 +3,6 @@ __author__ = 'jsh0x'
 __version__ = '1.3.4'
 
 import configparser
-import logging.handlers
 import os
 import pathlib
 import struct
@@ -17,41 +16,8 @@ from typing import Sequence, Union
 from win32com.client import Dispatch
 
 
-logging.config.fileConfig('config.ini')
-
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
-
-# class OneLineExceptionFormatter(logging.Formatter):
-#     def formatException(self, exc_info):
-#         """
-#         Format an exception so that it prints on a single line.
-#         """
-#         result = super(OneLineExceptionFormatter, self).formatException(exc_info)
-#         return repr(result)  # or format into one line however you want to
-#
-#     def format(self, record):
-#         s = super(OneLineExceptionFormatter, self).format(record)
-#         if record.exc_text:
-#             s = s.replace('\n', '') + '|'
-#         return s
-#
-# def configure_logging():
-#     fh = logging.FileHandler('output.txt', 'w')
-#     f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
-#                                   '%d/%m/%Y %H:%M:%S')
-#     fh.setFormatter(f)
-#     root = logging.getLogger()
-#     root.setLevel(logging.DEBUG)
-#     root.addHandler(fh)
-#
-# def main():
-#     configure_logging()
-#     logging.info('Sample message')
-#     try:
-#         x = 1 / 0
-#     except ZeroDivisionError as e:
-#         logging.exception('ZeroDivisionError: %s', e)
 
 FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
@@ -96,20 +62,6 @@ def update_config():
 	remove('config.ini')
 	# Move new file
 	move(abs_path, 'config.ini')
-
-# def get_outdated_modules(pip_dir) -> dict:
-# 	retval = {}
-# 	mods = str(subprocess.Popen([pip_dir, 'list', '--format=legacy', '--outdated'], stdout=subprocess.PIPE).communicate()[0])
-# 	mods = (mods.split("'")[1]).split('\\r\\n')
-# 	for mod in mods:
-# 		try:
-# 			mod = mod.split(' ')
-# 			name, old, new = mod[0], (mod[1].rstrip(')')).lstrip('('), mod[4]
-# 			retval[name] = (old, new)
-# 		except:
-# 			continue
-# 	return retval
-
 
 def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
 	fp = find_file('WinStudio.exe') if fp is None else fp

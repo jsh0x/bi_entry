@@ -324,39 +324,17 @@ def Transact(app: Application, units: List[Unit]):
 		common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 		if has_qc:
 			reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
-			reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
-			full_row = None
-			empty_row_i = len(reason_rows) - 1
-			partial = False
-			for i, row in enumerate(reason_rows[::-1]):
-				if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None, None}:
-					empty_row_i = len(reason_rows) - (i + 1)
-					partial = False
-				elif {row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None}:
-					empty_row_i = len(reason_rows) - (i + 1)
-					partial = True
-					full_row = row
-				else:
-					if full_row is None:
-						full_row = row
-					break
+			reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'], requirement='General Reason')
+			last_row_i = len(reason_rows)-1
+			last_row2 = reason_rows[last_row_i]
 			top_row_i = reason_grid.children_texts().index('Top Row')
 			top_row = reason_grid.children()[top_row_i]
-			open_row = uia_controls.ListViewWrapper(reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
+			last_row = uia_controls.ListViewWrapper(reason_grid.children()[last_row_i+top_row_i+1].element_info)
 
-			gen_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Reason')).element_info)
+			gen_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Reason')).element_info)
 			gen_resn_i = gen_resn.rectangle()
+			# sl_win.set_focus()
 			c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
-
-			spec_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
-			spec_resn_i = spec_resn.rectangle()
-
-			gen_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Resolution')).element_info)
-			gen_reso_i = gen_reso.rectangle()
-
-			spec_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
-			spec_reso_i = spec_reso.rectangle()
-
 			pag.click(*c_coords)
 			dlg = app.get_popup()
 			while dlg:
@@ -364,22 +342,31 @@ def Transact(app: Application, units: List[Unit]):
 				dlg[0].close()
 				dlg = app.get_popup()
 			q = []
-			if not partial:
-				q.append((c_coords, str(full_row.General_Reason)))
-			c_coords = center(x1=spec_resn_i.left, y1=spec_resn_i.top, x2=spec_resn_i.right, y2=spec_resn_i.bottom)
-			q.append((c_coords, str(unit.specific_reason)))
-
-			c_coords = center(x1=gen_reso_i.left, y1=gen_reso_i.top, x2=gen_reso_i.right, y2=gen_reso_i.bottom)
-			q.append((c_coords, str(unit.general_resolution)))
-
-			c_coords = center(x1=spec_reso_i.left, y1=spec_reso_i.top, x2=spec_reso_i.right, y2=spec_reso_i.bottom)
-			q.append((c_coords, str(unit.specific_resolution)))
-			for coord, num in q:
+			# if last_row2.General_Reason is None:
+			# 	q.append((c_coords, '1000'))
+			if last_row2.Specific_Reason is None:
+				spec_resn = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Reason')).element_info)
+				spec_resn_i = spec_resn.rectangle()
+				# sl_win.set_focus()
+				c_coords = center(x1=spec_resn_i.left, y1=spec_resn_i.top, x2=spec_resn_i.right, y2=spec_resn_i.bottom)
+				q.append((c_coords, '20'))
+			if last_row2.General_Resolution is None:
+				gen_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('General Resolution')).element_info)
+				gen_reso_i = gen_reso.rectangle()
+				# sl_win.set_focus()
+				c_coords = center(x1=gen_reso_i.left, y1=gen_reso_i.top, x2=gen_reso_i.right, y2=gen_reso_i.bottom)
+				q.append((c_coords, '10000'))
+			if last_row2.Specific_Resolution is None:
+				spec_reso = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
+				spec_reso_i = spec_reso.rectangle()
+				# sl_win.set_focus()
+				c_coords = center(x1=spec_reso_i.left, y1=spec_reso_i.top, x2=spec_reso_i.right, y2=spec_reso_i.bottom)
+				q.append((c_coords, '100'))
+			for coord,num in q:
 				pag.click(*coord)
 				sleep(0.5)
 				pag.typewrite(str(num))
 				sleep(0.5)
-			pag.hotkey('ctrl', 's')
 			resn_notes = sl_win.ReasonNotesEdit
 			resn_notes.click_input()
 			pag.press('end', 30)

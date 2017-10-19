@@ -373,130 +373,42 @@ class Unit:
 	def product(self, value):
 		self._product = value
 
-class Unit_ALT:
-	def __init__(self, msssql, slsql, sn: str):
-		self.SKIPME = False
-		self._msssql = msssql
-		self._slsql = slsql
-		self.serial_number = sn
-		self._serial_number_prefix = self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
-		sn1 = sn2 = f"{self.serial_number_prefix}{self.serial_number}"
-		if self.serial_number_prefix == 'BE':
-			sn2 = f"ACB{self.serial_number}"
-		build_data = self._slsql.execute("Select top 1 * from ("
-		                                 "select ser_num, item, "
-		                                 "Case when loc is null then 'Out of Inventory' "
-		                                 "else loc "
-		                                 "end as [Inv_Stat], whse "
-		                                 f"from serial (nolock) where ser_num = '{sn1}' "
-		                                 "Union All "
-		                                 "select ser_num, item, "
-		                                 "Case when loc is null then 'Out of Inventory' "
-		                                 "else loc "
-		                                 "end as [Inv_Stat], whse "
-		                                 f"from serial (nolock) where ser_num = '{sn2}') t")
-		if build_data is None:
-			self.SKIPME = True
-		else:
-			gc, item, loc, whse = build_data
-			if gc.upper().startswith('BE'):
-				self.serial_number_prefix = 'BE'
-			elif gc.upper().startswith('ACB'):
-				self.serial_number_prefix = 'ACB'
-			self.update_sl_data()
-		if self.sl_data is None:
-			self.SKIPME = True
-		elif self.SRO_Line_status == 'Closed':
-			self.SKIPME = True
-		elif self.SRO_Operations_status == 'Closed':
-			self.SKIPME = True
-
-	def update_sl_data(self):
-		try:
-			self.sro_num, self.sro_line, self.eff_date, self.SRO_Operations_status, self.SRO_Line_status = self.sl_data
-		except TypeError as ex:
-			if re.search(r"NoneType.*not iterable", str(exc_info()[1])) is None:
-				raise ex
-
-	@property
-	def sl_data(self) -> NamedTuple:
-		return self._slsql.execute("Select TOP 1 s.sro_num, l.sro_line, c.eff_date as 'Eff Date', "
-		                           "Case when o.stat = 'C' then 'Closed' else 'Open' end as [SRO Operation Status], "
-		                           "Case when l.stat = 'C' then 'Closed' else 'Open' end as [SRO Line Status] "
-		                           "From fs_sro s (nolock) "
-		                           "Inner join fs_sro_line l (nolock) "
-		                           "on s.sro_num = l.sro_num "
-		                           "Inner join fs_unit_cons c (nolock) "
-		                           "on l.ser_num = c.ser_num "
-		                           "Inner join fs_sro_oper o (nolock) "
-		                           "on l.sro_num = o.sro_num and l.sro_line = o.sro_line "
-		                           "Left join fs_unit_cons c2 (nolock) "
-		                           "on c.ser_num = c2.ser_num and c.eff_date < c2.eff_date "
-		                           "Where c2.eff_date IS NULL AND "
-		                           f"l.ser_num = '{self.serial_number_prefix+self.serial_number}' "
-		                           "Order by s.open_date DESC")
-
-	def get_serial_build(self) -> NamedTuple:
-		return self._slsql.execute("Select top 1 * from "
-		                           "(Select ser_num, item from serial "
-		                           f"(nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}' "
-		                           "Union All "
-		                           "Select ser_num, item from fs_unit "
-		                           f"(nolock) where ser_num = '{self.serial_number_prefix+self.serial_number}') t")
-
-	@property
-	def serial_number_prefix(self) -> str:
-		try:
-			if self._serial_number_prefix is None:
-				value = self._msssql.execute(
-						f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[0]
-			else:
-				value = self._serial_number_prefix
-		except Exception as ex:
-			raise ex
-		except (ValueError, KeyError, IndexError):
-			value = None
-		finally:
-			self._serial_number_prefix = value
-			return self._serial_number_prefix
-
-	@serial_number_prefix.setter
-	def serial_number_prefix(self, value: str):
-		self._serial_number_prefix = value
-
 class Application(psutil.Process):
 	# TODO: Make Simpleton?
-	def __init__(self, fp: Union[str, pathlib.Path], exclude: Union[int, Iterable[int]] = None):
-		if type(fp) is pathlib.Path:
-			fp = str(fp)
-		# TODO: Improve catching already open and available application instances
-		if is_running(fp, exclude):
-			super().__init__(process_pid(fp, exclude))
-		else:
-			super().__init__(psutil.Popen(fp).pid)
-		self.fp = fp
+	def __init__(self):
 		self.nice(psutil.HIGH_PRIORITY_CLASS)
 		self.win32 = pwn.Application(backend='win32').connect(process=self.pid)
 		self.uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self._user = None
 		self.logged_in = False
 
-	def log_in(self, usr: str, pwd: str):
+	@classmethod
+	def start(cls, fp: Union[str, pathlib.Path]):
+		super().__init__(psutil.Popen(str(fp)).pid)
+		return cls()
+
+	@classmethod
+	def connect(cls, fp: Union[str, pathlib.Path], exclude: Union[int, Iterable[int]] = None):
+		super().__init__(process_pid(str(fp), exclude))
+		return cls()
+
+	def log_in(self) -> bool:
 		if not self.logged_in and self.win32.SignIn.exists(10, 0.09):
 			log.info("SyteLine not logged in, starting login procedure")
-			self.win32.SignIn.UserLoginEdit.set_text(usr)
-			self.win32.SignIn.PasswordEdit.set_text(pwd)
+			self.win32.SignIn.UserLoginEdit.set_text(username)
+			self.win32.SignIn.PasswordEdit.set_text(password)
 			self.win32.SignIn.set_focus()
 			self.win32.SignIn.OKButton.click()
 			if not self.win32.SignIn.exists(10, 0.09):
 				self.win32.window(title_re=SYTELINE_WINDOW_TITLE).wait('ready', 2, 0.09)
 				self.logged_in = True
-				log.info(f"Successfully logged in as '{usr}'")
+				log.info(f"Successfully logged in as '{username}'")
 				sleep(4)
+				return True
 			else:
-				log.warning(f"Login attempt as '{usr}' unsuccessful")
+				log.warning(f"Login attempt as '{username}' unsuccessful")
+		return False
 
-	def log_out(self):
+	def log_out(self) -> bool:
 		if self.logged_in and self.uia.window(title_re=SYTELINE_WINDOW_TITLE).exists(10, 0.09):
 			log.info("SyteLine logged in, starting logout procedure")
 			sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
@@ -510,8 +422,10 @@ class Application(psutil.Process):
 				self.logged_in = False
 				log.info(f"Successfully logged out")
 				sleep(4)
+				return True
 			else:
 				log.warning(f"Logout attempt unsuccessful")
+		return False
 
 	def check_login_status(self) -> bool:
 		if self.win32.SignIn.exists(10, 0.09):
@@ -579,21 +493,32 @@ class Application(psutil.Process):
 		return self.win32.handle
 
 	@property
-	def location(self):
+	def window_rect(self):
 		rect = win32gui.GetWindowRect(self.hwnd)
 		return int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
 
 	@property
 	def size(self):
-		x, y = self.location[2:]
-		w = self.location[2] - x
-		h = self.location[3] - y
+		x, y = self.window_rect[2:]
+		w = self.window_rect[2] - x
+		h = self.window_rect[3] - y
 		return w, h
+
+	@size.setter
+	def size(self, value):
+		w, h = value
+		x, y = self.location
+		win32gui.MoveWindow(self.hwnd, x, y, w, h, True)
+
+	@property
+	def location(self):
+		return self.window_rect[2:]
 
 	@location.setter
 	def location(self, value):
-
-
+		x, y = value
+		w, h = self.size
+		win32gui.MoveWindow(self.hwnd, x, y, w, h, True)
 
 	def get_focused_form(self) -> str:
 		"""0x100000  1048576  0b100000000000000000000  focusable
@@ -612,101 +537,6 @@ class Application(psutil.Process):
 			state = form.legacy_properties()['State']
 			bin_state = bin(state)
 			log.debug(f"Form State: {state}")
-			if int(bin_state[-5], base=2):  # If the fifth bit == 1
-				return name
-
-	def verify_form(self, name: str):
-		if name not in self.forms.keys():
-			self.open_form(name)
-		if name != self.get_focused_form():
-			self.change_form(name)
-
-	def get_popup(self, timeout=2) -> Dialog:
-		dlg = self.win32.window(class_name="#32770")
-		if dlg.exists(timeout, 0.09):
-			title = ''.join(text.strip() for text in dlg.texts())
-			text = ''.join(text.replace('\r\n\r\n', '\r\n').strip() for cls in dlg.children() if cls.friendly_class_name() == 'Static' for text in cls.texts())
-			buttons = {text.strip(punctuation + ' '): cls for cls in dlg.children() if cls.friendly_class_name() == 'Button' for text in cls.texts()}
-			return Dialog(dlg, title, text, buttons)
-		else:
-			return None
-
-class Application_ALT(psutil.Process):
-	def __init__(self, fp: Union[str, pathlib.Path], exclude: Union[int, Iterable[int]] = None):
-		if type(fp) is pathlib.Path:
-			fp = str(fp)
-		if is_running(fp, exclude):
-			super().__init__(process_pid(fp, exclude))
-		else:
-			super().__init__(psutil.Popen(fp).pid)
-		self.fp = fp
-		self.nice(psutil.HIGH_PRIORITY_CLASS)
-		self.win32 = pwn.Application(backend='win32').connect(process=self.pid)
-		self.uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self._user = None
-		self.logged_in = False
-
-	def log_in(self, usr: str, pwd: str):
-		if not self.logged_in and self.win32.SignIn.exists(10, 0.09):
-			self.win32.SignIn.UserLoginEdit.set_text(usr)
-			self.win32.SignIn.PasswordEdit.set_text(pwd)
-			self.win32.SignIn.set_focus()
-			self.win32.SignIn.OKButton.click()
-			if not self.win32.SignIn.exists(10, 0.09):
-				self.win32.window(title_re=SYTELINE_WINDOW_TITLE).wait('ready', 2, 0.09)
-				self.logged_in = True
-				sleep(4)
-
-	def open_form(self, *names):
-		open_forms = self.forms.keys()
-		for name in names:
-			if name in open_forms:
-				raise ValueError(f"Form '{name}' already open")
-			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
-			sl_win.send_keystrokes('^o')
-			self.win32.SelectForm.AllContainingEdit.set_text(name)
-			self.win32.SelectForm.set_focus()
-			self.win32.SelectForm.FilterButton.click()
-			common_controls.ListViewWrapper(self.win32.SelectForm.ListView).item(name).click()
-			self.win32.SelectForm.set_focus()
-			self.win32.SelectForm.OKButton.click()
-			sleep(4)
-
-	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
-		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
-		sl_win.send_keystrokes('%e')
-		sl_win.send_keystrokes('v')
-		find_window = self.win32['Find']
-		find_window.InCollectionComboBox.select(collection)
-		find_window.InPropertyComboBox.select(property_)
-		find_window.FindEdit.set_text(value)
-		if case_sensitive:
-			find_window.CaseSensitiveButton.check()
-		find_window.set_focus()
-		find_window.OKButton.click()
-
-	def change_form(self, name: str):
-		forms = self.forms
-		if name in forms:
-			if name == self.get_focused_form():
-				pass
-			else:
-				forms[name].select()
-		else:
-			raise ValueError(f"Form '{name}' not open")
-
-	@property
-	def forms(self) -> Dict[str, uia_controls.MenuItemWrapper]:
-		sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
-		retval = {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items()
-		          if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
-		return retval
-
-	def get_focused_form(self) -> str:
-		for item in self.forms.items():
-			name, form = item
-			state = form.legacy_properties()['State']
-			bin_state = bin(state)
 			if int(bin_state[-5], base=2):  # If the fifth bit == 1
 				return name
 
