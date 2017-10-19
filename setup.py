@@ -1,9 +1,18 @@
-# from distutils.core import setup
-from __init__ import __version__
+#!/usr/bin/env python
+import compileall
 import configparser
-import subprocess
-import sys
+import glob
 import os
+import sys
+
+from __init__ import __version__
+
+
+# Compiles the sourcecode
+for f in glob.iglob('*.py'):
+	compileall.compile_file(f, force=True)
+compileall.compile_dir(os.getcwd()+'\\processes', force=True)
+compileall.compile_dir(os.getcwd()+'\\utils', force=True)
 
 from cx_Freeze import setup, Executable
 
@@ -12,6 +21,7 @@ config.read_file(open('config.ini'))
 
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
 version = f"{major}.{minor}.{micro+1}"
+
 
 def update_init(vers):
 	from tempfile import mkstemp
@@ -44,8 +54,8 @@ DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
-executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico"),
-               Executable(script="eom_closeout.py", base="Console", targetName="EOM.exe", icon="bi_entry2.ico")]
+executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
+# Executable(script="eom_closeout.py", base="Console", targetName="EOM.exe", icon="bi_entry2.ico")
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',
@@ -77,6 +87,7 @@ setup(
 	options=options,
 	version=version,
 	packages=[''],
+	requires=['pymssql'],
 	url='',
 	license='',
 	author='Josh Reddington',

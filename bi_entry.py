@@ -1,20 +1,31 @@
-import datetime
-import logging.config
-import configparser
-from random import randint
-import random
-from time import sleep
-from exceptions import *
+#!/usr/bin/env python
+# TODO: Docstrings
+# language=rst
+"""
 
+"""
+import datetime
+import logging
+import random
+from random import randint
+from time import sleep
+
+from _common import *
+from config import *
+from exceptions import *
+from processes import *
+from utils import *
+
+
+__author__ = "Josh Reddington"
+__credits__ = ["Josh Reddington", "Dominik Walker", "Benedict Igberaese"]
+__version__ = "1.3.4"
+__maintainer__ = "Josh Reddington"
+__status__ = "Production"
+
+log = logging.getLogger(__name__)
 
 def main():
-	from transact import Transact
-	from scrap import Scrap
-	from reason import Reason
-	from common import Application, Unit, parse_numeric_ranges
-	from sql import MS_SQL
-	from crypt import decrypt
-
 	_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
 	                               '3660426037804620468050404740384034653780366030253080',
 	                               '474046203600486038404260432039003960',
@@ -23,41 +34,21 @@ def main():
 	                               '54005880Q750516045004500',
 	                               '1121327')
 	_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
-	mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
-	slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key), password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
-	config = configparser.ConfigParser()
-	logging.config.fileConfig('config.ini')
-	log = logging
+	mssql = MS_SQL.legacy_encrypted_connection(_key, address=_adr_data, username=_usr_data, password=_pwd_data, database=_db_data)
+	slsql = MS_SQL.legacy_encrypted_connection(_key, address=_adr_data_sl, username=_usr_data, password=_pwd_data, database=_db_data_sl)
 	sleep(randint(10, 20) / 10)
-	log.info("Attempting to read 'config.ini'")
-	config.read_file(open('config.ini'))
 	log.info("Starting Application")
-	app = Application(config.get('Paths', 'sl_exe'))
-	usr = config.get('Login', 'username')
-	pwd = config.get('Login', 'password')
-
-	config_days = parse_numeric_ranges(config.get('Schedule', 'active_days'))
-	config_hours = parse_numeric_ranges(config.get('Schedule', 'active_hours'))
-	total_days = set(range(7))
-	total_hours = set(range(24))
-	active_days = {z for y in [list(range(x[0], x[1] + 1)) for x in config_days] for z in y}
-	active_hours = {z for y in [list(range(x[0], x[1] + 1)) for x in config_hours] for z in y}
-	inactive_days = total_days - active_days
-	inactive_hours = total_hours - active_hours
-	# Switch between Reason, Scrap, and Transaction
-	current_hour = datetime.datetime.now().hour
 	while True:  # Core Loop
 		old_current_hour = current_hour
 		current_weekday = int(format(datetime.datetime.now(), '%w'))
 		current_hour = datetime.datetime.now().hour
-		if (current_weekday in inactive_days) or (current_hour in inactive_hours):
+		if (current_weekday not in active_days) or (current_hour not in active_hours):
 			if app.logged_in:
 				app.log_out()
 			sleep(60)
 			continue
 		elif (current_weekday in active_days) and (current_hour in active_hours):
 			if old_current_hour != current_hour:
-				version = config.get('DEFAULT', 'version')
 				offset = mssql.execute(f"SELECT TOP 1 [Total Time] FROM [Statistics] WHERE [Version] = '{version}' ORDER BY [Total Time] DESC")
 				if offset is None:
 					offset = 5
@@ -71,7 +62,7 @@ def main():
 					for i in range(choice):
 						random.randint(1, 20)
 					else:
-						sleep(random.randint(1, 20)/(choice * 2))
+						sleep(random.randint(1, 20) / (choice * 2))
 					mssql.execute("UPDATE PyComm SET [Status] = 'Queued' WHERE [Status] = 'Started(Queued)'")
 					mssql.execute("UPDATE PyComm SET [Status] = 'Scrap' WHERE [Status] = 'Started(Scrap)'")
 					mssql.execute("UPDATE PyComm SET [Status] = 'Reason' WHERE [Status] = 'Started(Reason)'")
@@ -174,7 +165,7 @@ def main():
 						if sum(counter.values()):
 							counter_key = None
 							max_count = max(counter.values())
-							for k,v in counter.items():
+							for k, v in counter.items():
 								if v == max_count:
 									counter_key = k
 									break
@@ -208,12 +199,14 @@ def main():
 					continue
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
-					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
+					mssql.execute(
+							f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
 					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
-				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
-				script_dict.get(process, lambda x,y: None)(app, units)
-				log.info('-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+				script_dict = {'Queued': transact, 'Reason': reason, 'Scrap': scrap, 'Custom(Queued)': transact}
+				script_dict.get(process, lambda x, y: None)(app, units)
+				log.info(
+						'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 
 if __name__ == '__main__':
 	main()
