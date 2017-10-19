@@ -1,0 +1,7 @@
+;!@Install@!UTF-8!
+Title="EOM Closeout"
+BeginPrompt="Start EOM?"
+Progress="yes"
+Directory=""
+RunProgram="C:\\Users\\mfgpc00\Documents\\GitHub\bi_entry\\build\\exe.win-amd64-3.6\\EOM.exe"
+;!@InstallEnd@!
