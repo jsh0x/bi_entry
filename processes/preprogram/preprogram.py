@@ -16,6 +16,7 @@ from exceptions import *
 log = logging.getLogger(__name__)
 
 # SN, Item, MEID, MDN, MIN, Firmware rev
+# TODO: Complete process
 
 
 def Preprogram(app: Application, units: List[Unit]):

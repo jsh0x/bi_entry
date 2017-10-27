@@ -1,4 +1,4 @@
-import logging.config
+import logging
 import decimal
 import datetime
 from collections import namedtuple
@@ -9,9 +9,7 @@ import pymssql
 from constants import REGEX_SQL_TIME as sql_time_regex, REGEX_SQL_DATE as sql_date_regex
 from utils.crypt import legacy_decrypt, encrypt, verify
 
-
-logging.config.fileConfig('..\\config.ini')
-log = logging
+log = logging.getLogger(__name__)
 
 type_codes = {1: str, 2: bytes, 3: int, 4: datetime.datetime, 5: decimal.Decimal}
 

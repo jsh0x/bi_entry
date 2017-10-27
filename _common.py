@@ -1,34 +1,61 @@
 #!/usr/bin/env python
 import datetime
+import decimal
 import logging
 import pathlib
 import re
-from collections import defaultdict, namedtuple
-from random import choice
-from string import ascii_lowercase, punctuation
+import threading
+from collections import Counter, UserDict, UserList, defaultdict, namedtuple
+from concurrent.futures import ThreadPoolExecutor
+from string import punctuation
 from sys import exc_info
 from time import sleep
-from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
+import queue
 
+import numpy as np
+import pprofile
 import psutil
 import pyautogui as pag
 import pywinauto as pwn
 import win32gui
+from PIL import ImageGrab
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
 from config import *
-# from utils import MS_SQL
-from constants import CARRIER_DICT, CELLULAR_BUILDS, REGEX_BUILD, REGEX_BUILD_ALT, REGEX_RESOLUTION, REGEX_WINDOW_MENU_FORM_NAME, SUFFIX_DICT, SYTELINE_WINDOW_TITLE
+from constants import (CARRIER_DICT, CELLULAR_BUILDS, REGEX_BUILD, REGEX_BUILD_ALT, REGEX_RESOLUTION,
+                       REGEX_WINDOW_MENU_FORM_NAME, SUFFIX_DICT, SYTELINE_WINDOW_TITLE)
 from exceptions import *
 
 
 log = logging.getLogger(__name__)
 completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 
-Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str), ('Buttons', Dict[str, win32_controls.ButtonWrapper])])
+Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str),
+                               ('Buttons', Dict[str, win32_controls.ButtonWrapper])])
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
-# Move classes to bi_entry.py
+# Move classes to bi_entry.py?
+# TODO: DOCSTRINGS!!!
+
+def legacy(func: Callable, *args, **kwargs):
+	def wrapper(*args, **kwargs):
+		log.debug(f"Function {func.__name__} is deprecated, avoid further usage!")
+		return func(*args, **kwargs)
+
+	return wrapper
+
+# TODO: Refine Coordinates and Rectangle classes with properties: top, left, right, bottom, width, and height. Maybe __contains__?
+class Coordinates(NamedTuple):
+	x: int
+	y: int
+
+class Rectangle(NamedTuple):
+	left: Coordinates
+	top: Coordinates
+	right: Coordinates
+	bottom: Coordinates
+
 class Part:
 	def __init__(self, sql, part_number: str, quantity: int = 1, spec_build: str = None):
 		if '-' in part_number:
@@ -40,15 +67,20 @@ class Part:
 				Select DISTINCT [DispName], [PartNum] FROM [Parts] WHERE [Product] = 'HomeGuard' And [Operation] = 'Update' and [Build] = 'All')
 				Select distinct * from t"""
 			if spec_build:
-				_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'") \
-					if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'") \
-					else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+				_data = sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'") if sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = '{spec_build}'") \
+					else sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 			else:
-				_data = sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'") \
-					if sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'") \
-					else sql.execute(f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
+				_data = sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'") if sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}' AND [Build] = 'All'") \
+					else sql.execute(
+					f"SELECT [Qty],[DispName],[Location],[PartName] FROM Parts WHERE [PartNum] = '{self.part_number}'")
 		else:
-			_data = sql.execute(f"SELECT [PartNum],[Qty],[DispName],[Location],[PartName] FROM Parts WHERE [ID] = {part_number}")
+			_data = sql.execute(
+				f"SELECT [PartNum],[Qty],[DispName],[Location],[PartName] FROM Parts WHERE [ID] = {part_number}")
 			self.part_number = _data.PartNum
 		self.quantity = quantity * _data.Qty
 		self.display_name = _data.DispName
@@ -68,9 +100,8 @@ class Unit:
 		self.version = version
 		tbl_mod = table
 		self._table = 'PyComm' if int(tbl_mod) else 'PyComm2'
-		self.id, self.serial_number, self.operation, self.operator, \
-		self.datetime, self.notes, self._status = (args.Id, args.Serial_Number, args.Operation, args.Operator,
-		                                           args.DateTime, args.Notes, args.Status)
+		self.id, self.serial_number, self.operation, self.operator, self.datetime, self.notes, self._status = (
+			args.Id, args.Serial_Number, args.Operation, args.Operator, args.DateTime, args.Notes, args.Status)
 		self._status2 = self._status
 		self._status = 'Queued' if self._status2 == 'Custom(Queued)' else self._status
 		self.operation = self.operation.strip() if self.operation is not None else None
@@ -89,8 +120,7 @@ class Unit:
 				on b.items = n.PartNum
 				Where p.[Serial Number] = @SN
 		"""
-		self._serial_number_prefix = self._product = self.whole_build = self._operator_initials = \
-			self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
+		self._serial_number_prefix = self._product = self.whole_build = self._operator_initials = self.eff_date = self.sro_num = self.sro_line = self.SRO_Operations_status = self.SRO_Line_status = None
 		self.parts_transacted = []
 		self.timer = TestTimer()
 		self._life_timer = TestTimer()
@@ -144,13 +174,15 @@ class Unit:
 		log.debug(f"Attribute eff_date='{self.eff_date}'")
 		log.debug(f"Attribute SRO_Line_status='{self.SRO_Line_status}'")
 		log.debug(f"Attribute SRO_Operations_status='{self.SRO_Operations_status}'")
-		self._regex_dict = REGEX_BUILD_ALT.match(item.upper()).groupdict(default='-') if REGEX_BUILD_ALT.match(item.upper()) is not None else REGEX_BUILD.match(item.upper()).groupdict(default='-')
+		self._regex_dict = REGEX_BUILD_ALT.match(item.upper()).groupdict(default='-') if REGEX_BUILD_ALT.match(
+			item.upper()) is not None else REGEX_BUILD.match(item.upper()).groupdict(default='-')
 		log.debug(self._regex_dict.items())
 		self.location = loc
 		log.debug(f"Attribute location='{self.location}'")
 		self.warehouse = whse
 		log.debug(f"Attribute warehouse='{self.warehouse}'")
-		self.build = self._regex_dict['build'][1:] if self._regex_dict['carrier'].isnumeric() else self._regex_dict['build'][:3]
+		self.build = self._regex_dict['build'][1:] if self._regex_dict['carrier'].isnumeric() else self._regex_dict[
+			                                                                                           'build'][:3]
 		log.debug(f"Attribute build='{self.build}'")
 		self.suffix = SUFFIX_DICT[self._regex_dict['suffix']]
 		log.debug(f"Attribute suffix='{self.suffix}'")
@@ -174,10 +206,12 @@ class Unit:
 		if 'queued' not in self._status.lower():
 			try:
 				if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
-					self.general_resolution, self.specific_resolution = [int(x) for x in REGEX_RESOLUTION.match(self.notes).groups()]
+					self.general_resolution, self.specific_resolution = [int(x) for x in
+					                                                     REGEX_RESOLUTION.match(self.notes).groups()]
 					if 'scrap' in self._status.lower():
 						self.specific_resolution_name = self._status.upper()
-					self.general_resolution_name = msssql.execute(f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
+					self.general_resolution_name = msssql.execute(
+						f"SELECT TOP 1 [Failure] FROM FailuresRepairs WHERE [ReasonCodes] = '{self.notes}'")[0]
 			except TypeError as ex:
 				raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.id), msg=str(ex))
 			# TODO: For HG, allow Invalid Reason Codes, just enter in operator initials
@@ -185,7 +219,8 @@ class Unit:
 			self.start()
 
 	def start(self):
-		self._msssql.execute(f"UPDATE {self._table} SET [Status] = 'Started({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._msssql.execute(
+			f"UPDATE {self._table} SET [Status] = 'Started({self._status2})' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._life_timer = TestTimer()
 		self._life_timer.start()
 		self._start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
@@ -210,7 +245,8 @@ class Unit:
 		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		len_parts = len(self.parts) if self.parts is not None else 0
-		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
+		parts = ', '.join(
+			x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
 		carrier = self.carrier[0].upper() if self.carrier is not None else '-'
 		self._msssql.execute("INSERT INTO [Statistics]"
 		                     "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
@@ -224,7 +260,8 @@ class Unit:
 		                     f"{self.sro_operations_time.total_seconds()},{self.sro_transactions_time.total_seconds()},"
 		                     f"{self.misc_issue_time.total_seconds()},'{end_time}',"
 		                     f"{life_time},'{process}','Completed','{self.version}')")
-		self._msssql.execute(f"UPDATE {self._table} SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._msssql.execute(
+			f"UPDATE {self._table} SET [Status] = '{completion_dict[self._status]}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def skip(self, reason: Optional[str] = None, batch_amt: int = None):
 		if batch_amt is None:
@@ -246,10 +283,12 @@ class Unit:
 		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		len_parts = len(self.parts) if self.parts is not None else 0
-		parts = ', '.join(x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
+		parts = ', '.join(
+			x.part_number + ' x ' + str(x.quantity) for x in self.parts) if self.parts is not None else None
 		addon = f"({sro})" if reason == 'No Open SRO' else ""
 		carrier = self.carrier[0].upper() if self.carrier is not None else '-'
-		self._msssql.execute(f"UPDATE {self._table} SET [Status] = '{reason}({self._status2}){addon}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._msssql.execute(
+			f"UPDATE {self._table} SET [Status] = '{reason}({self._status2}){addon}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 		self._msssql.execute("INSERT INTO [Statistics]"
 		                     "([Serial Number],[Carrier],[Build],[Suffix],[Operator],[Operation],"
 		                     "[Part Nums Requested],[Part Nums Transacted],[Parts Requested],[Parts Transacted],[Input DateTime],[Date],"
@@ -264,7 +303,8 @@ class Unit:
 		                     f"{life_time},'{process}','Skipped','{reason}','{self.version}')")
 
 	def reset(self):
-		self._msssql.execute(f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
+		self._msssql.execute(
+			f"UPDATE {self._table} SET [Status] = '{self._status2}' WHERE [Id] = {self.id} AND [Serial Number] = '{self.serial_number}'")
 
 	def update_sl_data(self):
 		try:
@@ -304,7 +344,8 @@ class Unit:
 		try:
 			if self._serial_number_prefix is None:
 				value = self._msssql.execute(
-						f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[0]
+					f"SELECT p.[Prefix] FROM Prefixes p INNER JOIN Prefixes r ON r.[Product]=p.[Product] WHERE r.[Prefix] = '{self.serial_number[:2]}' AND r.[Type] = 'N' AND p.[Type] = 'P'")[
+					0]
 			else:
 				value = self._serial_number_prefix
 		except Exception as ex:
@@ -352,7 +393,8 @@ class Unit:
 	@property
 	def operator_initials(self):
 		if self._operator_initials is None:
-			first, last = self._msssql.execute(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{self.operator}'")
+			first, last = self._msssql.execute(
+				f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{self.operator}'")
 			self._operator_initials = first.strip()[0].upper() + last.strip()[0].upper()
 		return self._operator_initials
 
@@ -363,7 +405,8 @@ class Unit:
 	@property
 	def product(self):
 		if self._product is None:
-			data = self._msssql.execute(f"SELECT [Product] FROM Prefixes WHERE [Prefix] = '{self.serial_number_prefix}'")
+			data = self._msssql.execute(
+				f"SELECT [Product] FROM Prefixes WHERE [Prefix] = '{self.serial_number_prefix}'")
 			if not data:
 				raise ValueError
 			self._product = data[0]
@@ -375,41 +418,43 @@ class Unit:
 
 class Application(psutil.Process):
 	# TODO: Make Simpleton?
-	def __init__(self):
+	# TODO: Handle login pop-ups, including occasional required password change
+	def __init__(self, pid):
+		psutil.Process.__init__(self, pid=pid)
 		self.nice(psutil.HIGH_PRIORITY_CLASS)
 		self.win32 = pwn.Application(backend='win32').connect(process=self.pid)
 		self.uia = pwn.Application(backend='uia').connect(process=self.pid)
-		self.logged_in = False
+		self._logged_in = False
+		self._user = None
 
 	@classmethod
 	def start(cls, fp: Union[str, pathlib.Path]):
-		super().__init__(psutil.Popen(str(fp)).pid)
-		return cls()
+		return cls(psutil.Popen(str(fp)).pid)
 
 	@classmethod
 	def connect(cls, fp: Union[str, pathlib.Path], exclude: Union[int, Iterable[int]] = None):
-		super().__init__(process_pid(str(fp), exclude))
-		return cls()
+		return cls(process_pid(fp, exclude))
 
-	def log_in(self) -> bool:
+	def log_in(self, usr: str = username, pwd: str = password) -> bool:
 		if not self.logged_in and self.win32.SignIn.exists(10, 0.09):
 			log.info("SyteLine not logged in, starting login procedure")
-			self.win32.SignIn.UserLoginEdit.set_text(username)
-			self.win32.SignIn.PasswordEdit.set_text(password)
+			self.win32.SignIn.UserLoginEdit.set_text(usr)
+			self.win32.SignIn.PasswordEdit.set_text(pwd)
 			self.win32.SignIn.set_focus()
 			self.win32.SignIn.OKButton.click()
 			if not self.win32.SignIn.exists(10, 0.09):
 				self.win32.window(title_re=SYTELINE_WINDOW_TITLE).wait('ready', 2, 0.09)
-				self.logged_in = True
-				log.info(f"Successfully logged in as '{username}'")
+				self._logged_in = True
+				self._user = usr
+				log.info(f"Successfully logged in as '{self._user}'")
 				sleep(4)
 				return True
 			else:
-				log.warning(f"Login attempt as '{username}' unsuccessful")
+				log.warning(f"Login attempt as '{usr}' unsuccessful")
 		return False
 
 	def log_out(self) -> bool:
-		if self.logged_in and self.uia.window(title_re=SYTELINE_WINDOW_TITLE).exists(10, 0.09):
+		if self.logged_in and not self.win32.SignIn.exists(10, 0.09):
 			log.info("SyteLine logged in, starting logout procedure")
 			sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
@@ -419,7 +464,8 @@ class Application(psutil.Process):
 			pag.click(*c_coords)
 			if self.win32.SignIn.exists(10, 0.09):
 				self.win32.SignIn.wait('ready', 2, 0.09)
-				self.logged_in = False
+				self._logged_in = False
+				self._user = None
 				log.info(f"Successfully logged out")
 				sleep(4)
 				return True
@@ -427,23 +473,54 @@ class Application(psutil.Process):
 				log.warning(f"Logout attempt unsuccessful")
 		return False
 
-	def check_login_status(self) -> bool:
-		if self.win32.SignIn.exists(10, 0.09):
-			self.logged_in = True
-		elif self.uia.window(title_re=SYTELINE_WINDOW_TITLE).exists(10, 0.09):
-			self.logged_in = False
-		return self.logged_in
+	def quick_log_in(self, usr: str = username, pwd: str = password) -> bool:
+		if not self.logged_in and self.win32.SignIn.exists(1, 0.09):
+			log.info("SyteLine not logged in, starting login procedure")
+			self.win32.SignIn.UserLoginEdit.set_text(usr)
+			self.win32.SignIn.PasswordEdit.set_text(pwd)
+			self.win32.SignIn.set_focus()
+			self.win32.SignIn.OKButton.click()
+			if not self.win32.SignIn.exists(1, 0.09):
+				self._logged_in = True
+				self._user = usr
+				log.info(f"Successfully logged in as '{self._user}'")
+				sleep(1)
+				self.win32.top_window().send_keystrokes('{ENTER 2}{ESC 2}')
+				pag.press('enter', 2)
+				pag.press('esc', 2)
+				return True
+			else:
+				log.warning(f"Login attempt as '{usr}' unsuccessful")
+		return False
+
+	def quick_log_out(self) -> bool:
+		if not self.win32.SignIn.exists(1, 0.09):
+			log.info("SyteLine logged in, starting logout procedure")
+			sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
+			sl_uia.set_focus()
+			r_i = so.rectangle()
+			c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+			pag.click(*c_coords)
+			if self.win32.SignIn.exists(1, 0.09):
+				self._logged_in = False
+				log.info(f"Successfully logged out")
+				return True
+			else:
+				log.warning(f"Logout attempt unsuccessful")
+		return False
 
 	def move_and_resize(self, left: int, top: int, right: int, bottom: int):
 		coord = {'left': left, 'top': top, 'right': right, 'bottom': bottom}
-		win32gui.MoveWindow(self.hwnd, int(coord['left']) - 7, coord['top'], coord['right'] - coord['left'], coord['bottom'] - coord['top'], True)
+		win32gui.MoveWindow(self.hwnd, int(coord['left']) - 7, coord['top'], coord['right'] - coord['left'],
+		                    coord['bottom'] - coord['top'], True)
 
 	def open_form(self, *names):
 		open_forms = self.forms.keys()
 		log.debug(f"Opening form(s): {', '.join(names)}")
 		for name in names:
 			if name in open_forms:
-				raise ValueError(f"Form '{name}' already open")
+				continue
 			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 			sl_win.send_keystrokes('^o')
 			self.win32.SelectForm.AllContainingEdit.set_text(name)
@@ -454,6 +531,18 @@ class Application(psutil.Process):
 			self.win32.SelectForm.OKButton.click()
 			log.debug(f"Form '{name}' opened")
 			sleep(4)
+
+	def quick_open_form(self, *names):
+		for name in names:
+			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+			sl_win.send_keystrokes('^o')
+			self.win32.SelectForm.AllContainingEdit.set_text(name)
+			self.win32.SelectForm.set_focus()
+			self.win32.SelectForm.FilterButton.click()
+			common_controls.ListViewWrapper(self.win32.SelectForm.ListView).item(name).click()
+			self.win32.SelectForm.set_focus()
+			self.win32.SelectForm.OKButton.click()
+			sleep(2)
 
 	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
 		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
@@ -483,14 +572,24 @@ class Application(psutil.Process):
 	def forms(self) -> Dict[str, uia_controls.MenuItemWrapper]:
 		# TODO: Possible form object including 'is_checked' property
 		sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
-		retval = {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in sl_uia.WindowMenu.items()
-		          if (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (item.texts()[0].lower() != 'close all')}
+		retval = {REGEX_WINDOW_MENU_FORM_NAME.search(item.texts()[0]).group(1): item for item in
+		          sl_uia.WindowMenu.items() if
+		          (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (
+			          item.texts()[0].lower() != 'close all')}
 		log.debug(f"Forms open: {', '.join(retval.keys())}")
 		return retval
 
 	@property
+	def logged_in(self):
+		if self.win32.SignIn.exists(10, 0.09):
+			self._logged_in = False
+		else:
+			self._logged_in = True
+		return self._logged_in
+
+	@property
 	def hwnd(self):
-		return self.win32.handle
+		return self.win32.top_window().handle
 
 	@property
 	def window_rect(self):
@@ -499,9 +598,9 @@ class Application(psutil.Process):
 
 	@property
 	def size(self):
-		x, y = self.window_rect[2:]
-		w = self.window_rect[2] - x
-		h = self.window_rect[3] - y
+		x, y = self.window_rect[:2]
+		w = abs(self.window_rect[2] - x)
+		h = abs(self.window_rect[3] - y)
 		return w, h
 
 	@size.setter
@@ -512,7 +611,7 @@ class Application(psutil.Process):
 
 	@property
 	def location(self):
-		return self.window_rect[2:]
+		return self.window_rect[:2]
 
 	@location.setter
 	def location(self, value):
@@ -550,31 +649,247 @@ class Application(psutil.Process):
 		dlg = self.win32.window(class_name="#32770")
 		if dlg.exists(timeout, 0.09):
 			title = ''.join(text.strip() for text in dlg.texts())
-			text = ''.join(text.replace('\r\n\r\n', '\r\n').strip() for cls in dlg.children() if cls.friendly_class_name() == 'Static' for text in cls.texts())
-			buttons = {text.strip(punctuation + ' '): cls for cls in dlg.children() if cls.friendly_class_name() == 'Button' for text in cls.texts()}
+			text = ''.join(text.replace('\r\n\r\n', '\r\n').strip() for cls in dlg.children() if
+			               cls.friendly_class_name() == 'Static' for text in cls.texts())
+			buttons = {text.strip(punctuation + ' '): cls for cls in dlg.children() if
+			           cls.friendly_class_name() == 'Button' for text in cls.texts()}
 			return Dialog(dlg, title, text, buttons)
 		else:
 			return None
+
+	def get_user(self):
+		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+		sl_uia = self.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+		self.quick_open_form("User Information")
+		self._user = sl_win.UserIDEdit.texts()[0]
+		sl_uia.CancelCloseButton.click()
+
+class Puppet(threading.Thread):
+	def target(self): ...
+
+	def __init__(self, app: Application, name):
+		raise NotImplementedError()
+		self.q_in = queue.Queue()
+		self.q_out = queue.Queue()
+		self.app = app
+		super().__init__(target=self.target, daemon=True, name=name)
+		self.start()
+		self._stop_event = threading.Event()
+
+	def set_input(self, func: callable, *args, **kwargs): ...
+
+	def get_output(self) -> Any: ...
+
+	def stop(self): ...
+
+	def stopped(self) -> bool: ...
+
 
 class PuppetMaster:
 	_children = set()
 	pids = defaultdict(list)
 
-	def __init__(self, fp: Optional[Union[str, pathlib.Path]] = None):
-		if fp is not None:
-			self.start(fp)
+	def __init__(self, app_count: int = 0, fp=None):
+		if fp is None:
+			user_list = [username, 'BISync01', 'BISync02', 'BISync03']
+			pwd_list = [password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
+			if app_count > 0:
+				for i in range(app_count):
+					app = self.grab_syteline(application_filepath)
+					if not app:
+						break
+				app_count -= len(self.children())
+				for i, usr, pwd in zip(range(app_count), user_list, pwd_list):
+					app = self.start_syteline(application_filepath, usr, pwd)
+					if not app:
+						break
+				if app_count > 0:
+					return None
+				with ThreadPoolExecutor(max_workers=len(self.children())) as e:
+					for app, usr, pwd in zip(self.children(), user_list, pwd_list):
+						e.submit(lambda x, y: x.quick_log_in(*y), app, (usr, pwd))
+						sleep(1)
+				self.optimize_screen_space()
+		else:
+			if app_count > 0:
+				for i in range(app_count):
+					app = self.grab(fp)
+					if not app:
+						break
+				app_count -= len(self.children())
+				for i in range(app_count):
+					app = self.start(fp)
+					if not app:
+						break
+				if app_count > 0:
+					return None
+				self.optimize_screen_space()
 
-	def start(self, fp: Union[str, pathlib.Path]) -> Application:
-		name = ''.join(choice(ascii_lowercase) for i in range(4))
-		while name in self._children:
-			name = ''.join(choice(ascii_lowercase) for i in range(4))
-		self.__setattr__(name, Application(fp, exclude=list(self.pids.values())))
-		self.pids[fp].append(self.__getattribute__(name).pid)
-		self._children.add(name)
-		return self.__getattribute__(name)
+	def open_forms(self, *names):
+		with ThreadPoolExecutor(max_workers=len(names)) as e:
+			for app, forms in zip(self.children(), names):
+				e.submit(lambda x, y: x.quick_open_form(*y), app, forms)
+				sleep(0.5)
+		sleep(1)
 
-	def children(self):
+	def start_syteline(self, fp: Union[str, pathlib.Path], usr, pwd, name: str=None) -> Puppet:
+		try:
+			if name is None:
+				base_name = pathlib.Path(str(fp)).stem[:4].lower()
+				name = base_name + '1'
+				count = 2
+				while name in self._children:
+					name = base_name + str(count)
+					count += 1
+			app = Application.start(str(fp))
+			app.quick_log_in(usr, pwd)
+		except Exception:
+			return None
+		else:
+			self.__setattr__(name, self.Puppet(app, name))
+			self.pids[fp].append(self.__getattribute__(name).app.pid)
+			self._children.add(name)
+			return self.__getattribute__(name)
+
+	def grab_syteline(self, fp: Union[str, pathlib.Path]) -> Puppet:
+		try:
+			base_name = pathlib.Path(str(fp)).stem[:4].lower()
+			name = base_name + '1'
+			count = 2
+			while name in self._children:
+				name = base_name + str(count)
+				count += 1
+			app = Application.connect(pathlib.Path(str(fp)), self.pids[fp])
+			if app.logged_in:
+				app.get_user()
+		except Exception:
+			return None
+		else:
+			self.__setattr__(name, self.Puppet(app, name))
+			self.pids[fp].append(self.__getattribute__(name).app.pid)
+			self._children.add(name)
+			return self.__getattribute__(name)
+
+	def start(self, fp: Union[str, pathlib.Path], name: str = None) -> Puppet:
+		try:
+			if name is None:
+				base_name = pathlib.Path(str(fp)).stem[:4].lower()
+				name = base_name + '1'
+				count = 2
+				while name in self._children:
+					name = base_name + str(count)
+					count += 1
+			app = Application.start(str(fp))
+			app.win32.top_window().exists()
+		except Exception:
+			return None
+		else:
+			self.__setattr__(name, self.Puppet(app, name))
+			self.pids[fp].append(self.__getattribute__(name).app.pid)
+			self._children.add(name)
+			return self.__getattribute__(name)
+
+	def grab(self, fp: Union[str, pathlib.Path]) -> Puppet:
+		try:
+			base_name = pathlib.Path(str(fp)).stem[:4].lower()
+			name = base_name + '1'
+			count = 2
+			while name in self._children:
+				name = base_name + str(count)
+				count += 1
+			app = Application.connect(pathlib.Path(str(fp)), self.pids[fp])
+			app.win32.top_window().exists()
+		except Exception:
+			return None
+		else:
+			self.__setattr__(name, self.Puppet(app, name))
+			self.pids[fp].append(self.__getattribute__(name).app.pid)
+			self._children.add(name)
+			return self.__getattribute__(name)
+
+	def optimize_screen_space(self, win_size: Tuple[int, int] = (1024, 750)):
+		# {l:2017 t:122 r:3040 b:872}
+		all_scrn = enumerate_screens()
+		n = len(self.children())
+		m = n // count_screens() if (n // count_screens()) > 1 else 2
+		for i, ch in enumerate(self.children()):
+			ch.size = win_size
+			scrn = all_scrn[i // m]
+			x_step = ((scrn[2] - scrn[0]) - win_size[0]) // (m - 1)
+			y_step = ((scrn[3] - scrn[1]) - win_size[1])
+			if (((scrn[2] - scrn[0]) - win_size[0]) / (m - 1)) - x_step >= 0.5:
+				x_step += 1
+			x = scrn[0] + (x_step * (i % m))
+			y = scrn[1] + (y_step * ((i % m) % 2))
+			ch.location = (x, y)
+
+	def children(self) -> List[Application]:
 		return [self.__getattribute__(ch) for ch in self._children]
+
+	def apply_all(self, func: Callable, *args, **kwargs):
+		with ThreadPoolExecutor(max_workers=len(self.children())) as e:
+			for ch in self.children():
+				e.submit(func, ch, *args, **kwargs)
+				sleep(1)
+
+	def run_process(self, app: Union[str, int, Application], proc) -> bool:
+		"""Run process, return whether it was successful or not."""
+		if type(app) is str:
+			if app in self._children:
+				app = self.__getattribute__(app)
+			elif app.startswith('app') and app[3:].isnumeric():
+				app = int(app[3:])
+			else:
+				raise ValueError()
+		if type(app) is int:
+			if 0 <= app < len(self.children()):
+				app = self.children()[app]
+			else:
+				raise ValueError()
+		if app not in self.children():
+			raise ValueError()
+		units = proc.get_units()
+		if units:
+			return proc.run(app, units)
+		return False
+
+	class Puppet(threading.Thread):
+		"""Thread class with a stop() method. The thread itself has to check
+		regularly for the stopped() condition."""
+
+		def target(self):
+			while True:
+				try:
+					command, args, kwargs = self.q_in.get_nowait()
+				except queue.Empty:
+					continue
+				else:
+					self.q_out.put_nowait(command(self, *args, **kwargs))
+
+		def __init__(self, app: Application, name):
+			self.q_in = queue.Queue()
+			self.q_out = queue.Queue()
+			self.app = app
+			super().__init__(target=self.target, daemon=True, name=name)
+			self.start()
+			self._stop_event = threading.Event()
+
+		def set_input(self, func: callable, *args, **kwargs):
+			self.q_in.put_nowait((func, tuple(arg for arg in args), {k: v for k, v in kwargs.items()}))
+
+		def get_output(self):
+			try:
+				value = self.q_out.get_nowait()
+			except queue.Empty:
+				return None
+			else:
+				return value
+
+		def stop(self):
+			self._stop_event.set()
+
+		def stopped(self):
+			return self._stop_event.is_set()
 
 	def __enter__(self):
 		return self
@@ -583,6 +898,10 @@ class PuppetMaster:
 		procs = self.children()
 		for p in procs:
 			# print(p)
+			try:
+				p.quick_log_out()
+			except Exception:
+				pass
 			p.terminate()
 		gone, still_alive = psutil.wait_procs(procs, timeout=3)
 		for p in still_alive:
@@ -611,6 +930,225 @@ class TestTimer:
 		self.reset()
 		return retval
 
+# TODO: Maybe Cell class?
+class Cell:
+	def __init__(self, cell: uia_controls.ListItemWrapper):
+		self.cell_control = cell
+		self.color = (255, 255, 255)
+		self.value = cell.legacy_properties()['Value'].strip()
+
+	def update_color(self):
+		rect = self.cell_control.rectangle()
+		scrn = get_screen_exact()
+		partial = np.array(scrn)[rect.top:rect.bottom, rect.left:rect.right]
+		count = Counter()
+		for y in range(partial.shape[0]):
+			for x in range(partial.shape[1]):
+				count[str(partial[y, x].tolist())] += 1
+		color_str = count.most_common(1)[0][0].strip('[] ').replace(', ', ',')
+		self.color = [int(x) for x in color_str.split(',')]
+		return self.color
+
+# TODO: Maybe Row class?
+class Row(UserDict):
+	def __init__(self, columns: Union[str, Iterable[str]]):
+		if type(columns) is str:
+			columns = [columns]
+		super().__init__((col, None) for col in columns)
+
+# TODO: Maybe Column class?
+class Column(UserList):
+	type_hierarchy = {0: lambda x: None, 1: bool, 2: int, 3: float}
+	type_hierarchy_r = {str(type(None)): 0, str(bool): 1, str(int): 2, str(float): 3}
+
+	def __init__(self, name, *args):
+		self.name = name
+		self._type_rank = 0
+		for arg in args:
+			self.type_rank = self.type_hierarchy_r[str(type(arg))]
+		super().__init__(args)
+
+	def update_types(self):
+		for i, val in enumerate(self.data):
+			self.data[i] = self.type_rank(val)
+
+	@property
+	def type_rank(self):
+		return self.type_hierarchy[self._type_rank]
+
+	@type_rank.setter
+	def type_rank(self, value):
+		assert type(value) is int
+		old_rank = self._type_rank
+		self._type_rank = max(self._type_rank, value)
+		if old_rank != self._type_rank:
+			self.update_types()
+
+	def __setitem__(self, i, value):
+		assert type(i) is int
+		type_num = self.type_hierarchy_r[str(type(value))]
+		self.type_rank = type_num
+		if type_num >= self._type_rank:
+			self.data[i] = self.type_rank(value)
+		elif value is None:
+			self.data[i] = value
+
+class DataGrid:
+	# TODO: Dynamic type checking for DataRow and DataColumn NamedTuple's
+	# TODO: General refinement/redundancy reduction
+	# TODO: __iter__ attribute iterates through grid much like numpy-array
+	# TODO: Maybe __contains__ returns all instances/first instance of value
+	def __init__(self, grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]], row_limit: int):
+		if type(columns) is str:
+			columns = [columns]
+		self.grid_control = grid
+		self.row_limit = row_limit
+		DataRow = namedtuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
+		retval = [DataRow(**{col.replace(' ', '_'): (
+			self.get_cell_value(self._get_cell_control(row_index + self.get_row_index(1), col)),
+			self._get_cell_control(row_index + self.get_row_index(1), col)) for col in columns}) for row_index, i in
+		          enumerate(grid.children()[self.get_row_index(1):])]
+		# TODO: Row and column type setting based on populated cells
+		# self.DataRow = NamedTuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
+		self.DataRow = DataRow
+		self.DataColumn = namedtuple('DataRow', field_names=[f'Row{i}' for i in range(1, len(retval) + 1)])
+		self.grid = retval
+		old_rect = grid.rectangle()
+		h = self._get_row_control(self.top_row_index).rectangle().height()
+		self.visibility_window = {'left':   old_rect.left, 'top': old_rect.top - h, 'right': old_rect.right,
+		                          'bottom': old_rect.bottom}
+
+	@classmethod
+	def from_name(cls, app: Application, name: str, columns: Union[str, Iterable[str]], row_limit: int):
+		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+		name_new = name.title().replace(' ', '')
+		grid = uia_controls.ListViewWrapper(sl_uia.__getattribute__(name_new).element_info)
+		return cls(grid, columns, row_limit)
+
+	@property
+	def top_row_index(self) -> int:
+		return self.get_row_index('Top Row')
+
+	def get_row_index(self, row: Union[str, int]) -> int:
+		if type(row) is str:
+			return self.grid_control.children_texts().index(row)
+		else:
+			return self.grid_control.children_texts().index(f"Row {row-1}")
+
+	def get_column_index(self, name: str) -> int:
+		"""top_row_index = self.get_row_index('Top Row')
+		children = self.grid_control.children()
+		child = children[top_row_index]
+		gen2_children_texts = child.children_texts()
+		col_index = gen2_children_texts.index(name)
+		return col_index"""
+		return self.grid_control.children()[self.top_row_index].children_texts().index(name)
+
+	def get_row_control(self, row: Union[str, int]) -> uia_controls.ListViewWrapper:
+		row_index = self.get_row_index(row)
+		return self._get_row_control(row_index)
+
+	def _get_row_control(self, row_index: int) -> uia_controls.ListViewWrapper:
+		"""children = self.grid_control.children()
+		new_row = children[row_index]
+		row_control = uia_controls.ListViewWrapper(new_row.element_info)
+		return row_control"""
+		return uia_controls.ListViewWrapper(self.grid_control.children()[row_index].element_info)
+
+	def get_cell_control(self, row: Union[str, int], col: str) -> uia_controls.ListItemWrapper:
+		row_index = self.get_row_index(row)
+		return self._get_cell_control(row_index, col)
+
+	def _get_cell_control(self, row_index: int, col: str) -> uia_controls.ListItemWrapper:
+		"""row = self._get_row_control(row_index)
+		item_index = self.get_column_index(col)
+		item = row.item(item_index)
+		element_info = item.element_info
+		return uia_controls.ListItemWrapper(element_info)"""
+		return uia_controls.ListItemWrapper(
+			self._get_row_control(row_index).item(self.get_column_index(col)).element_info)
+
+	def is_row_visible(self, row: Union[str, int]) -> bool:
+		row_index = self.get_row_index(row)
+		return self._is_row_visible(row_index)
+
+	def _is_row_visible(self, row_index: int) -> bool:
+		rect = self._get_row_control(row_index).rectangle()
+		h = rect.height() // 2
+		return ((self.visibility_window['bottom'] - h) > rect.top) and (
+			(self.visibility_window['top'] + h) < rect.bottom)
+
+	def get_cell_value(self, cell: uia_controls.ListItemWrapper) -> Any:
+		return self.adapt_cell(cell.legacy_properties()['Value'].strip())
+
+	@staticmethod
+	def adapt_cell(value):
+		if value == '(null)':
+			return None
+		elif value == 'False':
+			return False
+		elif value == 'True':
+			return True
+		else:
+			try:
+				retval = decimal.Decimal(value)
+			except decimal.InvalidOperation:
+				pass
+			else:
+				retval = retval.normalize()
+				if int(retval) == retval:
+					return int(retval)
+				else:
+					return float(retval)
+		return value
+
+	@staticmethod
+	def upper_center(x1: int, y1: int, x2: int, y2: int) -> Tuple[int, int]:
+		assert 0 < x1 < x2
+		assert 0 < y1 < y2
+		x2 -= x1
+		y2 -= y1
+		return x1 + (x2 // 2), y1 + (y2 // 3)
+
+	def get_column(self, column: Union[str, int]):
+		if type(column) is str:
+			return self.DataColumn(*[row.__getattribute__(column) for row in self.grid])
+		else:
+			return self.DataColumn(*[row[column] for row in self.grid])
+
+	def get_row(self, row_num: int):
+		return self.grid[row_num - 1]
+
+	def get_cell(self, column: Union[str, int], row_num: int) -> uia_controls.ListItemWrapper:
+		if type(column) is str:
+			return self.grid[row_num - 1].__getattribute__(column.replace(' ', '_'))[1]
+		else:
+			return self.grid[row_num - 1][column][1]
+
+	def __getitem__(self, key) -> Any:
+		# TODO: singular key -> regular getitem method
+		column, row_num = key
+		return self.get_cell_value(self.get_cell(column, row_num))
+
+	def __setitem__(self, key, value) -> bool:
+		# TODO: singular key -> regular setitem method
+		column, row_num = key
+		if not self.is_row_visible(row_num):
+			pag.scroll(-20)
+		if not self.is_row_visible(row_num):
+			pag.scroll(40)
+		if not self.is_row_visible(row_num):
+			return False
+		cell = self.get_cell(column, row_num)
+		rect = cell.rectangle()
+		x, y = self.upper_center(rect.left, rect.top, rect.right, rect.bottom)
+		pag.click(x, y)
+		sleep(0.2)
+		pag.typewrite(str(value))
+		sleep(0.2)
+
+	# TODO: Verify correct row creation
+
 # class Singleton(type):
 # 	"""
 # 	Define an Instance operation that lets clients access its unique
@@ -633,14 +1171,99 @@ class TestTimer:
 #
 # 	pass
 """"""
+"""reason_gen	description
+1000	No Reason Given
+10000	Unable to Duplicate Issue.
+1001	Returned for Testing/Updates
+1002	Defective
+1003	Returned for transmitter problem
+1004	Returned for FMD problem
+1005	Will not call in/out
+1006	Change Phone Number
+1007	Excessive Leaves/Enters (TIR/TOR)
+1008	No Enters/Leaves
+1009	No power up, no lights
+1010	Missed Callback/late (MCL)
+1011	False leaves/enters (TIR/TOR)
+1012	Host Busy Messages (HBS)
+1013	No location verify
+1014	Speaker failure
+1016	Low Batt Msg (LBR, CBL, TEB)
+1017	Power Connection Broken
+1018	False Tampers (TCS/TOS)
+1019	Will Not Tamper
+1020	Will Not Activate, Dead
+1021	Will Not Find Transmitter (TNF)
+1022	Default Serial Number
+1023	Rattles
+1024	Water Damage
+1025	Client/Case Damage
+1026	Calibration
+1027	Communication Problems
+1028	Keyswitch Broken
+1029	Will Not Transmit
+1030	Smoking/Burnt Transformer
+1031	Solenoid problem (VCE)
+1032	Will Not Enroll
+1033	Phone Jack Broken
+1034	Voice Module Failure (VMF)
+1035	Room Noise Failure
+1036	Storm/Lightning Damage
+1037	Unit Burned
+1039	Reset problems
+1040	Will not do Alcohol Test
+1041	Time Stamping Errors
+1042	Enrollment Error/Problems
+1043	Cheek Sensor Problems
+1045	Duplicate Serial Number
+1046	Case Tamper
+1047	HG  swap
+1048	Return of Demo Equipment
+1049	End of Lease
+1050	RTS
+1051	Suspect NTC;Y1
+1052	Excess Inventory
+1053	Failure Analysis  *****
+1054	Switching to GWOW
+1055	Lost Contract
+1056	"out of box" failure
+1057	No GPS signal
+1058	Returned for Tin Whiskers
+1059	Explain - for CBS purposes  *****
+1060	Not responding to officer key
+1061	Stuck in cell phone mode
+1062	Missing Charger XFMR
+1063	Missing Charge Cord
+1064	Missing Black Zipper Case: Soberlink
+1068	Stripped Screws
+1069	No-Motion Failure
+1100	TDA 375
+1101	Malfunction of push button
+1102	Malfunction of transformer
+1103	No lights blinking
+1104	Stuck ADM
+1105	Broken ADM
+1106	Tamper won't clear
+1107	Absconded
+1108	Battery error
+1109	Reduced range
+1110	On enter fail
+1111	No cellular signal
+1112	Beacon failed
+1113	Return to BI for maintenance
+1114	Excessive Tamper Alerts
+1115	Will Not Charge
+1116	Will not hold a charge"""
 
 # - - - - - - - - - - - - - - - - - - - FUNCTIONS - - - - - - - - - - - - - - - - - - - -
 def process_pid(filename: str, exclude: Optional[Union[int, Iterable[int]]] = None) -> int:
+	if isinstance(filename, pathlib.Path):
+		filename = filename.name
 	for proc in psutil.process_iter():
 		try:
 			if exclude is not None and ((isinstance(exclude, int) and proc.pid == exclude) or proc.pid in exclude):
 				continue
-			if proc.exe().lower() == filename.lower():
+			if proc.name().lower() == filename.lower():
 				return proc.pid
 		except psutil.NoSuchProcess:
 			pass
@@ -659,16 +1282,19 @@ def is_running(filename: str, exclude: Optional[Union[int, Iterable[int]]] = Non
 	# 	except:
 	# 		pass
 	# return False
+	if isinstance(filename, pathlib.Path):
+		filename = filename.name
 	for proc in psutil.process_iter():
 		try:
 			if exclude is not None and ((isinstance(exclude, int) and proc.pid == exclude) or proc.pid in exclude):
 				continue
-			if proc.exe().lower() == filename.lower():
+			if proc.name().lower() == filename.lower():
 				return True
 		except (psutil.NoSuchProcess, psutil.AccessDenied):
 			pass
 	return False
 
+@legacy
 def _adapt_cell(x):
 	if x == '(null)':
 		return None
@@ -682,7 +1308,9 @@ def _adapt_cell(x):
 	else:
 		return x
 
-def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]], condition: Optional[Tuple[str, Any]] = None, requirement: str = None) -> List[NamedTuple]:
+@legacy
+def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable[str]],
+                condition: Optional[Tuple[str, Any]] = None, requirement: str = None) -> List[NamedTuple]:
 	if type(columns) is str:
 		columns = [columns]
 	# TODO: regex datetime
@@ -690,35 +1318,63 @@ def access_grid(grid: uia_controls.ListViewWrapper, columns: Union[str, Iterable
 	DataRow = namedtuple('DataRow', field_names=[col.replace(' ', '_') for col in columns])
 	if requirement is not None:
 		if condition is None:
-			retval = [DataRow(**{
-				col.replace(' ', '_'): _adapt_cell(
-						uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
-					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()[
-						'Value'].strip()) != None]
+			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(
+				grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+					col)).legacy_properties()['Value'].strip()) for col in columns}) for row in
+			          grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(
+						grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+							requirement)).legacy_properties()['Value'].strip()) != None]
 		else:
-			retval = [DataRow(**{
-				col.replace(' ', '_'): _adapt_cell(
-						uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
-					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()[
-						'Value'].strip()) == condition[1] and _adapt_cell(
-					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(requirement)).legacy_properties()[
-						'Value'].strip()) != None]
+			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(
+				grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+					col)).legacy_properties()['Value'].strip()) for col in columns}) for row in
+			          grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(
+						grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+							condition[0])).legacy_properties()['Value'].strip()) == condition[1] and _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(
+						grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+							requirement)).legacy_properties()['Value'].strip()) != None]
 	else:
 		if condition is None:
-			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(
-					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):]]
+			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(
+				grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+					col)).legacy_properties()['Value'].strip()) for col in columns}) for row in
+			          grid.children()[grid.children_texts().index('Row 0'):]]
 		else:
-			retval = [DataRow(**{
-				col.replace(' ', '_'): _adapt_cell(
-						uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(col)).legacy_properties()['Value'].strip())
-				for col in columns}) for row in grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
-					uia_controls.ListViewWrapper(row.element_info).item(grid.children()[grid.children_texts().index('Top Row')].children_texts().index(condition[0])).legacy_properties()[
-						'Value'].strip()) == condition[1]]
+			retval = [DataRow(**{col.replace(' ', '_'): _adapt_cell(uia_controls.ListViewWrapper(row.element_info).item(
+				grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+					col)).legacy_properties()['Value'].strip()) for col in columns}) for row in
+			          grid.children()[grid.children_texts().index('Row 0'):] if _adapt_cell(
+					uia_controls.ListViewWrapper(row.element_info).item(
+						grid.children()[grid.children_texts().index('Top Row')].children_texts().index(
+							condition[0])).legacy_properties()['Value'].strip()) == condition[1]]
 	log.debug(f"Grid Accessed: {retval}")
 	return retval
+
+def _check_units(sql, status: str, table: str = 'PyComm', group_serial: bool = False) -> int:
+	"""Count the number of entries in SQL connection and table that match status. Return integer."""
+	distinct = ''
+	table = str(table)
+	if group_serial:
+		distinct = 'DISTINCT '
+	return \
+		sql.execute(f"SELECT COUNT({distinct}[Serial Number]) as [SN_Count] FROM {table} WHERE [Status] = '{status}'")[
+			0]
+
+def check_serial_number(sql, serial_number: str, status: str, table: str = 'PyComm') -> str:
+	"""Verify that serial number hasn't been skipped. Return string."""
+	rows = sql.execute(f"SELECT DISTINCT [Status] FROM {table} WHERE [Serial Number] = '{serial_number}'",
+	                   fetchall=True)
+	for row in rows:
+		if status not in row.Status:
+			continue
+		elif (row.Status != status) and (status in row.Status):
+			break
+	else:
+		return status
+	return row.Status
 
 # Not one Item Price exists for Item that has
 # @overload
@@ -744,9 +1400,31 @@ def sigfig(template, x):
 		y_new = ((y_new * val) + 1) / val
 	return y_new
 
-# def center(x: int, y: int, w: int, h: int) -> Tuple[int, int]:
-# 	return x + (w // 2), y + (h // 2)
+def get_screen_exact():
+	sleep(0.05)
+	pag.press('printscreen')
+	sleep(0.1)
+	return ImageGrab.grabclipboard()
 
+def get_screen_size() -> List[Tuple[int, int]]:
+	size1 = get_screen_exact().size
+	size2 = ImageGrab.grab().size
+	return [size2] * (size1[0] // size2[0])
+
+def count_screens() -> int:
+	return len(get_screen_size())
+
+def total_screen_space() -> Tuple[int, int]:
+	w = 0
+	for scrn in get_screen_size():
+		w += scrn[0]
+		h = scrn[1]
+	return (w, h)
+
+def enumerate_screens() -> List[Tuple[int, int, int, int]]:
+	total = total_screen_space()
+	step = total[0] // count_screens()
+	return [(x, 0, x + step, total[1]) for x in range(0, total[0], step)]
 
 def parse_numeric_ranges(x: Union[str, List[int]], sep: str = ',') -> List[Tuple[int, int]]:
 	"""Inclusive (min, max) range parser"""
@@ -771,7 +1449,39 @@ def parse_numeric_ranges(x: Union[str, List[int]], sep: str = ',') -> List[Tuple
 			retval.append((max(temp_set), max(temp_set)))
 	return retval
 
+# def someHotSpotCallable(func: Callable):
+# 	# Deterministic profiler
+# 	def _my_decorator(*args, **kwargs):
+# 		prof = pprofile.Profile()
+# 		with prof():
+# 			func(*args, **kwargs)
+# 		prof.print_stats()
+# 	return _my_decorator
+#
+# def someOtherHotSpotCallable(func: Callable):
+# 	# Statistic profiler
+# 	def _my_decorator(*args, **kwargs):
+# 		prof = pprofile.StatisticalProfile()
+# 		with prof(period=0.001, single=True):
+# 			func(*args, **kwargs)
+# 		prof.print_stats()
+# 	return _my_decorator
+def someHotSpotCallable(func: Callable, *args, **kwargs):
+	# Deterministic profiler
+	prof = pprofile.Profile()
+	with prof():
+		func(*args, **kwargs)
+	prof.print_stats()
+
+def someOtherHotSpotCallable(func: Callable, *args, **kwargs):
+	# Statistic profiler
+	prof = pprofile.StatisticalProfile()
+	with prof(period=0.001, single=True):
+		func(*args, **kwargs)
+	prof.print_stats()
+
 timer = TestTimer()
 
-__all__ = ['Unit', 'Application', 'center', 'access_grid', 'parse_numeric_ranges', 'TestTimer', 'timer',
-           'process_pid', 'is_running']
+__all__ = ['Unit', 'Application', 'center', 'access_grid', 'parse_numeric_ranges', 'TestTimer', 'timer', 'process_pid',
+           'is_running', 'get_screen_size', 'count_screens', 'total_screen_space', 'enumerate_screens', 'DataGrid',
+           '_check_units', 'check_serial_number']

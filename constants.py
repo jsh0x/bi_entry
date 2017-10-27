@@ -13,8 +13,8 @@ REGEX_CREDIT_HOLD = re.compile(r".*Credit Hold is Yes.*\[Customer: *(?P<customer
 REGEX_NEGATIVE_ITEM = re.compile(r"On Hand is -(?P<quantity>\d+)\.0+.*\[Item: (?P<item>\d+-\d{2}-\d{5}-\d+)\].*\[Location: (?P<location>[a-zA-Z0-9_-]+)\]")
 REGEX_SQL_DATE = re.compile(r"(?P<year>\d{4})[/-](?P<month>[01]\d)[/-](?P<day>[0-3]\d)")
 REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<microsecond>\d+))?")
-REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R|T))?")
-REGEX_BUILD_ALT = re.compile(r"(?P<prefix>[A-Z]{2})-(?P<build>(?P<carrier>\d)\d{3})(?:-(?P<suffix>M|DEMO|R|T))?")
+REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2,3})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R|T))?")
+REGEX_BUILD_ALT = re.compile(r"(?P<prefix>[A-Z]{2,3})-(?P<build>(?P<carrier>\d)\d{3})(?:-(?P<suffix>M|DEMO|R|T))?")
 REGEX_RESOLUTION = re.compile(r"(?P<general>\d+),(?P<specific>\d+)")
 REGEX_NUMERIC_RANGES = re.compile(r"(\d{1,2})-(\d{1,2})|(\d{1,2})")
 
@@ -35,3 +35,10 @@ SUFFIX_DICT = {'M': 'Monitoring', 'R': 'Refurb',
 
 CARRIER_DICT = {'V': 'Verizon', 'S': 'Sprint', '-': None,
                 '3': 'Verizon', '4': 'Sprint', '2': None}
+
+DB_TABLE = 'PyComm'
+TRANSACTION_STATUS = 'Queued'
+SCRAP_STATUS = 'Scrap'
+REASON_STATUS = 'Reason'
+
+# A red fox zipped through the bog, jumping back over mushy logs carelessly and not quite winning.

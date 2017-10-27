@@ -17,6 +17,7 @@ from utils import MS_SQL, SQL_Lite
 
 log = logging.getLogger(__name__)
 reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
+# TODO: Rework process
 
 def Scrap(app: Application, units: List[Unit]):
 	completed_units = []

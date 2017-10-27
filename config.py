@@ -7,7 +7,7 @@ from constants import REGEX_NUMERIC_RANGES
 
 
 _config = configparser.ConfigParser()
-_config.read_file(open('config.ini'))
+_config.read_file(open(r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\config.ini'))
 
 application_filepath = pathlib.Path(_config.get('Paths', 'sl_exe'))
 version = _config.get('DEFAULT', 'version')

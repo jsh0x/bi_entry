@@ -69,8 +69,8 @@ include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
-            "numpy.core._dotblas", "PyQt5", "PIL",
-            "colorama", "pygments", "mpl-data", "email"]
+            "numpy.core._dotblas", "PyQt5", "colorama",
+            "pygments", "mpl-data", "email"]
 
 options = {
 	'build_exe': {
