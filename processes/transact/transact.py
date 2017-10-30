@@ -18,22 +18,30 @@ from utils.sql import _SQL
 log = logging.getLogger(__name__)
 # TODO: Rework process
 
+required_forms = ['Units']
+
 def count_units(sql: _SQL, table: str = DB_TABLE, group_serial: bool = False):
 	return _check_units(sql=sql, status=TRANSACTION_STATUS, table=table, group_serial=group_serial)
 
-def get_units(sql: _SQL, table: str = DB_TABLE, order: str = 'ASC') -> List[Unit]:
+def get_units(sql: _SQL, sql_sl: _SQL, table: str = DB_TABLE, order: str = 'ASC', exclude: List[str]=None) -> List[Unit]:
+	serial_string = ""
+	if exclude:
+		serial_string = ' AND ' + ' AND '.join(f"[Serial Number] <> '{ex}'" for ex in exclude)
 	serial_number = sql.execute(f"SELECT TOP 1 [Serial Number] FROM {table} WHERE [Status] = '{TRANSACTION_STATUS}' "
-	                            f"AND [DateTime] <= DATEADD(MINUTE, -5, GETDATE()) ORDER BY [DateTime] {order}")
+	                            f"AND [DateTime] <= DATEADD(MINUTE, -5, GETDATE()){serial_string} ORDER BY [DateTime] {order}")
 	if serial_number:
 		results = sql.execute(
 			f"SELECT * FROM {table} WHERE [Status] = '{TRANSACTION_STATUS}' AND [Serial Number] = '{serial_number[0]}'",
 			fetchall=True)
-		return [Unit(*row) for row in results]
+		return [Unit(sql, sql_sl, row) for row in results]
 	else:
 		return None
 
-def run(app: Application, units: List[Unit]):
+def run(self, units: List[Unit]):
 	try:
+		debug = True
+		print('STARTED')
+		app = self.app
 		pywinauto.timings.Timings.Fast()
 		units = units if type(units) is list else [units]
 		unit = units[0]
@@ -45,14 +53,13 @@ def run(app: Application, units: List[Unit]):
 			for x in units:
 				x.reset()
 			sys.exit(1)
-		log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-		app.verify_form('Units')
+		# log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
+		# app.verify_form('Units')
 		sleep(0.2)
 		sl_win.UnitEdit.set_text(unit.serial_number_prefix + unit.serial_number)  # Input serial number
 		sleep(0.2)
 		sl_win.send_keystrokes('{F4}')  # Filter in Place
 		count = 0
-		# or (not sl_uia.UnitEdit.legacy_properties()['IsReadOnly'])
 		while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and \
 				sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
 			if count >= 30:
@@ -66,8 +73,9 @@ def run(app: Application, units: List[Unit]):
 				raise SyteLineFilterInPlaceError(unit.serial_number,
 				                                 f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', "
 				                                 f"returned '{sl_win.UnitEdit.texts()[0].strip()}'")
-		for x in units:
-			x.start()
+		if not debug:
+			for x in units:
+				x.start()
 		log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 		if not sl_win.ServiceOrderLinesButton.is_enabled():
 			raise NoOpenSROError(serial_number=unit.serial_number, sro=unit.sro_num,
@@ -110,14 +118,18 @@ def run(app: Application, units: List[Unit]):
 			# handle_popup(best_match='ResetDatesDialog')
 			pag.press('esc')
 			save = sl_uia.SaveButton
-			save.click()
+			if not debug:
+				save.click()
 		sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 		sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		print("START Transaction Unit list-comprehension")
 		transaction_units = [(y, i) for i, x in enumerate(units) if x.parts for y in x.parts]
+		print("END Transaction Unit list-comprehension")
 		log.debug(f"Total parts: {', '.join([str(p[0]) for p in transaction_units])}")
 		if transaction_units:
 			try:
+				print("TRANSACTION")
 				sroo_time = unit.sro_operations_timer.stop() / len(units)
 				for temp in units:
 					temp.sro_operations_time += sroo_time
@@ -132,18 +144,24 @@ def run(app: Application, units: List[Unit]):
 				log.debug(
 					f"Time waited for SRO Transactions: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 				log.info("Starting transactions")
+				print("TRANSACTION 2")
 				sl_win.FilterDateRangeEdit.set_text(unit.eff_date.strftime('%m/%d/%Y'))
 				timer.start()
 				sl_win.ApplyFilterButton.click()
 				sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
+				print("FILTER SET")
 				t_temp = timer.stop()
+				print("TIMER STOP?")
 				log.debug(
 					f"Time waited for first Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+				print("DEBUG?")
 				transaction_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
+				print("TRANSACTION GRID")
 				log.debug(transaction_grid.get_properties())
 				posted_parts = access_grid(transaction_grid,
 				                           ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
 				                           condition=('Posted', True), requirement='Item')
+				print("POSTED PARTS")
 				log.debug(f"Posted parts: {posted_parts}")
 				posted_part_numbers = {p.Item for p in posted_parts}
 				sl_win.IncludePostedButton.click()
@@ -158,6 +176,7 @@ def run(app: Application, units: List[Unit]):
 				                             requirement='Item')
 				log.debug(f"Unposted parts: {unposted_parts}")
 				unposted_part_numbers = {p.Item for p in unposted_parts}
+				print("UNPOSTED PARTS")
 				row_i = None
 				top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 				log.debug(F"Columns: {top_row.children_texts()[1:10]}")
@@ -267,41 +286,44 @@ def run(app: Application, units: List[Unit]):
 					else:
 						wait_seconds = 8
 					sl_win.set_focus()
-					save.click()
-					dlg = app.get_popup()
-					while dlg:
-						log.debug(f"Transaction Save dialog text: '{dlg.Text}'")
-						dlg[0].close()
+					if not debug:
+						save.click()
 						dlg = app.get_popup()
-					log.debug("Saved")
-					sl_win.set_focus()
-					sl_win.PostBatchButton.click()
-					dlg = app.get_popup(6)
-					error = None
-					while dlg:
-						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
-						m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
-						m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
-						if m1 is not None:
-							pag.press('enter')
-							error = SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
-							dlg = app.get_popup(2)
-						elif m2 is not None:
-							pag.press('enter')
-							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'),
-							                                      loc=m2.group('location')))
-							log.warning("Negative Quantity!")
-							dlg = app.get_popup(4)
-						else:
+						while dlg:
+							log.debug(f"Transaction Save dialog text: '{dlg.Text}'")
+							dlg[0].close()
 							dlg = app.get_popup()
-							pag.press('enter')
-					else:
-						if error is not None:
-							raise error
+						log.debug("Saved")
+					sl_win.set_focus()
+					if not debug:
+						sl_win.PostBatchButton.click()
+						dlg = app.get_popup(6)
+						error = None
+						while dlg:
+							log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
+							m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
+							m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
+							if m1 is not None:
+								pag.press('enter')
+								error = SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
+								dlg = app.get_popup(2)
+							elif m2 is not None:
+								pag.press('enter')
+								warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'),
+								                                      loc=m2.group('location')))
+								log.warning("Negative Quantity!")
+								dlg = app.get_popup(4)
+							else:
+								dlg = app.get_popup()
+								pag.press('enter')
+						else:
+							if error is not None:
+								raise error
 					sl_win.PostBatchButton.wait('ready', 2, 0.09)
 					log.debug("Batch posted")
 					sl_win.set_focus()
-					save.click()
+					if not debug:
+						save.click()
 					sleep(1)
 			dlg = app.get_popup(3)
 			while dlg:
@@ -333,26 +355,27 @@ def run(app: Application, units: List[Unit]):
 		i2 = {x.datetime: i for i, x in enumerate(units)}
 		newest_unit = units[i2[max(list(i2.keys()))]]
 		oldest_unit = units[i2[min(list(i2.keys()))]]
-		if not sl_win.ReceivedDateEdit.texts()[0].strip():
-			sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
-			sl_win.ReceivedDateEdit.send_keystrokes('^s')
-		if not sl_win.FloorDateEdit.texts()[0].strip():
-			sl_win.FloorDateEdit.set_text(oldest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
-			sl_win.FloorDateEdit.send_keystrokes('^s')
-		if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
-			sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
-		sl_win.CompletedDateEdit.send_keystrokes('^s')
-		sleep(0.5)
-		log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
-		log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
-		log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
-		if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
-			sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+		if not debug:
+			if not sl_win.ReceivedDateEdit.texts()[0].strip():
+				sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.ReceivedDateEdit.send_keystrokes('^s')
+			if not sl_win.FloorDateEdit.texts()[0].strip():
+				sl_win.FloorDateEdit.set_text(oldest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.FloorDateEdit.send_keystrokes('^s')
+			if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
+				sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 			sl_win.CompletedDateEdit.send_keystrokes('^s')
-			sleep(2)
-		log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
-		log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
-		log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
+			sleep(0.5)
+			log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
+			log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
+			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
+			if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
+				sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+				sl_win.CompletedDateEdit.send_keystrokes('^s')
+				sleep(2)
+			log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
+			log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
+			log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 		common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 		if has_qc:
@@ -420,7 +443,8 @@ def run(app: Application, units: List[Unit]):
 				sleep(0.5)
 				pag.typewrite(str(num))
 				sleep(0.5)
-			pag.hotkey('ctrl', 's')
+			if not debug:
+				pag.hotkey('ctrl', 's')
 			resn_notes = sl_win.ReasonNotesEdit
 			resn_notes.click_input()
 			pag.press('end', 30)
@@ -447,17 +471,19 @@ def run(app: Application, units: List[Unit]):
 			else:
 				if len(units) > 1:
 					pag.press('backspace')
-		pag.hotkey('ctrl', 's')
-		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
-		status.send_keystrokes('^s')
-		status.wait_for_idle()
+		if not debug:
+			pag.hotkey('ctrl', 's')
+			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
+			status.send_keystrokes('^s')
+			status.wait_for_idle()
 		if has_qc or units[0].SRO_Operations_status == 'Closed':
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			sl_win.set_focus()
 			status.set_keyboard_focus()
 			status.send_keystrokes('{DOWN}{DOWN}')
 			try:
-				status.send_keystrokes('^s')
+				if not debug:
+					status.send_keystrokes('^s')
 				sleep(1)
 			except TimeoutError:
 				pass
@@ -475,6 +501,8 @@ def run(app: Application, units: List[Unit]):
 		sleep(0.2)
 		sl_win.send_keystrokes('{F5}')  # Clear Filter
 		sleep(0.2)
+		if debug:
+			quit()
 	except Exception as ex:
 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)

@@ -7,10 +7,12 @@ import re
 import threading
 from collections import Counter, UserDict, UserList, defaultdict, namedtuple
 from concurrent.futures import ThreadPoolExecutor
-from string import punctuation
+from string import punctuation, ascii_lowercase
+from random import choices
 from sys import exc_info
 from time import sleep
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
+from numbers import Number
 import queue
 
 import numpy as np
@@ -34,6 +36,7 @@ completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str),
                                ('Buttons', Dict[str, win32_controls.ButtonWrapper])])
 
+observer_affect = lambda: sleep(0.0001)
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 # Move classes to bi_entry.py?
 # TODO: DOCSTRINGS!!!
@@ -480,14 +483,17 @@ class Application(psutil.Process):
 			self.win32.SignIn.PasswordEdit.set_text(pwd)
 			self.win32.SignIn.set_focus()
 			self.win32.SignIn.OKButton.click()
-			if not self.win32.SignIn.exists(1, 0.09):
+			for i in range(8):
+				top_window = self.win32.top_window()
+				top_window.send_keystrokes('{ENTER}')
+			sleep(0.5)
+			log.debug(self.win32.top_window().texts()[0])
+			if __debug__:
+				print(self.win32.top_window().texts()[0])
+			if (not self.win32.SignIn.exists(1,  0.09)) or ('(EM)' in self.win32.top_window().texts()[0]):
 				self._logged_in = True
 				self._user = usr
 				log.info(f"Successfully logged in as '{self._user}'")
-				sleep(1)
-				self.win32.top_window().send_keystrokes('{ENTER 2}{ESC 2}')
-				pag.press('enter', 2)
-				pag.press('esc', 2)
 				return True
 			else:
 				log.warning(f"Login attempt as '{usr}' unsuccessful")
@@ -502,7 +508,9 @@ class Application(psutil.Process):
 			r_i = so.rectangle()
 			c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
 			pag.click(*c_coords)
-			if self.win32.SignIn.exists(1, 0.09):
+			sleep(0.5)
+			log.debug(self.win32.top_window().texts()[0])
+			if 'Sign In' in self.win32.top_window().texts()[0]:
 				self._logged_in = False
 				log.info(f"Successfully logged out")
 				return True
@@ -672,11 +680,15 @@ class Puppet(threading.Thread):
 		self.q_in = queue.Queue()
 		self.q_out = queue.Queue()
 		self.app = app
+		self.status = 'Idle'
+		self.units = set()
 		super().__init__(target=self.target, daemon=True, name=name)
 		self.start()
 		self._stop_event = threading.Event()
 
 	def set_input(self, func: callable, *args, **kwargs): ...
+
+	def run_process(self, proc, unit_sn, *args, **kwargs): ...
 
 	def get_output(self) -> Any: ...
 
@@ -689,86 +701,21 @@ class PuppetMaster:
 	_children = set()
 	pids = defaultdict(list)
 
-	def __init__(self, app_count: int = 0, fp=None):
-		if fp is None:
-			user_list = [username, 'BISync01', 'BISync02', 'BISync03']
-			pwd_list = [password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
+	def __init__(self, fp, app_count: int = 0, skip_opt: bool=False):
+		if app_count > 0:
+			for i in range(app_count):
+				app = self.grab(fp)
+				if not app:
+					break
+			app_count -= len(self.children())
+			for i in range(app_count):
+				app = self.start(fp)
+				if not app:
+					break
 			if app_count > 0:
-				for i in range(app_count):
-					app = self.grab_syteline(application_filepath)
-					if not app:
-						break
-				app_count -= len(self.children())
-				for i, usr, pwd in zip(range(app_count), user_list, pwd_list):
-					app = self.start_syteline(application_filepath, usr, pwd)
-					if not app:
-						break
-				if app_count > 0:
-					return None
-				with ThreadPoolExecutor(max_workers=len(self.children())) as e:
-					for app, usr, pwd in zip(self.children(), user_list, pwd_list):
-						e.submit(lambda x, y: x.quick_log_in(*y), app, (usr, pwd))
-						sleep(1)
+				return None
+			if not skip_opt:
 				self.optimize_screen_space()
-		else:
-			if app_count > 0:
-				for i in range(app_count):
-					app = self.grab(fp)
-					if not app:
-						break
-				app_count -= len(self.children())
-				for i in range(app_count):
-					app = self.start(fp)
-					if not app:
-						break
-				if app_count > 0:
-					return None
-				self.optimize_screen_space()
-
-	def open_forms(self, *names):
-		with ThreadPoolExecutor(max_workers=len(names)) as e:
-			for app, forms in zip(self.children(), names):
-				e.submit(lambda x, y: x.quick_open_form(*y), app, forms)
-				sleep(0.5)
-		sleep(1)
-
-	def start_syteline(self, fp: Union[str, pathlib.Path], usr, pwd, name: str=None) -> Puppet:
-		try:
-			if name is None:
-				base_name = pathlib.Path(str(fp)).stem[:4].lower()
-				name = base_name + '1'
-				count = 2
-				while name in self._children:
-					name = base_name + str(count)
-					count += 1
-			app = Application.start(str(fp))
-			app.quick_log_in(usr, pwd)
-		except Exception:
-			return None
-		else:
-			self.__setattr__(name, self.Puppet(app, name))
-			self.pids[fp].append(self.__getattribute__(name).app.pid)
-			self._children.add(name)
-			return self.__getattribute__(name)
-
-	def grab_syteline(self, fp: Union[str, pathlib.Path]) -> Puppet:
-		try:
-			base_name = pathlib.Path(str(fp)).stem[:4].lower()
-			name = base_name + '1'
-			count = 2
-			while name in self._children:
-				name = base_name + str(count)
-				count += 1
-			app = Application.connect(pathlib.Path(str(fp)), self.pids[fp])
-			if app.logged_in:
-				app.get_user()
-		except Exception:
-			return None
-		else:
-			self.__setattr__(name, self.Puppet(app, name))
-			self.pids[fp].append(self.__getattribute__(name).app.pid)
-			self._children.add(name)
-			return self.__getattribute__(name)
 
 	def start(self, fp: Union[str, pathlib.Path], name: str = None) -> Puppet:
 		try:
@@ -807,13 +754,17 @@ class PuppetMaster:
 			self._children.add(name)
 			return self.__getattribute__(name)
 
-	def optimize_screen_space(self, win_size: Tuple[int, int] = (1024, 750)):
+	def optimize_screen_space(self, win_size: Tuple[int, int] = (1024, 750), screen_pref: str=None):
 		# {l:2017 t:122 r:3040 b:872}
 		all_scrn = enumerate_screens()
-		n = len(self.children())
-		m = n // count_screens() if (n // count_screens()) > 1 else 2
+		if screen_pref.lower() == 'left':
+			all_scrn = all_scrn[:1]
+		elif screen_pref.lower() == 'right':
+			all_scrn = all_scrn[-1:]
+		windows = len(self.children())
+		m = windows // len(all_scrn) if (windows // len(all_scrn)) > 1 else 2
 		for i, ch in enumerate(self.children()):
-			ch.size = win_size
+			ch.app.size = win_size
 			scrn = all_scrn[i // m]
 			x_step = ((scrn[2] - scrn[0]) - win_size[0]) // (m - 1)
 			y_step = ((scrn[3] - scrn[1]) - win_size[1])
@@ -821,9 +772,9 @@ class PuppetMaster:
 				x_step += 1
 			x = scrn[0] + (x_step * (i % m))
 			y = scrn[1] + (y_step * ((i % m) % 2))
-			ch.location = (x, y)
+			ch.app.location = (x, y)
 
-	def children(self) -> List[Application]:
+	def children(self) -> List[Puppet]:
 		return [self.__getattribute__(ch) for ch in self._children]
 
 	def apply_all(self, func: Callable, *args, **kwargs):
@@ -832,44 +783,70 @@ class PuppetMaster:
 				e.submit(func, ch, *args, **kwargs)
 				sleep(1)
 
-	def run_process(self, app: Union[str, int, Application], proc) -> bool:
-		"""Run process, return whether it was successful or not."""
-		if type(app) is str:
-			if app in self._children:
-				app = self.__getattribute__(app)
-			elif app.startswith('app') and app[3:].isnumeric():
-				app = int(app[3:])
+	def get_puppet(self, ppt: Union[str, int, Puppet]) -> Puppet:
+		print(ppt)
+		if type(ppt) is str:
+			if ppt in self._children:
+				ppt = self.__getattribute__(ppt)
+			elif ppt.startswith('ppt') and ppt[3:].isnumeric():
+				ppt = int(ppt[3:])
 			else:
 				raise ValueError()
-		if type(app) is int:
-			if 0 <= app < len(self.children()):
-				app = self.children()[app]
+		if type(ppt) is int:
+			if 0 <= ppt < len(self.children()):
+				ppt = self.children()[ppt]
 			else:
 				raise ValueError()
-		if app not in self.children():
+		if ppt is not None and ppt not in self.children():
 			raise ValueError()
-		units = proc.get_units()
-		if units:
-			return proc.run(app, units)
-		return False
+		if ppt is None:
+			for ch in self.children():
+				print(ch, ch.status)
+				if ch.status == 'Idle':
+					ppt = ch
+					break
+			else:
+				raise ValueError()
+		return ppt
+
+	def wait_for_puppets(self, puppets, max_time=10):
+		puppets = [self.get_puppet(ppt) for ppt in puppets]
+		res = []
+		start_time = datetime.datetime.now()
+		while len(res) < len(puppets):
+			if __debug__:
+				pass
+				# print(res, (datetime.datetime.now() - start_time).total_seconds())
+			sleep(0.001)
+			for ppt in puppets:
+				res2 = ppt.get_output()
+				if res2:
+					res.append(res2)
+			if (datetime.datetime.now() - start_time).total_seconds() > max_time:
+				raise TimeoutError()
 
 	class Puppet(threading.Thread):
 		"""Thread class with a stop() method. The thread itself has to check
 		regularly for the stopped() condition."""
+		def __bool__(self):
+			return True
 
 		def target(self):
 			while True:
 				try:
 					command, args, kwargs = self.q_in.get_nowait()
 				except queue.Empty:
-					continue
+					observer_affect()
 				else:
+					self.status = 'Busy'
 					self.q_out.put_nowait(command(self, *args, **kwargs))
+				self.status = 'Idle'
 
 		def __init__(self, app: Application, name):
 			self.q_in = queue.Queue()
 			self.q_out = queue.Queue()
 			self.app = app
+			self.status = 'Idle'
 			super().__init__(target=self.target, daemon=True, name=name)
 			self.start()
 			self._stop_event = threading.Event()
@@ -895,7 +872,7 @@ class PuppetMaster:
 		return self
 
 	def __exit__(self, type, value, traceback):
-		procs = self.children()
+		procs = [ch.app for ch in self.children()]
 		for p in procs:
 			# print(p)
 			try:
@@ -907,6 +884,75 @@ class PuppetMaster:
 		for p in still_alive:
 			# print(p)
 			p.kill()
+
+class SyteLinePupperMaster(PuppetMaster):
+	def __init__(self, n: int, fp=application_filepath, skip_opt: bool=True, forms=[]):
+		print(n, forms)
+		user_list = [username, 'BISync01', 'BISync02', 'BISync03']
+		pwd_list = [password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
+		super().__init__(fp, n, skip_opt)
+		for ppt, usr, pwd in zip(self.children(), user_list, pwd_list):
+			ppt.set_input(lambda x, y: x.app.quick_log_in(*y), [usr, pwd])
+		self.wait_for_puppets(self.children(), 4)
+		self.optimize_screen_space(screen_pref='left')
+		if forms:
+			for form, ppt in zip(forms, self.children()):
+				if type(form) is str:
+					form = [form]
+				ppt.set_input(lambda x, y: x.app.quick_open_form(*y), form)
+				sleep(1)
+			while not all(ppt.status == 'Idle' for ppt in self.children()):
+				observer_affect()
+
+	@classmethod
+	def for_processes(cls, *processes):
+		return cls(len([proc for proc in processes]), forms=[proc.required_forms for proc in processes])
+
+	@classmethod
+	def for_forms(cls, *forms):
+		return cls(len([form for form in forms]), forms=[form for form in forms])
+
+	def open_forms(self, *names):
+		with ThreadPoolExecutor(max_workers=len(names)) as e:
+			for ppt, forms in zip(self.children(), names):
+				e.submit(lambda x, y: x.quick_open_form(*y), ppt.app, forms)
+				sleep(0.5)
+		sleep(1)
+
+	def run_process(self, process, ppt: Union[str, int, Puppet]=None) -> bool:
+		"""Run process, return whether it was successful or not."""
+		ppt = self.get_puppet(ppt)
+		units = process.get_units(mssql, sl_sql, exclude=[sn for ch in self.children() for sn in ch.units])
+		print(units)
+		if units:
+			ppt.run_process(process, {unit.serial_number for unit in units}, units)
+			print(ppt.units)
+			return ppt
+		return False
+
+	class Puppet(PuppetMaster.Puppet):
+		def target(self):
+			while True:
+				self.status = 'Idle'
+				observer_affect()
+				try:
+					command, args, kwargs = self.q_in.get_nowait()
+				except queue.Empty:
+					observer_affect()
+				else:
+					self.status = 'Busy'
+					self.q_out.put_nowait(command(self, *args, **kwargs))
+					self.status = 'Idle'
+					self.units.clear()
+				self.status = 'Idle'
+
+		def __init__(self, app: Application, name):
+			self.units = set()
+			super().__init__(app, name)
+
+		def run_process(self, proc, unit_sn, *args, **kwargs):
+			self.q_in.put_nowait((proc.run, tuple(arg for arg in args), {k: v for k, v in kwargs.items()}))
+			self.units = {str(sn) for sn in unit_sn}
 
 class TestTimer:
 	def __init__(self):
