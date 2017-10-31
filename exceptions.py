@@ -19,13 +19,14 @@ class BI_EntryError(Exception):
 	"""Base exception class. All other exceptions inherit
 	from this one.
 	"""
+
 	def __init__(self, msg=""):
 		Exception.__init__(self, msg)
 		self.msg = msg
 
 	def __repr__(self):
 		ret = "%s.%s %s" % (self.__class__.__module__,
-                            self.__class__.__name__, self.msg)
+		                    self.__class__.__name__, self.msg)
 		return ret.strip()
 
 	__str__ = __repr__
@@ -74,6 +75,8 @@ class InvalidReasonCodeError(BI_EntryError, ValueError):
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
 		self.reason_code = reason_code
 		self.spec_id = spec_id
+
+
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -106,6 +109,8 @@ class SQLResultError(SQLError, ValueError):
 	def __init__(self, cmd: str, msg=""):
 		msg2 = f"Invalid response from query '{cmd}'"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+
+
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -146,4 +151,5 @@ class NegativeQuantityWarning(BI_EntryWarning):
 	def __init__(self, part: str, qty: int, loc: str, msg=""):
 		msg2 = f"Quantity for part '{part}' = -{qty}.000 in location '{loc}'"
 		super().__init__("%s\n%s" % (msg2, msg))
+
 # - - - - - - - - - - - - - - - - - - - - - - - -

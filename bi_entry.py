@@ -25,9 +25,9 @@ def main():
 	                               '1121327')
 	_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
 	mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key),
-				   password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
+	               password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
 	slsql = MS_SQL(address=decrypt(_adr_data_sl, _key), username=decrypt(_usr_data, _key),
-				   password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
+	               password=decrypt(_pwd_data, _key), database=decrypt(_db_data_sl, _key))
 	config = configparser.ConfigParser()
 	logging.config.fileConfig('config.ini')
 	log = logging
@@ -212,13 +212,14 @@ def main():
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
 					mssql.execute(
-						f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
+							f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
 					continue
 				log.info(f"Unit object created with serial_number={unit.serial_number}'")
 				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
 				script_dict.get(process, lambda x, y: None)(app, units)
 				log.info(
-					'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+						'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+
 
 if __name__ == '__main__':
 	main()

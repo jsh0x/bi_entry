@@ -1,6 +1,5 @@
 import re
 
-
 # - - - - - - - - - - - - - - - - - - - - REGEX - - - - - - - - - - - - - - - - - - - - -
 REGEX_USER_SESSION_LIMIT = re.compile(r"session count limit")
 REGEX_PASSWORD_EXPIRE = re.compile(r"password will expire")
@@ -16,7 +15,6 @@ REGEX_SQL_TIME = re.compile(r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}
 REGEX_BUILD = re.compile(r"(?P<prefix>[A-Z]{2,3})-(?P<build>\d{3}(?P<carrier>[VS])?)(?:-(?P<suffix>M|DEMO|R|T))?")
 REGEX_BUILD_ALT = re.compile(r"(?P<prefix>[A-Z]{2,3})-(?P<build>(?P<carrier>\d)\d{3})(?:-(?P<suffix>M|DEMO|R|T))?")
 REGEX_RESOLUTION = re.compile(r"(?P<general>\d+),(?P<specific>\d+)")
-
 
 # - - - - - - - - - - - - - - - - - - - - COMMON  - - - - - - - - - - - - - - - - - - - -
 # noinspection SpellCheckingInspection

@@ -18,35 +18,35 @@ packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
 
 # class OneLineExceptionFormatter(logging.Formatter):
-#     def formatException(self, exc_info):
-#         """
-#         Format an exception so that it prints on a single line.
-#         """
-#         result = super(OneLineExceptionFormatter, self).formatException(exc_info)
-#         return repr(result)  # or format into one line however you want to
+#	 def formatException(self, exc_info):
+#		 """
+#		 Format an exception so that it prints on a single line.
+#		 """
+#		 result = super(OneLineExceptionFormatter, self).formatException(exc_info)
+#		 return repr(result)  # or format into one line however you want to
 #
-#     def format(self, record):
-#         s = super(OneLineExceptionFormatter, self).format(record)
-#         if record.exc_text:
-#             s = s.replace('\n', '') + '|'
-#         return s
+#	 def format(self, record):
+#		 s = super(OneLineExceptionFormatter, self).format(record)
+#		 if record.exc_text:
+#			 s = s.replace('\n', '') + '|'
+#		 return s
 #
 # def configure_logging():
-#     fh = logging.FileHandler('output.txt', 'w')
-#     f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
-#                                   '%d/%m/%Y %H:%M:%S')
-#     fh.setFormatter(f)
-#     root = logging.getLogger()
-#     root.setLevel(logging.DEBUG)
-#     root.addHandler(fh)
+#	 fh = logging.FileHandler('output.txt', 'w')
+#	 f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
+#								   '%d/%m/%Y %H:%M:%S')
+#	 fh.setFormatter(f)
+#	 root = logging.getLogger()
+#	 root.setLevel(logging.DEBUG)
+#	 root.addHandler(fh)
 #
 # def main():
-#     configure_logging()
-#     logging.info('Sample message')
-#     try:
-#         x = 1 / 0
-#     except ZeroDivisionError as e:
-#         logging.exception('ZeroDivisionError: %s', e)
+#	 configure_logging()
+#	 logging.info('Sample message')
+#	 try:
+#		 x = 1 / 0
+#	 except ZeroDivisionError as e:
+#		 logging.exception('ZeroDivisionError: %s', e)
 
 FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
@@ -64,7 +64,7 @@ def list_to_string(iterable: Sequence, sep: str = ','):
 	retval = ''
 	delimiter_length = len(sep)
 	for i in iterable:
-        retval += str(i) + sep
+		retval += str(i) + sep
 	return retval[:-delimiter_length]
 
 
@@ -112,7 +112,7 @@ def update_config():
 
 def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
 	fp = find_file('WinStudio.exe') if fp is None else fp
-    path = (os.path.dirname(sys.executable)).replace('\\', '/') + "/Scripts/pip3.6.exe"
+	path = (os.path.dirname(sys.executable)).replace('\\', '/') + "/Scripts/pip3.6.exe"
 	log_dir.mkdir(exist_ok=True)
 	info_log_dir = log_dir / 'info.log'
 	debug_log_dir = log_dir / 'dbg.log'
@@ -121,58 +121,58 @@ def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
 	# for mod in get_outdated_modules(path).keys():
 	# 	if mod in module_list:
 	# 		pass  # Update it
-    config['DEFAULT'] = {'version': __version__,
-                         'table': '0',
-                         'flow': 'ASC',
-                         'process': 'None',
-                         'printer': 'None',
-                         'min_sl_instances': '1',
-                         'max_sl_instances': '1',
-                         'multiprocess': 'False'}
-    config['Schedule'] = {'active_days': '1,2,3,4,5,6',
+	config['DEFAULT'] = {'version':          __version__,
+	                     'table':            '0',
+	                     'flow':             'ASC',
+	                     'process':          'None',
+	                     'printer':          'None',
+	                     'min_sl_instances': '1',
+	                     'max_sl_instances': '1',
+	                     'multiprocess':     'False'}
+	config['Schedule'] = {'active_days':  '1,2,3,4,5,6',
 	                      'active_hours': '0,1,5,6,7,8,9,10,11,12,13,14,15,18,19,20,21,22,23'
 	                      }
-    config['Paths'] = {'sl_exe': fp,
-                       'pip_exe': path,
-                       'cwd': cwd.as_posix()}
+	config['Paths'] = {'sl_exe':  fp,
+	                   'pip_exe': path,
+	                   'cwd':     cwd.as_posix()}
 	config['Login'] = {'username': usr,
-                       'password': pwd}
+	                   'password': pwd}
 	config['loggers'] = {'keys': list_to_string(loggers)}
 	config['handlers'] = {'keys': list_to_string(handlers)}
 	config['formatters'] = {'keys': list_to_string(formatters)}
-    config['formatter_errorFormatter'] = {
-        'format': "[{asctime}][{levelname}][{filename}, function:{funcName}, line:{lineno!s}]  {message}",
-        'datefmt': "%X",
-        'style': "{",
-        'class': "logging.Formatter"}
-    config['formatter_infoFormatter'] = {'format': "[{asctime}]{levelname!s:<8} {message}",
-                                         'datefmt': "%x %X",
-                                         'style': "{",
-                                         'class': "logging.Formatter"}
-    config['formatter_debugFormatter'] = {
-        'format': "[{asctime}.{msecs:0>3.0f}] {levelname!s:<5} {module!s:>8}.{funcName}:{lineno!s:<5} {message}",
-        'datefmt': "%X",
-        'style': "{",
-        'class': "logging.Formatter"}
-    config['handler_errorHandler'] = {'class': "StreamHandler",
-                                      'level': "WARNING",
-                                      'formatter': "errorFormatter",
-                                      'args': "(sys.stdout,)"}
-    config['handler_infoHandler'] = {'class': "handlers.TimedRotatingFileHandler",
-                                     'level': "INFO",
-                                     'formatter': "infoFormatter",
-                                     'args': f"('{info_log_dir.as_posix()}', 'D', 7, 3)"}
-    config['handler_debugHandler'] = {'class': "FileHandler",
-                                      'level': "DEBUG",
-                                      'formatter': "debugFormatter",
-                                      'args': f"('{debug_log_dir.as_posix()}', 'w')"}
-    config['handler_consoleHandler'] = {'class': "StreamHandler",
-                                        'level': "DEBUG",
-                                        'formatter': "debugFormatter",
-                                        'args': "()"}
-    config['logger_root'] = {'level': 'DEBUG',
-                             'handlers': list_to_string(handlers[:4]),
-                             'qualname': 'root'}
+	config['formatter_errorFormatter'] = {
+		'format':  "[{asctime}][{levelname}][{filename}, function:{funcName}, line:{lineno!s}]  {message}",
+		'datefmt': "%X",
+		'style':   "{",
+		'class':   "logging.Formatter"}
+	config['formatter_infoFormatter'] = {'format':  "[{asctime}]{levelname!s:<8} {message}",
+	                                     'datefmt': "%x %X",
+	                                     'style':   "{",
+	                                     'class':   "logging.Formatter"}
+	config['formatter_debugFormatter'] = {
+		'format':  "[{asctime}.{msecs:0>3.0f}] {levelname!s:<5} {module!s:>8}.{funcName}:{lineno!s:<5} {message}",
+		'datefmt': "%X",
+		'style':   "{",
+		'class':   "logging.Formatter"}
+	config['handler_errorHandler'] = {'class':     "StreamHandler",
+	                                  'level':     "WARNING",
+	                                  'formatter': "errorFormatter",
+	                                  'args':      "(sys.stdout,)"}
+	config['handler_infoHandler'] = {'class':     "handlers.TimedRotatingFileHandler",
+	                                 'level':     "INFO",
+	                                 'formatter': "infoFormatter",
+	                                 'args':      f"('{info_log_dir.as_posix()}', 'D', 7, 3)"}
+	config['handler_debugHandler'] = {'class':     "FileHandler",
+	                                  'level':     "DEBUG",
+	                                  'formatter': "debugFormatter",
+	                                  'args':      f"('{debug_log_dir.as_posix()}', 'w')"}
+	config['handler_consoleHandler'] = {'class':     "StreamHandler",
+	                                    'level':     "DEBUG",
+	                                    'formatter': "debugFormatter",
+	                                    'args':      "()"}
+	config['logger_root'] = {'level':    'DEBUG',
+	                         'handlers': list_to_string(handlers[:4]),
+	                         'qualname': 'root'}
 	with open(cwd / 'config.ini', 'w') as configfile:
 		config.write(configfile)
 
@@ -197,9 +197,9 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 desktop = pathlib.WindowsPath.home() / 'Desktop'
 shortcut = desktop / 'bi_entry.lnk'
 if not shortcut.exists():
-    create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe',
-                    startin=pathlib.WindowsPath.home() / 'Desktop' / 'build',
-                    icon_path=pathlib.WindowsPath.cwd() / 'bi_entry.ico')
+	create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe',
+	                startin=pathlib.WindowsPath.home() / 'Desktop' / 'build',
+	                icon_path=pathlib.WindowsPath.cwd() / 'bi_entry.ico')
 	sys.exit()
 
 if 'config.ini' not in os.listdir(cwd.as_posix()):

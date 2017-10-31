@@ -3,7 +3,7 @@ import configparser
 import os
 import sys
 
-from cx_Freeze import setup, Executable
+from cx_Freeze import Executable, setup
 
 from __init__ import __version__
 
@@ -12,6 +12,7 @@ config.read_file(open('config.ini'))
 
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
 version = f"{major}.{minor}.{micro+1}"
+
 
 def update_init(vers):
 	from tempfile import mkstemp
@@ -62,26 +63,26 @@ excludes = ["tkinter", "PyQt4.QtSql", "numpy",
 
 options = {
 	'build_exe': {
-		'packages': packages,
+		'packages':      packages,
 		'include_files': include_files,
-		"excludes": excludes,
-		"optimize": 2
+		"excludes":      excludes,
+		"optimize":      2
 		}
-}
+	}
 # TODO: Exclude files
 
 setup(
-	name='bi_entry',
-	options=options,
-	version=version,
-	packages=[''],
-	url='',
-	license='',
-	author='Josh Reddington',
-	author_email='',
-	description='',
-	executables=executables
-)
+		name='bi_entry',
+		options=options,
+		version=version,
+		packages=[''],
+		url='',
+		license='',
+		author='Josh Reddington',
+		author_email='',
+		description='',
+		executables=executables
+		)
 # subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
 # files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
 # with open('EOM.exe', mode='w+b') as f:

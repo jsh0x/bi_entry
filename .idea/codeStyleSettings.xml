@@ -2,8 +2,24 @@
 <project version="4">
   <component name="ProjectCodeStyleSettingsManager">
     <option name="PER_PROJECT_SETTINGS">
-      <value />
+      <value>
+        <Python>
+          <option name="DICT_ALIGNMENT" value="1" />
+          <option name="USE_CONTINUATION_INDENT_FOR_ARGUMENTS" value="true" />
+          <option name="OPTIMIZE_IMPORTS_SORT_NAMES_IN_FROM_IMPORTS" value="true" />
+          <option name="OPTIMIZE_IMPORTS_JOIN_FROM_IMPORTS_WITH_SAME_SOURCE" value="true" />
+          <option name="FROM_IMPORT_PARENTHESES_FORCE_IF_MULTILINE" value="true" />
+          <option name="HANG_CLOSING_BRACKETS" value="true" />
+        </Python>
+        <codeStyleSettings language="Python">
+          <option name="RIGHT_MARGIN" value="200" />
+          <indentOptions>
+            <option name="USE_TAB_CHARACTER" value="true" />
+            <option name="SMART_TABS" value="true" />
+          </indentOptions>
+        </codeStyleSettings>
+      </value>
     </option>
-    <option name="PREFERRED_PROJECT_CODE_STYLE" value="Default (1)" />
+    <option name="USE_PER_PROJECT_SETTINGS" value="true" />
   </component>
 </project>
