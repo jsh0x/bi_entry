@@ -1,27 +1,17 @@
-#!/usr/bin/env python
-import compileall
+# from distutils.core import setup
 import configparser
-import glob
 import os
 import sys
 
-from __init__ import __version__
-
-
-# Compiles the sourcecode
-for f in glob.iglob('*.py'):
-	compileall.compile_file(f, force=True)
-compileall.compile_dir(os.getcwd()+'\\processes', force=True)
-compileall.compile_dir(os.getcwd()+'\\utils', force=True)
-
 from cx_Freeze import setup, Executable
+
+from __init__ import __version__
 
 config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
 
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
 version = f"{major}.{minor}.{micro+1}"
-
 
 def update_init(vers):
 	from tempfile import mkstemp
@@ -46,7 +36,7 @@ def update_init(vers):
 	move(abs_path, '__init__.py')
 
 
-update_init(version)
+# update_init(version)
 
 FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
@@ -55,7 +45,6 @@ os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 
 executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
-# Executable(script="eom_closeout.py", base="Console", targetName="EOM.exe", icon="bi_entry2.ico")
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',
@@ -64,13 +53,12 @@ packages = ['psutil', 'win32api', 'pyautogui',
             'comtypes', 'sqlite3']
 include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
                  r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
-                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry.ico',
-                 r'C:\Users\mfgpc00\Documents\GitHub\bi_entry\bi_entry2.ico']
+                 r'C:\Users\mfgpc00\Desktop\deploy\bi_entry.ico']
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
-            "numpy.core._dotblas", "PyQt5", "colorama",
-            "pygments", "mpl-data", "email"]
+            "numpy.core._dotblas", "PyQt5", "PIL",
+            "colorama", "pygments", "mpl-data", "email"]
 
 options = {
 	'build_exe': {
@@ -87,7 +75,6 @@ setup(
 	options=options,
 	version=version,
 	packages=[''],
-	requires=['pymssql'],
 	url='',
 	license='',
 	author='Josh Reddington',
