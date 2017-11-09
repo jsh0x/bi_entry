@@ -4,13 +4,14 @@ import logging.config
 import random
 from random import randint
 from time import sleep
+import os
 
 from exceptions import *
 
 
 # TODO: Get s/n and also switch between reasons and transactions for that s/n
 # TODO: also update the table if there is nothing else to do with that s/n
-my_name = '???'
+my_name = os.environ['COMPUTERNAME']
 
 def main():
 	from transact import Transact
@@ -110,19 +111,17 @@ def main():
 					sleep(10)
 					continue
 				try:
-					if process == 'Queued':
-						if reason_results:
-							reason_units = [Unit(mssql, slsql, x) for x in reason_results]
-							Reason(app, reason_units)
-						if queued_results:
-							queued_units = [Unit(mssql, slsql, x) for x in queued_results]
-							Transact(app, queued_units)
-					else:
+					if process == 'Scrap':
 						log.debug(f"Current process: {process}")
 						units = [Unit(mssql, slsql, x) for x in result]
 						log.debug(f"Unit group created: {units}")
 						log.debug(f"Unit group created: {', '.join(f'{x.id}, {x.parts}, {x.operation}' for x in units)}")
 						unit = units[0]
+					else:
+						if reason_results:
+							reason_units = [Unit(mssql, slsql, x) for x in reason_results]
+						if queued_results:
+							queued_units = [Unit(mssql, slsql, x) for x in queued_results]
 				except NoSROError as ex:
 					log.exception("No SRO Error!")
 					mssql.execute(f"UPDATE {table} SET [Status] = 'No SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
@@ -142,7 +141,13 @@ def main():
 					script_dict.get(process, lambda x, y: None)(app, units)
 					log.info(
 							'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
-
+				elif process == 'Queued':
+						if reason_results:
+							Reason(app, reason_units)
+						if queued_results:
+							Transact(app, queued_units)
+						mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = NULL WHERE MachineName = '{my_name}'")
+						mssql.execute(f"UPDATE PuppetMaster SET CheckIn = GETDATE() WHERE MachineName = '{my_name}'")
 
 if __name__ == '__main__':
 	main()
