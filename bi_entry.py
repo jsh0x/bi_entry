@@ -8,6 +8,10 @@ from time import sleep
 from exceptions import *
 
 
+# TODO: Get s/n and also switch between reasons and transactions for that s/n
+# TODO: also update the table if there is nothing else to do with that s/n
+my_name = '???'
+
 def main():
 	from transact import Transact
 	from scrap import Scrap
@@ -81,126 +85,44 @@ def main():
 					sleep(5)
 			if not app.logged_in:
 				app.log_in(usr, pwd)
-				"""try:
-					app.win32.SignIn.wait('ready')
-					while app.win32.SignIn.exists():
-						app.win32.SignIn.UserLoginEdit.set_text(usr)
-						app.win32.SignIn.PasswordEdit.set_text(pwd)
-						if (app.win32.SignIn.UserLoginEdit.texts()[0] != usr) or (app.win32.SignIn.PasswordEdit.texts()[0] != pwd) or (not app.win32.SignIn.OKButton.exists()):
-							raise ValueError()
-						app.win32.SignIn.set_focus()
-						app.win32.SignIn.OKButton.click()
-						Dialog2 = app.uia.top_window()
-						while Dialog2.exists():
-							# Get dialog info
-							Dialog = Dialog2.children()[0]
-							title = Dialog.texts()
-							buttons = {ctrl.texts()[0].strip('!@#$%^&*()_ ').replace(' ', '_').lower() + '_button': ctrl for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Button'}
-							text = [ctrl.texts()[0].capitalize() for ctrl in Dialog.children() if ctrl.friendly_class_name() == 'Static' and ctrl.texts()[0]]
-							if not text:
-								break
-							log.debug([title, buttons, text, replace_session_regex.search(text[0]), user_session_regex.search(text[0])])
-							if replace_session_regex.search(text[0]):  # Handle better in future
-								if 'yes_button' in buttons:
-									Dialog.set_focus()
-									buttons['yes_button'].click()
-							elif password_expire_regex.search(text[0]):  # Handle better in future
-								if 'ok_button' in buttons:
-									Dialog.set_focus()
-									buttons['ok_button'].click()
-							elif user_session_regex.search(text[0]):  # Handle better in future
-								if 'ok_button' in buttons:
-									Dialog.set_focus()
-									buttons['ok_button'].click()
-							elif invalid_login_regex.search(text[0]):  # Handle better in future
-								if 'ok_button' in buttons:
-									Dialog.set_focus()
-									buttons['ok_button'].click()
-									raise SyteLineLogInError('')
-							else:
-								raise ValueError()
-				except ValueError:
-					continue  # Handle better in future
-				else:
-					log.info(f"Successfully logged in as '{usr}'")
-					app.logged_in = True"""
 			if app.logged_in:
-				flow = config.get('DEFAULT', 'flow')
-				tbl_mod = config.get('DEFAULT', 'table')
 				proc = config.get('DEFAULT', 'process')
-				table = 'PyComm' if int(tbl_mod) else 'PyComm2'  # if table == 1: PyComm, else: PyComm2
-				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' OR [Status] = 'Reason' OR [Status] = 'Scrap' ORDER BY [DateTime] ASC")
-				# result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Queued' ORDER BY [DateTime] ASC")
 				if 'scrap' in proc.lower():
 					process = 'Scrap'
 					result = mssql.execute("SELECT TOP 100 * FROM PyComm WHERE [Status] = 'Scrap' ORDER BY [DateTime] ASC", fetchall=True)
-				elif 'reason' in proc.lower():
-					process = 'Reason'
-					result = mssql.execute("SELECT TOP 1 * FROM PyComm WHERE [Status] = 'Reason' ORDER BY [DateTime] ASC")
-
-				else:
-					result = mssql.execute(f"SELECT TOP 1 * From PyComm "
-					                       f"WHERE [Status] = 'Queued' "
-					                       f"AND [DateTime] <= DATEADD(MINUTE, -5, GETDATE()) "
-					                       f"ORDER BY [DateTime] {flow}")
 					if result:
 						process = result.Status
+				else:
+					reason_results = None
+					queued_results = None
+					serial_number = mssql.execute(f"SELECT SerialNumber FROM PuppetMaster WHERE MachineName = '{my_name}'")
+					mssql.execute(f"UPDATE PuppetMaster SET CheckIn = GETDATE() WHERE MachineName = '{my_name}'")
+					statuses = mssql.execute(f"SELECT DISTINCT Status AS Status FROM PyComm WHERE [Serial Number] = '{serial_number}'", fetchall=True)
+					if statuses:
+						if 'Queued' in statuses:
+							queued_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Queued' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
+							process = 'Queued'
+						if 'Reason' in statuses:
+							reason_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Reason' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
+							process = 'Queued'
 				if not result:
 					log.info("No valid results, waiting...")
 					sleep(10)
 					continue
 				try:
-					log.debug(f"Current process: {process}")
-					if 'queued' in process.lower() or 'reason' in process.lower():
-						if 'queued' in process.lower():
-							all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
-							                            f"([Status] = 'Queued' OR [Status] = 'No Open SRO(Queued)' OR [Status] = 'Skipped(Queued)')", fetchall=True)
-						elif 'reason' in process.lower():
-							all_results = mssql.execute(f"SELECT * FROM {table} WHERE [Serial Number] = '{result.Serial_Number}' AND "
-							                            f"([Status] = 'Reason' OR [Status] = 'No Open SRO(Reason)' OR [Status] = 'Skipped(Reason)')", fetchall=True)
-						counter = {'SRO': 0, 'OSRO': 0, 'Skip': 0, 'C_SRO': 0, 'C_OSRO': 0, 'C_Skip': 0}
-						for res in all_results:
-							if 'Custom' in res.Status:
-								if 'No Open SRO' in res.Status:
-									counter['C_OSRO'] += 1
-								elif 'No SRO' in res.Status:
-									counter['C_SRO'] += 1
-								elif 'Skipped' in res.Status:
-									counter['C_Skip'] += 1
-							else:
-								if 'No Open SRO' in res.Status:
-									counter['OSRO'] += 1
-								elif 'No SRO' in res.Status:
-									counter['SRO'] += 1
-								elif 'Skipped' in res.Status:
-									counter['Skip'] += 1
-						if sum(counter.values()):
-							counter_key = None
-							max_count = max(counter.values())
-							for k, v in counter.items():
-								if v == max_count:
-									counter_key = k
-									break
-							if counter_key:
-								if 'SRO' in counter_key:
-									log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
-									mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
-								if 'OSRO' in counter_key:
-									log.exception(f"No SRO's exist for serial number: {result.Serial_Number}")
-									mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
-								elif 'Skip' in counter_key:
-									log.exception(f"Other entries with skipped status exist for serial number: {result.Serial_Number}")
-									mssql.execute(f"UPDATE {table} SET [Status] = 'Skipped({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
-								continue
-						if 'queued' in process.lower():
-							units = list({unit.operation: unit for unit in [Unit(mssql, slsql, x) for x in all_results]}.values())  # Removes and duplicate operations
-						elif 'reason' in process.lower():
-							units = [Unit(mssql, slsql, x) for x in all_results]
+					if process == 'Queued':
+						if reason_results:
+							reason_units = [Unit(mssql, slsql, x) for x in reason_results]
+							Reason(app, reason_units)
+						if queued_results:
+							queued_units = [Unit(mssql, slsql, x) for x in queued_results]
+							Transact(app, queued_units)
 					else:
+						log.debug(f"Current process: {process}")
 						units = [Unit(mssql, slsql, x) for x in result]
-					log.debug(f"Unit group created: {units}")
-					log.debug(f"Unit group created: {', '.join(f'{x.id}, {x.parts}, {x.operation}' for x in units)}")
-					unit = units[0]
+						log.debug(f"Unit group created: {units}")
+						log.debug(f"Unit group created: {', '.join(f'{x.id}, {x.parts}, {x.operation}' for x in units)}")
+						unit = units[0]
 				except NoSROError as ex:
 					log.exception("No SRO Error!")
 					mssql.execute(f"UPDATE {table} SET [Status] = 'No SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
@@ -214,11 +136,12 @@ def main():
 					mssql.execute(
 							f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
 					continue
-				log.info(f"Unit object created with serial_number={unit.serial_number}'")
-				script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
-				script_dict.get(process, lambda x, y: None)(app, units)
-				log.info(
-						'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
+				if process == 'Scrap':
+					log.info(f"Unit object created with serial_number={unit.serial_number}'")
+					script_dict = {'Queued': Transact, 'Reason': Reason, 'Scrap': Scrap, 'Custom(Queued)': Transact}
+					script_dict.get(process, lambda x, y: None)(app, units)
+					log.info(
+							'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 
 
 if __name__ == '__main__':
