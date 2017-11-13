@@ -5,7 +5,7 @@ from time import sleep
 from typing import List
 
 import pyautogui as pag
-import pywinauto.timings
+from pywinauto import timings
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
@@ -19,7 +19,7 @@ log = logging
 
 def Transact(app: Application, units: List[Unit]):
 	try:
-		pywinauto.timings.Timings.Fast()
+		timings.Timings.Fast()
 		units = units if type(units) is list else [units]
 		unit = units[0]
 		has_qc = True if [x for x in units if x.operation == 'QC'] else False

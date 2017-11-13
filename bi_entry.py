@@ -43,7 +43,7 @@ def main():
 	app = Application(config.get('Paths', 'sl_exe'))
 	usr = config.get('Login', 'username')
 	pwd = config.get('Login', 'password')
-
+	table = 'PyComm'
 	config_days = parse_numeric_ranges(config.get('Schedule', 'active_days'))
 	config_hours = parse_numeric_ranges(config.get('Schedule', 'active_hours'))
 	total_days = set(range(7))
@@ -87,6 +87,7 @@ def main():
 			if not app.logged_in:
 				app.log_in(usr, pwd)
 			if app.logged_in:
+				result = None
 				proc = config.get('DEFAULT', 'process')
 				if 'scrap' in proc.lower():
 					process = 'Scrap'
@@ -97,15 +98,19 @@ def main():
 					reason_results = None
 					queued_results = None
 					serial_number = mssql.execute(f"SELECT SerialNumber FROM PuppetMaster WHERE MachineName = '{my_name}'")
-					mssql.execute(f"UPDATE PuppetMaster SET CheckIn = GETDATE() WHERE MachineName = '{my_name}'")
-					statuses = mssql.execute(f"SELECT DISTINCT Status AS Status FROM PyComm WHERE [Serial Number] = '{serial_number}'", fetchall=True)
-					if statuses:
-						if 'Queued' in statuses:
-							queued_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Queued' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
-							process = 'Queued'
-						if 'Reason' in statuses:
-							reason_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Reason' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
-							process = 'Queued'
+					if serial_number:
+						serial_number = serial_number.SerialNumber
+						statuses = mssql.execute(f"SELECT DISTINCT Status FROM PyComm WHERE [Serial Number] = '{serial_number}'", fetchall=True)
+						if statuses:
+							statuses = [x.Status for x in statuses]
+							if 'Queued' in statuses:
+								queued_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Queued' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
+								process = 'Queued'
+							if 'Reason' in statuses:
+								reason_results = mssql.execute(f"SELECT * FROM PyComm WHERE [Status] = 'Reason' AND [Serial Number] = '{serial_number}' ORDER BY [DateTime] ASC", fetchall=True)
+								process = 'Queued'
+							if reason_results or queued_results:
+								result = 'something'
 				if not result:
 					log.info("No valid results, waiting...")
 					sleep(10)
@@ -119,8 +124,10 @@ def main():
 						unit = units[0]
 					else:
 						if reason_results:
+							result = reason_results[0]
 							reason_units = [Unit(mssql, slsql, x) for x in reason_results]
 						if queued_results:
+							result = queued_results[0]
 							queued_units = [Unit(mssql, slsql, x) for x in queued_results]
 				except NoSROError as ex:
 					log.exception("No SRO Error!")
@@ -133,7 +140,7 @@ def main():
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
 					mssql.execute(
-							f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
+								f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
 					continue
 				if process == 'Scrap':
 					log.info(f"Unit object created with serial_number={unit.serial_number}'")
@@ -142,12 +149,15 @@ def main():
 					log.info(
 							'-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------UNIT-----------------------')
 				elif process == 'Queued':
+					try:
 						if reason_results:
 							Reason(app, reason_units)
 						if queued_results:
 							Transact(app, queued_units)
+					except Exception:
+						pass
+					finally:
 						mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = NULL WHERE MachineName = '{my_name}'")
-						mssql.execute(f"UPDATE PuppetMaster SET CheckIn = GETDATE() WHERE MachineName = '{my_name}'")
 
 if __name__ == '__main__':
 	main()

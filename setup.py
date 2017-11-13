@@ -2,6 +2,7 @@
 import configparser
 import os
 import sys
+import pathlib
 
 from cx_Freeze import Executable, setup
 
@@ -11,7 +12,7 @@ config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
 
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
-version = f"{major}.{minor}.{micro+1}"
+version = f"{major}.{minor}.{micro}"
 
 
 def update_init(vers):
@@ -44,29 +45,30 @@ DIR_NAME = os.path.dirname(sys.executable)
 
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
-
+home = pathlib.WindowsPath.home()
 executables = [Executable(script="bi_entry.py", base="Win32GUI", targetName="bi_entry.exe", icon="bi_entry.ico")]
+# executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 # TODO: 2nd executable for compressing
 # executables = [Executable(script="bi_entry.py", base="Console", targetName="bi_entry.exe", icon="bi_entry.ico")]
 packages = ['psutil', 'win32api', 'pyautogui',
             'pymssql', 'pywinauto', 'win32gui',
             'easygui', '_mssql', 'uuid', 'subprocess',
             'comtypes', 'sqlite3']
-include_files = [r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
-                 r'C:\Users\mfgpc00\AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
-                 r'C:\Users\mfgpc00\Desktop\deploy\bi_entry.ico']
+include_files = [home / r'AppData\Local\Programs\Python\Python36\DLLs\_ctypes.pyd',
+				 home / r'AppData\Local\Programs\Python\Python36\DLLs\_sqlite3.pyd',
+                 home / r'AppData\Local\Programs\Python\Python36\Lib\site-packages\_mssql.cp36-win_amd64.pyd',
+				 home / r'AppData\Local\Programs\Python\Python36\DLLs\sqlite3.dll',
+                 'bi_entry.ico']
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
             "numpy.core._dotblas", "PyQt5", "PIL",
             "colorama", "pygments", "mpl-data", "email"]
-
 options = {
 	'build_exe': {
 		'packages':      packages,
 		'include_files': include_files,
-		"excludes":      excludes,
-		"optimize":      2
+		"excludes":      excludes
 		}
 	}
 # TODO: Exclude files
@@ -81,7 +83,7 @@ setup(
 		author='Josh Reddington',
 		author_email='',
 		description='',
-		executables=executables
+		executables=executables, requires=['pywinauto']
 		)
 # subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
 # files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']
