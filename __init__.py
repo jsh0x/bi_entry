@@ -17,37 +17,6 @@ from win32com.client import Dispatch
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
 
-# class OneLineExceptionFormatter(logging.Formatter):
-#	 def formatException(self, exc_info):
-#		 """
-#		 Format an exception so that it prints on a single line.
-#		 """
-#		 result = super(OneLineExceptionFormatter, self).formatException(exc_info)
-#		 return repr(result)  # or format into one line however you want to
-#
-#	 def format(self, record):
-#		 s = super(OneLineExceptionFormatter, self).format(record)
-#		 if record.exc_text:
-#			 s = s.replace('\n', '') + '|'
-#		 return s
-#
-# def configure_logging():
-#	 fh = logging.FileHandler('output.txt', 'w')
-#	 f = OneLineExceptionFormatter('%(asctime)s|%(levelname)s|%(message)s|',
-#								   '%d/%m/%Y %H:%M:%S')
-#	 fh.setFormatter(f)
-#	 root = logging.getLogger()
-#	 root.setLevel(logging.DEBUG)
-#	 root.addHandler(fh)
-#
-# def main():
-#	 configure_logging()
-#	 logging.info('Sample message')
-#	 try:
-#		 x = 1 / 0
-#	 except ZeroDivisionError as e:
-#		 logging.exception('ZeroDivisionError: %s', e)
-
 FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
@@ -96,20 +65,6 @@ def update_config():
 	move(abs_path, 'config.ini')
 
 
-# def get_outdated_modules(pip_dir) -> dict:
-# 	retval = {}
-# 	mods = str(subprocess.Popen([pip_dir, 'list', '--format=legacy', '--outdated'], stdout=subprocess.PIPE).communicate()[0])
-# 	mods = (mods.split("'")[1]).split('\\r\\n')
-# 	for mod in mods:
-# 		try:
-# 			mod = mod.split(' ')
-# 			name, old, new = mod[0], (mod[1].rstrip(')')).lstrip('('), mod[4]
-# 			retval[name] = (old, new)
-# 		except:
-# 			continue
-# 	return retval
-
-
 def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
 	fp = find_file('WinStudio.exe', pathlib.Path.home().as_posix()) if fp is None else fp
 	path = (os.path.dirname(sys.executable)).replace('\\', '/') + "/Scripts/pip3.6.exe"
@@ -140,20 +95,18 @@ def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
 	config['loggers'] = {'keys': list_to_string(loggers)}
 	config['handlers'] = {'keys': list_to_string(handlers)}
 	config['formatters'] = {'keys': list_to_string(formatters)}
-	config['formatter_errorFormatter'] = {
-		'format':  "[{asctime}][{levelname}][{filename}, function:{funcName}, line:{lineno!s}]  {message}",
-		'datefmt': "%X",
-		'style':   "{",
-		'class':   "logging.Formatter"}
+	config['formatter_errorFormatter'] = {'format':  "[{asctime}][{levelname}][{filename}, function:{funcName}, line:{lineno!s}]  {message}",
+	                                      'datefmt': "%X",
+	                                      'style':   "{",
+	                                      'class':   "logging.Formatter"}
 	config['formatter_infoFormatter'] = {'format':  "[{asctime}]{levelname!s:<8} {message}",
 	                                     'datefmt': "%x %X",
 	                                     'style':   "{",
 	                                     'class':   "logging.Formatter"}
-	config['formatter_debugFormatter'] = {
-		'format':  "[{asctime}.{msecs:0>3.0f}] {levelname!s:<5} {module!s:>8}.{funcName}:{lineno!s:<5} {message}",
-		'datefmt': "%X",
-		'style':   "{",
-		'class':   "logging.Formatter"}
+	config['formatter_debugFormatter'] = {'format':  "[{asctime}.{msecs:0>3.0f}] {levelname!s:<5} {module!s:>8}.{funcName}:{lineno!s:<5} {message}",
+	                                      'datefmt': "%X",
+	                                      'style':   "{",
+	                                      'class':   "logging.Formatter"}
 	config['handler_errorHandler'] = {'class':     "StreamHandler",
 	                                  'level':     "WARNING",
 	                                  'formatter': "errorFormatter",
@@ -197,8 +150,7 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 desktop = pathlib.WindowsPath.home() / 'Desktop'
 shortcut = desktop / 'bi_entry.lnk'
 if not shortcut.exists():
-	create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe',
-	                startin=pathlib.WindowsPath.home() / 'Desktop' / 'build',
+	create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe', startin=pathlib.WindowsPath.home() / 'Desktop' / 'build',
 	                icon_path=pathlib.WindowsPath.cwd() / 'bi_entry.ico')
 	sys.exit()
 

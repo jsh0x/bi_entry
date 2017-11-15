@@ -1,12 +1,19 @@
-# from distutils.core import setup
+#!/usr/bin/env python
+# coding=utf-8
+import compileall
 import configparser
+import glob
 import os
 import sys
 import pathlib
 
-from cx_Freeze import Executable, setup
+# Compiles the sourcecode
+for f in glob.iglob('*.py'):
+	compileall.compile_file(f, force=True)
+compileall.compile_dir(os.getcwd() + '\\processes', force=True)
+compileall.compile_dir(os.getcwd() + '\\utils', force=True)
 
-from __init__ import __version__
+from cx_Freeze import setup, Executable
 
 config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
@@ -62,7 +69,7 @@ include_files = [home / r'AppData\Local\Programs\Python\Python36\DLLs\_ctypes.py
 excludes = ["tkinter", "PyQt4.QtSql", "numpy",
             "scipy.lib.lapack.flapack", "matplotlib",
             "PyQt4.QtNetwork", "PyQt4.QtScript",
-            "numpy.core._dotblas", "PyQt5", "PIL",
+            "numpy.core._dotblas", "PyQt5",
             "colorama", "pygments", "mpl-data", "email"]
 options = {
 	'build_exe': {
@@ -83,7 +90,7 @@ setup(
 		author='Josh Reddington',
 		author_email='',
 		description='',
-		executables=executables, requires=['pywinauto']
+		executables=executables
 		)
 # subprocess.run([r'C:\Program Files\7-Zip\7z', 'a', '-mx=9', '-ms=4g', '-mhe=on', '-mmt=2', r'-t7z', 'build.7z', fr'{os.getcwd()}\build'])
 # files = [r'C:\Program Files\7-Zip\7zSD.sfx', 'config.txt', 'build.7z']

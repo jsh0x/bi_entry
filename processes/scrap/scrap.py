@@ -1,4 +1,4 @@
-import logging.config
+import logging
 import sys
 from operator import attrgetter
 from time import sleep
@@ -9,24 +9,22 @@ import pywinauto.timings
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
-from common import Application, Unit, access_grid, center
+from _common import *
 from constants import SYTELINE_WINDOW_TITLE
-from crypt import decrypt
 from exceptions import *
-from sql import MS_SQL, SQL_Lite
 
-logging.config.fileConfig('config.ini')
-log = logging
+log = logging.getLogger(__name__)
 reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
 
+
+# TODO: Rework process
 
 def Scrap(app: Application, units: List[Unit]):
 	completed_units = []
 	global_units = []
 	try:
 		pywinauto.timings.Timings.Fast()
-		log.debug(
-				f"Starting Scrap script with units: {', '.join(unit.serial_number_prefix+unit.serial_number for unit in units)}")
+		log.debug(f"Starting Scrap script with units: {', '.join(unit.serial_number_prefix+unit.serial_number for unit in units)}")
 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 		if not sl_win.exists():
@@ -46,25 +44,19 @@ def Scrap(app: Application, units: List[Unit]):
 		                               '54005880Q750516045004500',
 		                               '1121327')
 		_adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
-		mssql = MS_SQL(address=decrypt(_adr_data, _key), username=decrypt(_usr_data, _key),
-		               password=decrypt(_pwd_data, _key), database=decrypt(_db_data, _key))
+		mssql = MS_SQL.legacy_encrypted_connection(_key, address=_adr_data, username=_usr_data, password=_pwd_data, database=_db_data)
 
 		sql = SQL_Lite(':memory:')
-		sql.execute(
-				"CREATE TABLE scrap (id integer, serial_number text, build text, location text, datetime text, operator text)")
+		sql.execute("CREATE TABLE scrap (id INTEGER, serial_number TEXT, build TEXT, location TEXT, datetime TEXT, operator TEXT)")
 		for unit in units:
 			sql.execute(
 					f"INSERT INTO scrap(id, serial_number, build, location, datetime, operator) VALUES "
-					f"({unit.id}, '{unit.serial_number}', '{unit.whole_build}', '{unit.location}', '{unit.datetime.strftime('%m/%d/%Y %H:%M:%S')}', '{unit.operator}')")
-		results = sql.execute(
-				f"SELECT build,location,COUNT(location) AS count FROM scrap GROUP BY build, location ORDER BY count DESC",
-				fetchall=True)
+					f"({unit.id}, '{unit.serial_number}', '{unit.whole_build}', '{unit.location}', '{unit.datetime.strftime('%m/%d/%Y %H:%M:%S')}', '{unit.operator}')")  # FIXME: SQL command w/ parameters
+		results = sql.execute(f"SELECT build,location,COUNT(location) AS count FROM scrap GROUP BY build, location ORDER BY count DESC", fetchall=True)  # FIXME: SQL command w/ parameters
 		sleep(1)
 		id_list = []
 		for build, location, count in results:
-			for x in sql.execute(
-					f"SELECT * FROM scrap WHERE build = '{build}' AND location = '{location}' ORDER BY datetime ASC",
-					fetchall=True):
+			for x in sql.execute(f"SELECT * FROM scrap WHERE build = '{build}' AND location = '{location}' ORDER BY datetime ASC", fetchall=True):  # FIXME: SQL command w/ parameters
 				id_list.append(x.id)
 				if len(id_list) >= 10:
 					break
@@ -93,9 +85,8 @@ def Scrap(app: Application, units: List[Unit]):
 						global_units.append(unit)
 					continue
 				operator = sql.execute(
-						f"SELECT operator, COUNT(operator) AS count FROM scrap WHERE {' OR '.join([f'id = {x.id}' for x in units])} GROUP BY operator ORDER BY count DESC")
-				op = ''.join([x[0].upper() for x in mssql.execute(
-						f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{operator[0].strip()}'")])
+					f"SELECT operator, COUNT(operator) AS count FROM scrap WHERE {' OR '.join([f'id = {x.id}' for x in units])} GROUP BY operator ORDER BY count DESC")  # FIXME: SQL command w/ parameters
+				op = ''.join([x[0].upper() for x in mssql.execute(f"SELECT [FirstName],[LastName] FROM Users WHERE [Username] = '{operator[0].strip()}'")])  # FIXME: SQL command w/ parameters
 				docnum = f"SCRAP {op}"
 				qty = len(units)
 				sl_win.LocationEdit.wait('ready', 2, 0.09)
@@ -122,15 +113,13 @@ def Scrap(app: Application, units: List[Unit]):
 				for unit in units:
 					unit.misc_issue_timer.start()
 					unit.misc_issue_time += (unit._life_timer.lap() / len(units))
-					app.find_value_in_collection(collection='SLSerials', property_='S/N (SerNum)',
-					                             value=unit.serial_number)
+					app.find_value_in_collection(collection='SLSerials', property_='S/N (SerNum)', value=unit.serial_number)
 					cell = sl_win.get_focus()
 					cell.send_keystrokes('{SPACE}')
 					unit.misc_issue_time += unit.misc_issue_timer.stop()
 					global_units.append(unit)
 				sl_win.SelectedQtyEdit.wait('ready', 2, 0.09)
-				text1, text2, text3 = [x.strip() for x in (
-					sl_win.SelectedQtyEdit.texts()[0], sl_win.TargetQtyEdit.texts()[0], sl_win.RangeQtyEdit.texts()[0])]
+				text1, text2, text3 = [x.strip() for x in (sl_win.SelectedQtyEdit.texts()[0], sl_win.TargetQtyEdit.texts()[0], sl_win.RangeQtyEdit.texts()[0])]
 				if text1 == text2:
 					log.debug(f"{text1} == {text2}")
 				else:
@@ -156,8 +145,8 @@ def Scrap(app: Application, units: List[Unit]):
 			app.verify_form('Units')
 			sl_win.UnitEdit.set_text(unit.serial_number_prefix + unit.serial_number)
 			sl_win.UnitEdit.send_keystrokes('{F4}')  # Filter in Place
-			while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and \
-					sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
+			while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and sl_win.UnitEdit.texts()[
+				0].strip():  # While actual serial number != attempted serial number
 				state = sl_uia.UnitEdit.legacy_properties()['State']
 				bin_state = bin(state)
 				log.debug(f"Units Textbox State: {state}")
@@ -166,11 +155,9 @@ def Scrap(app: Application, units: List[Unit]):
 				sleep(0.4)
 			if sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number:
 				if not sl_win.UnitEdit.texts()[0].strip():
-					raise InvalidSerialNumberError(
-							f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned None")
+					raise InvalidSerialNumberError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned None")
 				else:
-					raise SyteLineFilterInPlaceError(
-							f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
+					raise SyteLineFilterInPlaceError(f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
 			sl_win.set_focus()
 			customer_number = 302
 			ship_to = int(unit.phone) + 1  # if unit.phone: 2, else: 1
@@ -224,14 +211,12 @@ def Scrap(app: Application, units: List[Unit]):
 				sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 				common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 				reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
-				reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution',
-				                                        'Specific Resolution'])
+				reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
 				full_row = None
 				empty_row_i = len(reason_rows) - 1
 				partial = False
 				for i, row in enumerate(reason_rows[::-1]):
-					if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {
-						None, None, None, None}:
+					if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None, None}:
 						empty_row_i = len(reason_rows) - (i + 1)
 						partial = False
 					elif {row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None}:
@@ -244,24 +229,19 @@ def Scrap(app: Application, units: List[Unit]):
 						break
 				top_row_i = reason_grid.children_texts().index('Top Row')
 				top_row = reason_grid.children()[top_row_i]
-				open_row = uia_controls.ListViewWrapper(
-						reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
+				open_row = uia_controls.ListViewWrapper(reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
 
-				gen_resn = uia_controls.ListItemWrapper(
-						open_row.item(top_row.children_texts().index('General Reason')).element_info)
+				gen_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Reason')).element_info)
 				gen_resn_i = gen_resn.rectangle()
 				c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
 
-				spec_resn = uia_controls.ListItemWrapper(
-						open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
+				spec_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
 				spec_resn_i = spec_resn.rectangle()
 
-				gen_reso = uia_controls.ListItemWrapper(
-						open_row.item(top_row.children_texts().index('General Resolution')).element_info)
+				gen_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Resolution')).element_info)
 				gen_reso_i = gen_reso.rectangle()
 
-				spec_reso = uia_controls.ListItemWrapper(
-						open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
+				spec_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
 				spec_reso_i = spec_reso.rectangle()
 
 				pag.click(*c_coords)
@@ -289,11 +269,17 @@ def Scrap(app: Application, units: List[Unit]):
 				pag.hotkey('ctrl', 's')
 				if sl_win.ReasonNotesEdit.texts()[0].strip():
 					sl_win.ReasonNotesEdit.set_text(sl_win.ReasonNotesEdit.texts()[0].strip() +
-					                                f"\n[{unit.specific_resolution_name.upper()} {unit.general_resolution_name.upper()}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+					                                f"\n[{unit.specific_resolution_name.upper()} {unit.general_resolution_name.upper()}]")
 				else:
 					sl_win.ReasonNotesEdit.set_text(
-							f"[{unit.specific_resolution_name.upper()} {unit.general_resolution_name.upper()}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+							f"[{unit.specific_resolution_name.upper()} {unit.general_resolution_name.upper()}]")
 				sl_win.ReasonNotesEdit.send_keystrokes('^s')
+
+				if sl_win.ResolutionNotesEdit.texts()[0].strip():
+					sl_win.ResolutionNotesEdit.set_text(sl_win.ResolutionNotesEdit.texts()[0].strip() + f"\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+				else:
+					sl_win.ResolutionNotesEdit.set_text(f"[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+				sl_win.ResolutionNotesEdit.send_keystrokes('^s')
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 				sl_win.set_focus()
 				status.set_keyboard_focus()
@@ -314,8 +300,7 @@ def Scrap(app: Application, units: List[Unit]):
 			sleep(0.2)
 			sl_win.send_keystrokes('o')  # Notes For Current, (O)
 			sleep(0.5)
-			app.find_value_in_collection(collection='Object Notes', property_='Subject (DerDesc)', value='NOTES',
-			                             case_sensitive=True)
+			app.find_value_in_collection(collection='Object Notes', property_='Subject (DerDesc)', value='NOTES', case_sensitive=True)
 			dlg = app.get_popup(2)
 			if dlg:
 				dlg[0].send_keystrokes('{ENTER}')
@@ -324,11 +309,9 @@ def Scrap(app: Application, units: List[Unit]):
 			sl_uia.window(auto_id='DerContentEdit').set_focus()
 			note_txt = sl_win.get_focus()
 			if note_txt.texts()[0].strip():
-				note_txt.set_text(note_txt.texts()[
-					                  0].strip() + f"\n[{unit.specific_resolution_name} {unit.general_resolution_name}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+				note_txt.set_text(note_txt.texts()[0].strip() + f"\n[{unit.specific_resolution_name} {unit.general_resolution_name}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 			else:
-				note_txt.set_text(
-						f"[{unit.specific_resolution_name} {unit.general_resolution_name}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
+				note_txt.set_text(f"[{unit.specific_resolution_name} {unit.general_resolution_name}]\n[{unit.operator_initials} {unit.datetime.strftime('%m/%d/%Y')}]")
 			sl_win.send_keystrokes('^s')
 			sl_uia.CancelCloseButton.click()
 			sl_win.send_keystrokes('{F4}')

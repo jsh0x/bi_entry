@@ -19,9 +19,9 @@ class BI_EntryError(Exception):
 	"""Base exception class. All other exceptions inherit
 	from this one.
 	"""
-
-	def __init__(self, msg=""):
+	def __init__(self, status: str, msg=""):
 		Exception.__init__(self, msg)
+		self.status = status
 		self.msg = msg
 
 	def __repr__(self):
@@ -36,14 +36,14 @@ class BI_EntryError(Exception):
 class NoSROError(BI_EntryError):
 	def __init__(self, serial_number: str, msg=""):
 		msg2 = f"No SROs exist for unit '{serial_number}'"
-		super().__init__("%s\n%s" % (msg2, msg))
+		super().__init__('No SRO', "%s\n%s" % (msg2, msg))
 		self.serial_number = serial_number
 
 
 class NoOpenSROError(BI_EntryError):
 	def __init__(self, serial_number: str, sro: str, msg=""):
 		msg2 = f"No SROs are open at the Line-level for unit '{serial_number}'"
-		super().__init__("%s\n%s" % (msg2, msg))
+		super().__init__('No Open SRO', "%s\n%s" % (msg2, msg))
 		self.serial_number = serial_number
 		self.sro = sro
 
@@ -52,6 +52,7 @@ class InvalidSerialNumberError(BI_EntryError, ValueError):
 	def __init__(self, serial_number: str, msg=""):
 		msg2 = f"'{serial_number}' is not a valid serial number"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.status = 'Invalid Serial Number'
 		self.serial_number = serial_number
 
 
@@ -59,6 +60,7 @@ class InvalidSROError(BI_EntryError, ValueError):
 	def __init__(self, serial_number: str, sro: str, msg=""):
 		msg2 = f"'{sro}' is not a valid SRO for unit '{serial_number}'"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.status = 'Invalid SRO'
 		self.sro = sro
 
 
@@ -66,6 +68,7 @@ class InvalidPartNumberError(BI_EntryError, ValueError):
 	def __init__(self, part_number: str, msg=""):
 		msg2 = f"'{part_number}' is not a valid part number"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.status = 'Invalid Part Number'
 		self.part_number = part_number
 
 
@@ -73,10 +76,9 @@ class InvalidReasonCodeError(BI_EntryError, ValueError):
 	def __init__(self, reason_code: str, spec_id: str, msg=""):
 		msg2 = f"'{reason_code}' is not a valid reason code"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+		self.status = 'Invalid Reason Code'
 		self.reason_code = reason_code
 		self.spec_id = spec_id
-
-
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -109,8 +111,6 @@ class SQLResultError(SQLError, ValueError):
 	def __init__(self, cmd: str, msg=""):
 		msg2 = f"Invalid response from query '{cmd}'"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
-
-
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -151,5 +151,4 @@ class NegativeQuantityWarning(BI_EntryWarning):
 	def __init__(self, part: str, qty: int, loc: str, msg=""):
 		msg2 = f"Quantity for part '{part}' = -{qty}.000 in location '{loc}'"
 		super().__init__("%s\n%s" % (msg2, msg))
-
 # - - - - - - - - - - - - - - - - - - - - - - - -

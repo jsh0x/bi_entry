@@ -1,17 +1,26 @@
-from secrets import choice, randbelow
-from string import ascii_letters, digits, punctuation
+import hashlib
+import os
+import secrets
+
+_salt = os.urandom(hashlib.blake2b.SALT_SIZE)
+
+
+def encrypt(pwd: bytes) -> bytes:
+	h = hashlib.blake2b(salt=_salt)
+	h.update(pwd)
+	return h
+
+
+def verify(x1: hashlib.blake2b, x2: hashlib.blake2b) -> bool:
+	return secrets.compare_digest(x1.hexdigest(), x2.hexdigest())
+
+
 from typing import Optional, Tuple
-
-"""for i in range(3):
-	a = set([])
-	while len(a) < 16:
-		val = randbelow(78)
-		if val > 9:
-			a.add(val)
-	print(tuple(a))"""
+from secrets import randbelow, choice
+from string import digits, ascii_letters, punctuation
 
 
-def make_keymap(x1: int, x2: int, x3: int, x4: int, swapped=False) -> dict:
+def legacy_make_keymap(x1: int, x2: int, x3: int, x4: int, swapped=False) -> dict:
 	key_dict = {}
 	keybase_set = ((digits, ascii_letters, punctuation),
 	               (digits, punctuation, ascii_letters),
@@ -48,7 +57,7 @@ def make_keymap(x1: int, x2: int, x3: int, x4: int, swapped=False) -> dict:
 	return key_dict
 
 
-def encrypt(data: str, key: Optional[str] = None) -> Tuple[str, str]:
+def legacy_encrypt(data: str, key: Optional[str] = None) -> Tuple[str, str]:
 	retry = True
 	if not key:
 		gave_key = False
@@ -58,7 +67,7 @@ def encrypt(data: str, key: Optional[str] = None) -> Tuple[str, str]:
 		if not gave_key:
 			key = str(randbelow(6) + 1) + str(randbelow(32)).rjust(2, '0') + str(randbelow(32)).rjust(2, '0') + str(randbelow(32)).rjust(2, '0')
 		val1, val2, val3, val4 = int(key[0]) - 1, int(key[1:3]), int(key[3:5]), int(key[5:])
-		key_dict = make_keymap(val1, val2, val3, val4)
+		key_dict = legacy_make_keymap(val1, val2, val3, val4)
 		if len(key_dict) < 94:
 			if gave_key:
 				raise ValueError(f"{key} is not a valid key!")
@@ -70,9 +79,9 @@ def encrypt(data: str, key: Optional[str] = None) -> Tuple[str, str]:
 	return retval, key
 
 
-def decrypt(data: str, key: str) -> str:
+def legacy_decrypt(data: str, key: str) -> str:
 	val1, val2, val3, val4 = int(key[0]) - 1, int(key[1:3]), int(key[3:5]), int(key[5:])
-	key_dict = make_keymap(val1, val2, val3, val4, swapped=True)
+	key_dict = legacy_make_keymap(val1, val2, val3, val4, swapped=True)
 	if len(key_dict) < 94:
 		raise ValueError(f"{key} is not a valid key!")
 	retval = ''
@@ -84,19 +93,5 @@ def decrypt(data: str, key: str) -> str:
 		retval += key_dict[int(chars[j:])]
 	return retval
 
-# import os.urandom
 
-
-# class HashSlingingSlasher:
-# 	def __init__(self):
-# 		self._count = 0
-#
-# 	@property
-# 	def _hashit(self):
-# 		self._count += 1
-# 		blake2b(salt=os.urandom(blake2b.SALT_SIZE))
-#
-# 	def hashit(self, data1, data2):
-# 		h = self._hashit
-# 		h.update(data1)
-# compare_digest
+__all__ = ['encrypt', 'verify']

@@ -1,6 +1,5 @@
-import logging.config
+import logging
 import sys
-import warnings
 from time import sleep
 from typing import List
 
@@ -9,15 +8,18 @@ from pywinauto import timings
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
-from common import Application, TestTimer, Unit, access_grid, center, timer
+from _common import *
 from constants import REGEX_CREDIT_HOLD, REGEX_NEGATIVE_ITEM, SYTELINE_WINDOW_TITLE
 from exceptions import *
 
-logging.config.fileConfig('config.ini')
-log = logging
+log = logging.getLogger(__name__)
 
 
-def Transact(app: Application, units: List[Unit]):
+# SN, Item, MEID, MDN, MIN, Firmware rev
+# TODO: Complete process
+
+
+def Preprogram(app: Application, units: List[Unit]):
 	try:
 		timings.Timings.Fast()
 		units = units if type(units) is list else [units]
@@ -38,8 +40,7 @@ def Transact(app: Application, units: List[Unit]):
 		sl_win.send_keystrokes('{F4}')  # Filter in Place
 		count = 0
 		# or (not sl_uia.UnitEdit.legacy_properties()['IsReadOnly'])
-		while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and \
-				sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
+		while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and sl_win.UnitEdit.texts()[0].strip():  # While actual serial number != attempted serial number
 			if count >= 30:
 				raise SyteLineFilterInPlaceError(unit.serial_number)
 			sleep(0.4)
@@ -55,8 +56,7 @@ def Transact(app: Application, units: List[Unit]):
 			x.start()
 		log.debug(sl_win.ServiceOrderLinesButton.get_properties())
 		if not sl_win.ServiceOrderLinesButton.is_enabled():
-			raise NoOpenSROError(serial_number=unit.serial_number, sro=unit.sro_num,
-			                     msg="Service Order Lines Button is disabled")
+			raise NoOpenSROError(serial_number=unit.serial_number, sro=unit.sro_num, msg="Service Order Lines Button is disabled")
 		log.debug("Service Order Lines Button clicked")
 		sl_win.set_focus()
 		timer.start()
@@ -64,8 +64,7 @@ def Transact(app: Application, units: List[Unit]):
 		sl_win.ServiceOrderOperationsButton.wait('visible', 2, 0.09)
 		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 		t_temp = timer.stop()
-		log.debug(
-				f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+		log.debug(f"Time waited for Service Order Lines: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 		app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro_num)
 		dlg = app.get_popup(0.5)
 		count = 0
@@ -84,8 +83,7 @@ def Transact(app: Application, units: List[Unit]):
 		sl_win.SROLinesButton.wait('visible', 2, 0.09)
 		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 		t_temp = timer.stop()
-		log.debug(
-				f"Time waited for Service Order Operations: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+		log.debug(f"Time waited for Service Order Operations: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 		unit.sro_operations_timer.start()
 		if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
@@ -114,21 +112,17 @@ def Transact(app: Application, units: List[Unit]):
 				log.debug("SRO Transactions Button clicked")
 				sl_win.FilterDateRangeEdit.wait('ready', 2, 0.09)
 				t_temp = timer.stop()
-				log.debug(
-						f"Time waited for SRO Transactions: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+				log.debug(f"Time waited for SRO Transactions: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 				log.info("Starting transactions")
 				sl_win.FilterDateRangeEdit.set_text(unit.eff_date.strftime('%m/%d/%Y'))
 				timer.start()
 				sl_win.ApplyFilterButton.click()
 				sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
 				t_temp = timer.stop()
-				log.debug(
-						f"Time waited for first Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+				log.debug(f"Time waited for first Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 				transaction_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 				log.debug(transaction_grid.get_properties())
-				posted_parts = access_grid(transaction_grid,
-				                           ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
-				                           condition=('Posted', True), requirement='Item')
+				posted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], condition=('Posted', True), requirement='Item')
 				log.debug(f"Posted parts: {posted_parts}")
 				posted_part_numbers = {p.Item for p in posted_parts}
 				sl_win.IncludePostedButton.click()
@@ -136,11 +130,8 @@ def Transact(app: Application, units: List[Unit]):
 				sl_win.ApplyFilterButton.click()
 				sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
 				t_temp = timer.stop()
-				log.debug(
-						f"Time waited for second Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
-				unposted_parts = access_grid(transaction_grid,
-				                             ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
-				                             requirement='Item')
+				log.debug(f"Time waited for second Application of Filter: {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+				unposted_parts = access_grid(transaction_grid, ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'], requirement='Item')
 				log.debug(f"Unposted parts: {unposted_parts}")
 				unposted_part_numbers = {p.Item for p in unposted_parts}
 				row_i = None
@@ -169,29 +160,22 @@ def Transact(app: Application, units: List[Unit]):
 						row_i = -1
 					log.debug(f"Attempting to transact part {part}")
 					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[row_i].element_info)
-					item = uia_controls.ListItemWrapper(
-							last_row.item(top_row.children_texts().index('Item')).element_info)
+					item = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Item')).element_info)
 					r_i = item.rectangle()
 					# sl_win.set_focus()
 					c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
 					pag.click(*c_coords)
 					last_row = uia_controls.ListViewWrapper(transaction_grid.children()[-2].element_info)
-					location = uia_controls.ListItemWrapper(
-							last_row.item(top_row.children_texts().index('Location')).element_info)
-					quantity = uia_controls.ListItemWrapper(
-							last_row.item(top_row.children_texts().index('Quantity')).element_info)
-					billcode = uia_controls.ListItemWrapper(
-							last_row.item(top_row.children_texts().index('Billing Code')).element_info)
+					location = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Location')).element_info)
+					quantity = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Quantity')).element_info)
+					billcode = uia_controls.ListItemWrapper(last_row.item(top_row.children_texts().index('Billing Code')).element_info)
 					r_loc = location.rectangle()
 					r_qty = quantity.rectangle()
 					r_bill = billcode.rectangle()
-					loc_rec_list.append(
-							(center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), str(part.location), i))
+					loc_rec_list.append((center(x1=r_loc.left, y1=r_loc.top, x2=r_loc.right, y2=r_loc.bottom), str(part.location), i))
 					if part.quantity > 1:
-						qty_rec_list.append((center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom),
-						                     str(part.quantity), i))
-					bc_rec_list.append(
-							(center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom), bc, i))
+						qty_rec_list.append((center(x1=r_qty.left, y1=r_qty.top, x2=r_qty.right, y2=r_qty.bottom), str(part.quantity), i))
+					bc_rec_list.append((center(x1=r_bill.left, y1=r_bill.top, x2=r_bill.right, y2=r_bill.bottom), bc, i))
 					pag.typewrite(str(part.part_number))
 					sleep(0.5)
 					pag.press('enter', 10, interval=0.05)
@@ -276,8 +260,7 @@ def Transact(app: Application, units: List[Unit]):
 						if m1 is not None:
 							error = SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
 						elif m2 is not None:
-							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'),
-							                                      loc=m2.group('location')))
+							# warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'), loc=m2.group('location')))
 							log.warning("Negative Quantity!")
 						dlg = app.win32.window(class_name="#32770")
 					if error:
@@ -301,8 +284,7 @@ def Transact(app: Application, units: List[Unit]):
 			sl_win.ServiceOrderOperationsButton.click()
 			sl_win.SROLinesButton.wait('visible', 2, 0.09)
 			t_temp = timer.stop()
-			log.debug(
-					f"Time waited for Service Order Lines(part 2): {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
+			log.debug(f"Time waited for Service Order Lines(part 2): {t_temp.seconds}.{str(t_temp.microseconds/1000).split('.', 1)[0].rjust(3, '0')}")
 			i2 = [i for i, x in enumerate(units) if x.parts]
 			srot_time = unit.sro_transactions_timer.stop() / len(i2)
 			for i in i2:
@@ -341,16 +323,12 @@ def Transact(app: Application, units: List[Unit]):
 		common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 		if has_qc:
 			reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
-			reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution',
-			                                        'Specific Resolution'])
+			reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
 			full_row = None
 			empty_row_i = len(reason_rows) - 1
 			partial = False
 			for i, row in enumerate(reason_rows[::-1]):
-				if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None,
-				                                                                                                  None,
-				                                                                                                  None,
-				                                                                                                  None}:
+				if {row.General_Reason, row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None, None}:
 					empty_row_i = len(reason_rows) - (i + 1)
 					partial = False
 				elif {row.Specific_Reason, row.General_Resolution, row.Specific_Resolution} == {None, None, None}:
@@ -365,21 +343,17 @@ def Transact(app: Application, units: List[Unit]):
 			top_row = reason_grid.children()[top_row_i]
 			open_row = uia_controls.ListViewWrapper(reason_grid.children()[empty_row_i + top_row_i + 1].element_info)
 
-			gen_resn = uia_controls.ListItemWrapper(
-					open_row.item(top_row.children_texts().index('General Reason')).element_info)
+			gen_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Reason')).element_info)
 			gen_resn_i = gen_resn.rectangle()
 			c_coords = center(x1=gen_resn_i.left, y1=gen_resn_i.top, x2=gen_resn_i.right, y2=gen_resn_i.bottom)
 
-			spec_resn = uia_controls.ListItemWrapper(
-					open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
+			spec_resn = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Reason')).element_info)
 			spec_resn_i = spec_resn.rectangle()
 
-			gen_reso = uia_controls.ListItemWrapper(
-					open_row.item(top_row.children_texts().index('General Resolution')).element_info)
+			gen_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('General Resolution')).element_info)
 			gen_reso_i = gen_reso.rectangle()
 
-			spec_reso = uia_controls.ListItemWrapper(
-					open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
+			spec_reso = uia_controls.ListItemWrapper(open_row.item(top_row.children_texts().index('Specific Resolution')).element_info)
 			spec_reso_i = spec_reso.rectangle()
 
 			pag.click(*c_coords)
@@ -509,11 +483,3 @@ def Transact(app: Application, units: List[Unit]):
 		log.info(f"Unit: {unit.serial_number_prefix+unit.serial_number} completed")
 		for x in units:
 			x.complete(batch_amt=len(units))
-
-
-"""Select m.Item, m.matl_qty from fs_sro_matl m(nolock)
-Inner join fs_sro_line l(nolock)
-on m.sro_num = l.sro_num and l.sro_line = m.sro_line
-left join fs_sro_line l2(nolock)
-on l.ser_num = l2.ser_num and l.recorddate < l2.recorddate
-where l2.RecordDate is null and l.ser_num = 'OT1154319'"""
