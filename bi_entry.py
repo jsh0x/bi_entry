@@ -92,18 +92,17 @@ def main():
 				app.verify_form('Units')
 			if app.logged_in:
 				if 'Units' not in app.get_focused_form():
-					dlg = app.uia.window(class_name="#32770")
+					dlg = app.win32.window(class_name="#32770")
 					while dlg.exists(1, 0.09):
-						dlg_obj = dlg.wrapper_object()
-						dlg_obj.send_keystrokes('{ESC}')
-						dlg = app.uia.window(class_name="#32770")
+						dlg.send_keystrokes('{ESC}')
+						dlg = app.win32.window(class_name="#32770")
 					sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 					while sl_uia.CancelCloseButton.is_enabled():
 						sl_uia.CancelCloseButton.click()
-						for i in range(10):
-							top_win = app.uia.top_window()
-							top_win_obj = top_win.wrapper_object()
-							top_win_obj.send_keystrokes('{ESC}')
+						dlg = app.win32.window(class_name="#32770")
+						while dlg.exists(1, 0.09):
+							dlg.send_keystrokes('{ESC}')
+							dlg = app.win32.window(class_name="#32770")
 					app.verify_form('Units')
 				result = None
 				proc = config.get('DEFAULT', 'process')
