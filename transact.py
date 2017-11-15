@@ -199,6 +199,7 @@ def Transact(app: Application, units: List[Unit]):
 					unit.parts_transacted.append(part)
 					all_transacted_parts.append(part)
 					unit.sro_transactions_time += unit.sro_transactions_timer.stop()
+				pag.press('up', 10, interval=0.05)
 				for coord, qty, i in qty_rec_list:
 					unit = units[i]
 					unit.sro_transactions_timer.start()

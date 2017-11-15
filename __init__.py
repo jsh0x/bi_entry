@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.4.0'
+__version__ = '1.4.1'
 
 import configparser
 import os
@@ -111,7 +111,7 @@ def update_config():
 
 
 def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
-	fp = find_file('WinStudio.exe') if fp is None else fp
+	fp = find_file('WinStudio.exe', pathlib.Path.home().as_posix()) if fp is None else fp
 	path = (os.path.dirname(sys.executable)).replace('\\', '/') + "/Scripts/pip3.6.exe"
 	log_dir.mkdir(exist_ok=True)
 	info_log_dir = log_dir / 'info.log'

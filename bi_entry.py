@@ -55,6 +55,7 @@ def main():
 	# Switch between Reason, Scrap, and Transaction
 	current_hour = datetime.datetime.now().hour
 	while True:  # Core Loop
+		sleep(1)
 		old_current_hour = current_hour
 		current_weekday = int(format(datetime.datetime.now(), '%w'))
 		current_hour = datetime.datetime.now().hour
