@@ -6,6 +6,8 @@ from random import randint
 from time import sleep
 import os
 
+from constants import SYTELINE_WINDOW_TITLE
+
 from exceptions import *
 
 
@@ -87,7 +89,19 @@ def main():
 					sleep(5)
 			if not app.logged_in:
 				app.log_in(usr, pwd)
+				app.verify_form('Units')
 			if app.logged_in:
+				if 'Units' not in app.get_focused_form():
+					for i in range(10):
+						top_win = app.uia.top_window()
+						top_win.send_keystrokes('{ESC}')
+					sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+					while sl_uia.CancelCloseButton.is_enabled():
+						sl_uia.CancelCloseButton.click()
+						for i in range(10):
+							top_win = app.uia.top_window()
+							top_win.send_keystrokes('{ESC}')
+					app.verify_form('Units')
 				result = None
 				proc = config.get('DEFAULT', 'process')
 				if 'scrap' in proc.lower():
