@@ -263,28 +263,34 @@ def Transact(app: Application, units: List[Unit]):
 					log.debug("Saved")
 					sl_win.set_focus()
 					sl_win.PostBatchButton.click()
-					dlg = app.get_popup(4)
+					sleep(2)
+					new_count = 0
 					error = None
-					while dlg:
-						log.debug(f"Transaction Post Batch dialog text: '{dlg.Text}'")
-						m1 = REGEX_CREDIT_HOLD.match(dlg.Text)
-						m2 = REGEX_NEGATIVE_ITEM.match(dlg.Text)
+					dlg = app.uia.window(class_name="#32770")
+					while new_count < 4 and dlg.exists(2, 0.09):
+						new_count += 1
+						text = ''.join(text.replace('\r\n\r\n', '\r\n').strip() for cls in dlg.children() if
+						               cls.friendly_class_name() == 'Static' for text in cls.texts())
+						log.debug(f"Transaction Post Batch dialog text: '{text}'")
+						m1 = REGEX_CREDIT_HOLD.match(text)
+						m2 = REGEX_NEGATIVE_ITEM.match(text)
+						dlg_obj = dlg.wrapper_object()
+						dlg_obj.send_keystrokes('{ESC}')
 						if m1 is not None:
-							pag.press('enter')
 							error = SyteLineCreditHoldError(cust=m1.group('customer'), msg="Cannot transact parts")
-							dlg = app.get_popup(2)
+							new_count = 0
 						elif m2 is not None:
-							pag.press('enter')
 							warnings.warn(NegativeQuantityWarning(part=m2.group('item'), qty=m2.group('quantity'),
 							                                      loc=m2.group('location')))
 							log.warning("Negative Quantity!")
-							dlg = app.get_popup(4)
-						else:
-							dlg = app.get_popup()
-							pag.press('enter')
-					else:
-						if error is not None:
-							raise error
+							new_count = 0
+						dlg = app.uia.window(class_name="#32770")
+					if error:
+						while dlg.exists(1, 0.09):
+							dlg_obj = dlg.wrapper_object()
+							dlg_obj.send_keystrokes('{ESC}')
+							dlg = app.uia.window(class_name="#32770")
+						raise error
 					sl_win.PostBatchButton.wait('ready', 2, 0.09)
 					log.debug("Batch posted")
 					sl_win.set_focus()
