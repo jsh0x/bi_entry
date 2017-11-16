@@ -20,6 +20,7 @@ import pywinauto as pwn
 import win32gui
 from PIL import ImageGrab
 import pywinauto.timings
+from pywinauto.win32structures import RECT, POINT
 from pywinauto.backend import registry
 from pywinauto.base_wrapper import BaseWrapper
 from pywinauto import WindowSpecification
@@ -58,11 +59,9 @@ class Coordinates(NamedTuple):
 	y: int
 
 
-class Rectangle(NamedTuple):
-	left: Coordinates
-	top: Coordinates
-	right: Coordinates
-	bottom: Coordinates
+class Dimensions(NamedTuple):
+	width: int
+	height: int
 
 
 class Unit:  # TODO: Special methods __repr__ and __str__
@@ -824,7 +823,7 @@ class Application(psutil.Process):
 		if name != self.get_focused_form():
 			self.change_form(name)
 
-	def get_popup(self, timeout=2) -> Dialog:
+	def get_popup(self, timeout=1) -> Dialog:
 		dlg = self.win32.window(class_name="#32770")
 		if dlg.exists(timeout, 0.09):
 			title = ''.join(text.strip() for text in dlg.texts())
@@ -881,7 +880,6 @@ class PuppetMaster:  # THINK: Make iterable?
 			while name in self._children:
 				name = base_name + str(count)
 				count += 1
-		print(fp.as_posix())
 		app = Application.start(str(fp))
 		app.win32.top_window().exists()
 		# except Exception:
@@ -1376,49 +1374,64 @@ class DataGrid:
 	# TODO: Verify correct row creation
 
 class DataGrid:
-	@singledispatch
-	def __init__(self, control: Union[WindowSpecification, BaseWrapper],  columns: Union[str, Iterable[str]], rows: int):
+	_type_dict = {0: bool, 1: int, 2: float, 3: datetime.datetime}
+	def __init__(self, control: WindowSpecification,  columns: Union[str, Iterable[str]], rows: int):
 		assert control.backend == registry.backends['uia']
-		self.control = uia_controls.uiawrapper.UIAWrapper(self.element_info)
-
-	@__init__.register(WindowSpecification)
-	def _(self, control,  columns: Union[str, Iterable[str]], rows: int):
-		assert control.backend == registry.backends['uia']
+		self.window_spec = control
 		self.control = uia_controls.uiawrapper.UIAWrapper(control.element_info)
+		self.scrollbar_h = self.window_spec.child_window(title='Horizontal Scroll Bar')
+		self.scrollbar_v = self.window_spec.child_window(title='Vertical Scroll Bar')
+		self.top_row = self.window_spec.child_window(title='Top Row')
+		self.column_names = self.get_column_names()
+		self.column_number_dict = {i: name for i, name in enumerate(self.column_names)}
+		self.master_grid = np.zeros((len(self.column_names), self.row_count, 3), dtype=object)
+		self.grid = self.master_grid[..., 0].view().astype(dtype=np.float, copy=False)
+		self.types_grid = self.master_grid[..., 1].view()
+		self.visibility_grid = self.master_grid[..., 2].view().astype(dtype=np.bool_, copy=False)
 
-	@__init__.register(BaseWrapper)
-	def _(self, control,  columns: Union[str, Iterable[str]], rows: int):
-		assert control.backend == registry.backends['uia']
-		self.control = control
+	@property
+	def row_count(self) -> int:
+		return self.count_rows()
 
 	@property
 	def element_info(self):
 		return self.control.element_info
 
+	def apply_all(self, func: Callable, *args, **kwargs):
+		with ThreadPoolExecutor(max_workers=len(self.children())) as e:
+			for ch in self.children():
+				e.submit(func, ch, *args, **kwargs)
+				sleep(1)
+
 	@property
-	def grid_area(self) -> Tuple[int, int, int, int]:
-		x1, y1, x2, y2 = split_rectangle(self.control)
-		x1_mod = y1_mod = x2_mod = y2_mod = 0
-		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
-		for row in self.control.children():
-			if row_number_regex.fullmatch(row.texts()[0].strip()):
-				x1_mod = get_rectangle_dimensions(row)[0]  # Adjust for row headers
-				break
-		for row in self.control.children():
-			if row.texts()[0].split() == 'Top Row':
-				y1_mod = get_rectangle_dimensions(row.children()[0])[1]  # Adjust for column headers
-				break
-		# TODO: Compensate for horizontal and/or vertical scroll bars
-		return (x1 + x1_mod), (y1 + y1_mod), (x2 - x2_mod), (y2 - y2_mod)
+	def grid_area(self) -> RECT:
+		x1, y1, x2, y2 = split_RECT(self.control)
+		row_header_width = column_header_height = vertical_scrollbar_width = horizontal_scrollbar_height = 0
 
+		top_row_rect = self.top_row.rectangle()
+		first_column_rect = self.top_row.child_window(title=self.column_names[0]).rectangle()
+		corner_rect = RECT(top_row_rect.left, top_row_rect.top, first_column_rect.right, top_row_rect.bottom)
 
+		column_header_height = corner_rect.height()
+		row_header_width = corner_rect.width()
+
+		if self.scrollbar_h.exists():
+			horizontal_scrollbar_rect = self.scrollbar_h.rectangle()
+			horizontal_scrollbar_height = horizontal_scrollbar_rect.height()
+
+		if self.scrollbar_v.exists():
+			vertical_scrollbar_rect = self.scrollbar_v.rectangle()
+			vertical_scrollbar_width = vertical_scrollbar_rect.width()
+
+		return RECT((x1 + row_header_width),
+		            (y1 + column_header_height),
+		            (x2 - vertical_scrollbar_width),
+		            (y2 - horizontal_scrollbar_height))
 
 	@classmethod
 	def from_name(cls, app: Application, name: str, columns: Union[str, Iterable[str]] = None, rows: int = None):
 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
-		name_new = name.title().replace(' ', '')
-		grid = uia_controls.ListViewWrapper(sl_uia.__getattribute__(name_new).element_info)
-		return cls(grid, columns, rows)
+		return cls(sl_uia.__getattribute__(name), columns, rows)
 
 	@classmethod
 	def default(cls, app: Application, columns: Union[str, Iterable[str]] = None, rows: int = None):
@@ -1434,23 +1447,83 @@ class DataGrid:
 
 	def count_rows(self) -> int:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
-		return max(int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')) for row in self.control.children() if row_number_regex.fullmatch(row.texts()[0].strip())) + 1
+		return max([int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')) + 1 for row in self.control.children() if row_number_regex.fullmatch(row.texts()[0].strip())]+[0, 0])
 
 	def get_column_names(self) -> List[str]:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
-		return [col.texts()[0].strip() for row in self.control.children() if row.texts()[0].strip() == 'Top Row' for col in row.children()[1:]]
+		return [col.texts()[0].strip() for col in self.top_row.children() if col.texts()[0]]
+
+	@singledispatch
+	def get_cell(self, column: str, row: int, visible_only: bool=False, *, specific: int=0):
+		if row > self.row_count:
+			return None
+		column_count = self.column_names.count(column)
+		if column_count > 1:  # Best-Match method, slower
+			if specific:
+				return self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{specific}', visible_only=visible_only)
+			return [self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{i + 1}', visible_only=visible_only) for i in range(column_count)]
+		else:  # Title-Match method, faster & more precise
+			return self.window_spec.child_window(title=f'{column} Row {row - 1}', visible_only=visible_only)
 
 	def get_visible_cells(self):
-		pass
+		min_dim = max_dim = None
+		for i in np.arange(min(self.grid.shape[:2]), dtype=np.intp):
+			y = x = i
+			col = self.column_number_dict[x]
+			column_count = self.column_names.count(col)
+			specific = 1
+			if column_count > 1:
+				column_count_dict = {k2: i for i, k2 in enumerate({k: v for k, v in self.column_number_dict.items() if v == col}.keys())}
+				specific += column_count_dict[x]
+			cell = self.get_cell(col, y, specific=specific)
+			visible = cell.is_visible()
+			self.visibility_grid[y, x] = visible
+			if min_dim is None and visible:
+				min_dim = i
+			if min_dim is not None and not visible:
+				max_dim = i
+				break
+
+		for dim in ('max', 'min'):
+			for mode in ('horizontal', 'vertical'):
+				while True:
+					try:
+						if mode == 'horizontal':
+							if dim == 'max':
+								pass
+							elif dim == 'min':
+								pass
+						elif mode == 'vertical':
+							if dim == 'max':
+								pass
+							elif dim == 'min':
+								pass
+					except Exception:
+						break
+
+
+
+
+
 
 	@staticmethod
-	def get_min_area(cell: BaseWrapper) -> NamedTuple('dimensions', [('width', int), ('height', int)]):
-		x1, y1, x2, y2 = split_rectangle(cell)
-		w = x2 - x1
-		h = y2 - y1
+	def get_min_area(cell: BaseWrapper, *, anchor: str) -> RECT:
+		rect = cell.rectangle()
+		w, h = rect.width(), rect.height()
 		w_factor, h_factor = [min(2 ** x for x in range(3,10) if (just_over_half(y, x) - z) < 10) for y,z in ((w, w / 2), (h, h / 2))]
-		retval = NamedTuple('dimensions', [('width', int), ('height', int)])
-		return retval(int(w * w_factor), int(h * h_factor))
+		left, top, right, bottom = split_RECT(cell)
+
+		if 'l' in anchor:
+			right = left + int(w * w_factor)
+		elif 'r' in anchor:
+			left = right - int(w * w_factor)
+
+		if 't' in anchor:
+			bottom = top + int(h * h_factor)
+		elif 'b' in anchor:
+			top = bottom - int(h * h_factor)
+
+		return RECT(left, top, right, bottom)
 
 
 
@@ -1687,13 +1760,14 @@ def check_serial_number(sql, serial_number: str, status: str, table: str = 'PyCo
 		return status
 	return row.Status
 
-def split_rectangle(control: BaseWrapper) -> Tuple[int, int, int, int]:
+@singledispatch
+def split_RECT(control: BaseWrapper) -> Tuple[int, int, int, int]:
 	rect = control.rectangle()
 	return rect.left, rect.top, rect.right, rect.bottom
 
-def get_rectangle_dimensions(control: BaseWrapper) -> Tuple[int, int]:
-	rect = control.rectangle()
-	return rect.right - rect.left, rect.bottom - rect.top
+@split_RECT.register(RECT)
+def _(control):
+	return control.left, control.top, control.right, control.bottom
 
 # Not one Item Price exists for Item that has
 @singledispatch
@@ -1718,7 +1792,7 @@ def _(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 # @center.register(RECT)
 @center.register(BaseWrapper)
 def _(arg) -> Tuple[int, int]:
-	x1, y1, x2, y2 = split_rectangle(arg)
+	x1, y1, x2, y2 = split_RECT(arg)
 	x2 -= x1
 	y2 -= y1
 	return x1 + (x2 // 2), y1 + (y2 // 2)
@@ -1903,6 +1977,9 @@ def someOtherHotSpotCallable(func: Callable, *args, **kwargs):
 
 # TODO: When positional-only arguments are finally added
 # PEP 457: https://www.python.org/dev/peps/pep-0457/
+
+# hcursor 65543 == loading
+
 """
 def sql_connect(cls, [address: str, username: str, password: str,] database: str, [detect_types: int = 0,] *, key: str, legacy_encryption: bool = True, quiet: bool = False):
 either:    address, username, password, database
