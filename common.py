@@ -410,6 +410,9 @@ class Unit:
 	def product(self, value):
 		self._product = value
 
+	def get_oldest_datetime(self):
+		date = self.eff_date.strftime('%m/%d/%Y')
+		return self._mssql.execute(f"SELECT [DateTime] FROM PyComm WHERE [Serial Number] = '{self.serial_number}' AND [DateTime] >= '{date}' ORDER BY [DateTime] ASC")[0]
 
 class Unit_ALT:
 	def __init__(self, mssql: MS_SQL, slsql: MS_SQL, sn: str):

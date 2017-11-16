@@ -149,15 +149,17 @@ def main():
 				except NoSROError as ex:
 					log.exception("No SRO Error!")
 					mssql.execute(f"UPDATE {table} SET [Status] = 'No SRO({result.Status})' WHERE [Serial Number] = '{result.Serial_Number}'")
+					mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 					continue
 				except NoOpenSROError as ex:
 					log.exception("No Open SRO Error!")
 					mssql.execute(f"UPDATE {table} SET [Status] = 'No Open SRO({result.Status})({ex.sro})' WHERE [Serial Number] = '{result.Serial_Number}'")
+					mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 					continue
 				except InvalidReasonCodeError as ex:
 					log.exception("Invalid Reason Code Error!")
-					mssql.execute(
-								f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
+					mssql.execute(f"UPDATE {table} SET [Status] = 'Invalid Reason Code({result.Status})({ex.reason_code})' WHERE [Serial Number] = '{result.Serial_Number}' AND [Id] = {int(ex.spec_id)}")
+					mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 					continue
 				if process == 'Scrap':
 					log.info(f"Unit object created with serial_number={unit.serial_number}'")
@@ -174,7 +176,7 @@ def main():
 					except Exception:
 						pass
 					finally:
-						mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = NULL WHERE MachineName = '{my_name}'")
+						mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 
 if __name__ == '__main__':
 	main()

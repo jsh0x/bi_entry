@@ -3,6 +3,7 @@ import sys
 import warnings
 from time import sleep
 from typing import List
+import datetime
 
 import pyautogui as pag
 from pywinauto import timings
@@ -316,13 +317,17 @@ def Transact(app: Application, units: List[Unit]):
 		log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 		i2 = {x.datetime: i for i, x in enumerate(units)}
 		newest_unit = units[i2[max(list(i2.keys()))]]
-		oldest_unit = units[i2[min(list(i2.keys()))]]
 		if not sl_win.ReceivedDateEdit.texts()[0].strip():
 			sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
 			sl_win.ReceivedDateEdit.send_keystrokes('^s')
 		if not sl_win.FloorDateEdit.texts()[0].strip():
-			sl_win.FloorDateEdit.set_text(oldest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
-			sl_win.FloorDateEdit.send_keystrokes('^s')
+			sl_win.FloorDateEdit.set_text(unit.get_oldest_datetime().strftime('%m/%d/%Y %I:%M:%S %p'))
+		else:
+			dt = sl_win.FloorDateEdit.texts()[0].strip()
+			old_dt = datetime.datetime.strptime(dt, '%m/%d/%Y %I:%M:%S %p')
+			if old_dt > unit.get_oldest_datetime():
+				sl_win.FloorDateEdit.set_text(unit.get_oldest_datetime().strftime('%m/%d/%Y %I:%M:%S %p'))
+		sl_win.FloorDateEdit.send_keystrokes('^s')
 		if not sl_win.CompletedDateEdit.texts()[0].strip() and has_qc:
 			sl_win.CompletedDateEdit.set_text(newest_unit.datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
 		sl_win.CompletedDateEdit.send_keystrokes('^s')
