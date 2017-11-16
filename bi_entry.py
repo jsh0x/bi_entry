@@ -129,6 +129,7 @@ def main():
 							if reason_results or queued_results:
 								result = 'something'
 				if not result:
+					mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 					log.info("No valid results, waiting...")
 					sleep(10)
 					continue
