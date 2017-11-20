@@ -1,32 +1,26 @@
-#!/usr/bin/env python
-import configparser
-import pathlib
-from typing import Iterable
+#! python3 -W ignore
+# coding=utf-8
+from __init__ import read_config, my_directory
 
-from constants import REGEX_NUMERIC_RANGES
+import importlib
+import os
+import logging
+from logging import FileHandler, Handler, StreamHandler
 
-_config = configparser.ConfigParser()
-_config.read_file(open(pathlib.Path('~/PycharmProjects/bi_entry/config.ini').expanduser()))
-application_filepath = pathlib.Path(_config.get('Paths', 'sl_exe'))
-version = _config.get('DEFAULT', 'version')
-table = _config.get('DEFAULT', 'table')
-flow = _config.get('DEFAULT', 'flow')
-process_default = _config.get('DEFAULT', 'process')
-username = _config.get('Login', 'username')
-password = _config.get('Login', 'password')
+config = read_config(my_directory)
 
+version = config['Default'].get('version', '?.?.?')
 
-def _numeric_ranges(x1, x2, x3) -> Iterable:
-	if x3 is None:
-		return range(int(x1), int(x2) + 1)
-	else:
-		return [int(x3)]
+config['Paths'].get('syteline_exe', None)
 
+username = config['Login'].get('username', 'usr')
+password = config['Login'].get('password', 'pwd')
 
-_config_days = REGEX_NUMERIC_RANGES.finditer(_config.get('Schedule', 'active_days'))
-_config_hours = REGEX_NUMERIC_RANGES.finditer(_config.get('Schedule', 'active_hours'))
-active_days = {y for x in _config_days for y in _numeric_ranges(*x.groups())}
-active_hours = {y for x in _config_hours for y in _numeric_ranges(*x.groups())}
+active_days = config['Schedule'].get('active_days', list(range(7)))
+active_hours = config['Schedule'].get('active_hours', list(range(24)))
+
+logging_config = config['Logging']
+
 
 from utils import MSSQL
 

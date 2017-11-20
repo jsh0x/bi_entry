@@ -1,10 +1,11 @@
+#! python3 -W ignore
+# coding=utf-8
 import random
 from string import ascii_letters, digits, punctuation, whitespace
 from time import sleep
 
 import pywinauto.timings
-
-from _common import SyteLinePupperMaster, Unit
+from common import SyteLinePupperMaster, Unit
 from config import *
 from processes import transact
 
@@ -13,9 +14,6 @@ from processes import transact
 #                                '58803900396063004620360048603840426038404620', '54005880Q750516045004500', '1121327')
 # _adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _assorted_lengths_of_string
 # mssql = MSSQL.legacy_encrypted_connection(_key, address=_adr_data, username=_usr_data, password=_pwd_data, database=_db_data)
-
-
-#
 
 
 # print(_check_units(mssql, 'Queued'))

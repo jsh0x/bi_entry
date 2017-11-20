@@ -1,3 +1,5 @@
+#! python3 -W ignore
+# coding=utf-8
 import logging
 import warnings
 from time import sleep
@@ -908,6 +910,7 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 	log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 	newest_datetime = max(x.datetime for x in units)
 	oldest_datetime = min(x.datetime for x in units)
+	# TODO: Get oldest unit since eff date
 	if not dummy_mode:
 		if not sl_win.ReceivedDateEdit.texts()[0].strip():
 			sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))

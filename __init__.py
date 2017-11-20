@@ -1,18 +1,31 @@
+#! python3 -W ignore
+# coding=utf-8
 __author__ = 'jsh0x'
 __version__ = '1.5.0'
 
-import configparser
+import json
 import os
 import pathlib
 import struct
 import sys
 from os import fdopen, remove
 from shutil import move
+import io
+import traceback
 from sys import version_info as version
 from tempfile import mkstemp
 from typing import Sequence, Union
-
 from win32com.client import Dispatch
+import json
+import os
+import pathlib
+from typing import Any, Dict, Iterable, Union
+
+from constants import REGEX_NUMERIC_RANGES
+from _config import write_config, read_config
+
+my_directory = pathlib.WindowsPath(os.environ["PROGRAMFILES"]) / 'BI_Entry'
+
 
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
@@ -25,16 +38,6 @@ os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
 loggers = ['root']
 handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler']
 formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter']
-cwd = pathlib.WindowsPath.cwd()
-log_dir = cwd / 'logs'
-
-
-def list_to_string(iterable: Sequence, sep: str = ','):
-	retval = ''
-	delimiter_length = len(sep)
-	for i in iterable:
-		retval += str(i) + sep
-	return retval[:-delimiter_length]
 
 
 def find_file(name, path="C:/"):
@@ -44,6 +47,13 @@ def find_file(name, path="C:/"):
 	else:
 		return None
 
+def find_SyteLine() -> pathlib.WindowsPath:
+	path = pathlib.WindowsPath.home() / 'AppData' / 'Local' / 'Apps'
+	res = [i for i in path.rglob('winstudio.exe') if i.parent.name.startswith('sl8') and '_none_' not in i.parent.name]
+	if res:
+		return res[0]
+	else:
+		return None
 
 def update_config():
 	# Create temp file
@@ -65,69 +75,62 @@ def update_config():
 	move(abs_path, 'config.ini')
 
 
-def write_config(usr: str = '???', pwd: str = '???', fp: str = None):
-	fp = find_file('WinStudio.exe', pathlib.Path.home().as_posix()) if fp is None else fp
-	path = (os.path.dirname(sys.executable)).replace('\\', '/') + "/Scripts/pip3.6.exe"
+def create_config(usr, pwd):
+	sl8_fp = find_SyteLine()
+	log_dir = my_directory / 'logs'
 	log_dir.mkdir(exist_ok=True)
-	info_log_dir = log_dir / 'info.log'
-	debug_log_dir = log_dir / 'dbg.log'
-	config = configparser.ConfigParser(interpolation=None)
 	module_list = packages
-	# for mod in get_outdated_modules(path).keys():
-	# 	if mod in module_list:
-	# 		pass  # Update it
-	config['DEFAULT'] = {'version':          __version__,
-	                     'table':            '0',
-	                     'flow':             'ASC',
-	                     'process':          'None',
-	                     'printer':          'None',
-	                     'min_sl_instances': '1',
-	                     'max_sl_instances': '1',
-	                     'multiprocess':     'False'}
-	config['Schedule'] = {'active_days':  '1,2,3,4,5,6',
-	                      'active_hours': '0,1,5,6,7,8,9,10,11,12,13,14,15,18,19,20,21,22,23'
-	                      }
-	config['Paths'] = {'sl_exe':  fp,
-	                   'pip_exe': path,
-	                   'cwd':     cwd.as_posix()}
-	config['Login'] = {'username': usr,
-	                   'password': pwd}
-	config['loggers'] = {'keys': list_to_string(loggers)}
-	config['handlers'] = {'keys': list_to_string(handlers)}
-	config['formatters'] = {'keys': list_to_string(formatters)}
-	config['formatter_errorFormatter'] = {'format':  "[{asctime}][{levelname}][{filename}, function:{funcName}, line:{lineno!s}]  {message}",
-	                                      'datefmt': "%X",
-	                                      'style':   "{",
-	                                      'class':   "logging.Formatter"}
-	config['formatter_infoFormatter'] = {'format':  "[{asctime}]{levelname!s:<8} {message}",
-	                                     'datefmt': "%x %X",
-	                                     'style':   "{",
-	                                     'class':   "logging.Formatter"}
-	config['formatter_debugFormatter'] = {'format':  "[{asctime}.{msecs:0>3.0f}] {levelname!s:<5} {module!s:>8}.{funcName}:{lineno!s:<5} {message}",
-	                                      'datefmt': "%X",
-	                                      'style':   "{",
-	                                      'class':   "logging.Formatter"}
-	config['handler_errorHandler'] = {'class':     "StreamHandler",
-	                                  'level':     "WARNING",
-	                                  'formatter': "errorFormatter",
-	                                  'args':      "(sys.stdout,)"}
-	config['handler_infoHandler'] = {'class':     "handlers.TimedRotatingFileHandler",
-	                                 'level':     "INFO",
-	                                 'formatter': "infoFormatter",
-	                                 'args':      f"('{info_log_dir.as_posix()}', 'D', 7, 3)"}
-	config['handler_debugHandler'] = {'class':     "FileHandler",
-	                                  'level':     "DEBUG",
-	                                  'formatter': "debugFormatter",
-	                                  'args':      f"('{debug_log_dir.as_posix()}', 'w')"}
-	config['handler_consoleHandler'] = {'class':     "StreamHandler",
-	                                    'level':     "DEBUG",
-	                                    'formatter': "debugFormatter",
-	                                    'args':      "()"}
-	config['logger_root'] = {'level':    'DEBUG',
-	                         'handlers': list_to_string(handlers[:4]),
-	                         'qualname': 'root'}
-	with open(cwd / 'config.ini', 'w') as configfile:
-		config.write(configfile)
+	config_content = {'Default':
+		                  {'version': __version__},
+	                  'Schedule':
+		                  {'active_days': list(range(7))[1:],
+		                   'active_hours': list(range(0, 2)) + list(range(5, 16)) + list(range(18, 24))},
+	                  'Paths':
+		                  {'syteline_exe': sl8_fp.as_posix()},
+	                  'Login':
+		                  {'username': usr,
+		                   'password': pwd},
+	                  'Logging':
+		                  {'version': 1,
+		                   'loggers':
+			                   {'root':
+				                    {'level': 'DEBUG',
+				                     'handlers': ['errors', 'info', 'debug', 'console'],
+				                     'qualname': 'root'}},
+		                   'formatters':
+			                   {'simple':
+				                    {'format': '[{asctime}]{levelname!s:^8}| {message}',
+				                     'datefmt': '%X',
+				                     'style': '{'},
+			                    'detailed':
+				                    {'format': '[{asctime}]{levelname} | {filename}(Thread-{threadName}) | function:{funcName} | line:{lineno!s} | {message}',
+				                     'datefmt': '%x %X',
+				                     'style': '{'},
+			                    'verbose':
+				                    {'format':  '{asctime}.{msecs:0>3.0f}[{levelname!s:<5}] | Thread-{threadName} | {module!s:>8}.{funcName}:{lineno!s:<5} | {message}',
+				                     'datefmt': '%X',
+				                     'style':   '{'}},
+		                   'handlers':
+			                   {'errors':
+				                    {'class': 'FileHandler',
+				                     'level': 'ERROR',
+				                     'formatter': 'detailed',
+				                     'args': [(log_dir / 'err.log').as_posix(), 'a']},  # 'args': [log_dir.as_posix()]},
+			                    'console':
+				                    {'class': 'StreamHandler',
+				                     'level': 'INFO',
+				                     'formatter': 'verbose'},
+			                    'info':
+				                    {'class': 'FileHandler',
+				                     'level': 'INFO',
+				                     'formatter': 'simple',
+				                     'args': [(log_dir / 'info.log').as_posix(), 'a']},  # 'args': [(log_dir / 'info').as_posix()]},
+			                    'debug':
+				                    {'class': 'FileHandler',
+				                     'level': 'DEBUG',
+				                     'formatter': 'detailed',
+				                     'args': [(log_dir / 'debug.log').as_posix(), 'a']}}}}
+	write_config(config_content, my_directory)
 
 
 def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.PathLike], startin: Union[str, bytes, pathlib.Path, os.PathLike], icon_path: Union[str, bytes, pathlib.Path, os.PathLike]):
@@ -146,6 +149,10 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 	shortcut.IconLocation = icon_path
 	shortcut.save()
 
+
+config = read_config(my_directory)
+logging_config = config['Logging']
+from _logging import MyHandler
 
 desktop = pathlib.WindowsPath.home() / 'Desktop'
 shortcut = desktop / 'bi_entry.lnk'

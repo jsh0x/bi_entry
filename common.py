@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#! python3 -W ignore
+# coding=utf-8
 import datetime
 import decimal
 import logging

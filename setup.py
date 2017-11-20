@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#! python3 -W ignore
 # coding=utf-8
 import compileall
 import configparser
