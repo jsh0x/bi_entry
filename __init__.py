@@ -23,9 +23,9 @@ from typing import Any, Dict, Iterable, Union
 
 from constants import REGEX_NUMERIC_RANGES
 from _config import write_config, read_config
+from _logging import initialize_logger
 
 my_directory = pathlib.WindowsPath(os.environ["PROGRAMFILES"]) / 'BI_Entry'
-
 
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
@@ -34,11 +34,6 @@ FILE_NAME = sys.executable
 DIR_NAME = os.path.dirname(sys.executable)
 os.environ["TCL_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tcl8.6")
 os.environ["TK_LIBRARY"] = os.path.join(DIR_NAME, r"tcl\tk8.6")
-
-loggers = ['root']
-handlers = ['errorHandler', 'infoHandler', 'debugHandler', 'consoleHandler']
-formatters = ['errorFormatter', 'infoFormatter', 'debugFormatter']
-
 
 def find_file(name, path="C:/"):
 	for root, dirs, files in os.walk(path):
@@ -96,7 +91,11 @@ def create_config(usr, pwd):
 			                   {'root':
 				                    {'level': 'DEBUG',
 				                     'handlers': ['errors', 'info', 'debug', 'console'],
-				                     'qualname': 'root'}},
+				                     'qualname': 'root'},
+			                    'UnitLogger':
+				                    {'level':    'DEBUG',
+				                     'handlers': ['errors', 'unitInfo'],
+				                     'qualname': 'UnitLogger'}},
 		                   'formatters':
 			                   {'simple':
 				                    {'format': '[{asctime}]{levelname!s:^8}| {message}',
@@ -109,7 +108,11 @@ def create_config(usr, pwd):
 			                    'verbose':
 				                    {'format':  '{asctime}.{msecs:0>3.0f}[{levelname!s:<5}] | Thread-{threadName} | {module!s:>8}.{funcName}:{lineno!s:<5} | {message}',
 				                     'datefmt': '%X',
-				                     'style':   '{'}},
+				                     'style':   '{'},
+			                    'unitSpecialized':
+				                    {'format': '{asctime}.{msecs:0>3.0f}|{message}',
+				                     'datefmt': '%X',
+				                     'style': '{'}},
 		                   'handlers':
 			                   {'errors':
 				                    {'class': 'FileHandler',
@@ -129,7 +132,12 @@ def create_config(usr, pwd):
 				                    {'class': 'FileHandler',
 				                     'level': 'DEBUG',
 				                     'formatter': 'detailed',
-				                     'args': [(log_dir / 'debug.log').as_posix(), 'a']}}}}
+				                     'args': [(log_dir / 'debug.log').as_posix(), 'a']},
+			                    'unitInfo':
+				                    {'class': 'FileHandler',
+				                     'level': 'DEBUG',
+				                     'formatter': 'unitSpecialized',
+				                     'args': [(log_dir / 'unitInfo.log').as_posix(), 'a']}}}}
 	write_config(config_content, my_directory)
 
 
@@ -151,8 +159,7 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 
 
 config = read_config(my_directory)
-logging_config = config['Logging']
-from _logging import MyHandler
+initialize_logger(config['Logging'])
 
 desktop = pathlib.WindowsPath.home() / 'Desktop'
 shortcut = desktop / 'bi_entry.lnk'

@@ -36,7 +36,7 @@ class MyExceptionFileHandler(FileHandler):
 
 	@property
 	def baseFilename(self):
-		filename = sys.last_type.__name__ + '_err'
+		filename = sys.last_type.__name__
 		while ' ' in filename:
 			filename = filename.replace(' ', '_')
 		filepath = self.logDirectory / filename
@@ -60,10 +60,17 @@ def initialize_logger(config: Dict[str, Any]):
 			handler_dict = config['handlers'][handler_name]
 			formatter_name = handler_dict['formatter']
 			args = handler_dict.get('args', [])
-			try:
-				handler_class = importlib.import_module(f"logging.handler.{handler_dict['class']}")
-			except ImportError:
-				handler_class = eval(handler_dict['class'])
+
+			class_name = handler_dict['class']
+			module_names = ('logging', 'logging.handlers', '_logging')
+			for name in module_names:
+				mod = importlib.import_module(name)
+				if hasattr(mod, class_name):
+					break
+			else:
+				mod = importlib.import_module('logging')
+				class_name = 'StreamHandler'
+			handler_class = mod.__getattr__(class_name)
 
 			handler = handler_class(*args)
 			handler.setLevel(handler_dict['level'])

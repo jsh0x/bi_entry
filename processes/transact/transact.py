@@ -10,8 +10,8 @@ import pywinauto.timings
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
-from _common import *
-from _common import PuppetMaster
+from common import *
+from common import PuppetMaster
 from config import *
 from constants import DB_TABLE, REGEX_CREDIT_HOLD, REGEX_NEGATIVE_ITEM, SYTELINE_WINDOW_TITLE, TRANSACTION_STATUS, WHITE
 from exceptions import *

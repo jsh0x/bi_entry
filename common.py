@@ -33,6 +33,7 @@ from exceptions import *
 from utils.tools import prepare_string, just_over_half
 
 log = logging.getLogger(__name__)
+u_log = logging.getLogger('UnitLogger')
 completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 
 Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str),
@@ -293,12 +294,15 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 
 		self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number)
 		log.info(f"Attribute serial_number='{self.serial_number}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|ID={self.ID}")
 
 		self.product = self.serial_number.product
 		log.info(f"Attribute product='{self.product}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Product={self.product}")
 
 		self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix)
 		log.info(f"Attribute build='{self.build}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Build={self.build}")
 
 		self.parts = self.Part.from_string(data[0].Parts, self.build)
 		if self.parts:
@@ -306,12 +310,15 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		else:
 			part_string = 'None'
 		log.info(f"Attribute parts={part_string}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Parts={part_string}")
 
 		self.operation = self.Operation.from_string(data[0].Operation, self.product)
 		log.info(f"Attribute operation='{self.operation}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Operation={self.operation}")
 
 		self.operator = self.Operator.from_username(data[0].Operator)
 		log.info(f"Attribute operator='{self.operator.username}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Operator={self.operator.username}")
 
 		self.is_QC = 'QC' in self.operation
 		log.info(f"Attribute is_QC={self.is_QC}")
@@ -322,31 +329,41 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		self.datetime = data[0].DateTime
 		datetime_str = self.datetime.strftime('%m/%d/%Y %H:%M:%S')
 		log.info(f"Attribute datetime='{datetime_str}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|DateTime={datetime_str}")
 
 		self.notes = data[0].Notes
 		log.info(f"Attribute notes='{self.notes}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Notes={self.notes}")
 
 		self.status = data[0].Status
 		log.info(f"Attribute status='{self.status}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Status={self.status}")
 
 		self.parts_transacted = set()
 
 		self.sro, self.sro_line = self.get_sro(self.serial_number)
 		log.info(f"Attribute sro='{self.sro}'")
 		log.info(f"Attribute sro_line={self.sro_line}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO={self.sro}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Line={self.sro_line}")
 
 		self.eff_date = self.get_eff_date(self.serial_number)
 		eff_date_str = self.eff_date.strftime('%m/%d/%Y')
 		log.info(f"Attribute eff_date={eff_date_str}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Eff Date={eff_date_str}")
 
 		self.sro_open_status = self.get_statuses(self.serial_number)
 		log.info(f"Attribute sro_open_status={self.sro_open_status}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Lines Status={self.sro_open_status['Lines']}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Operations Status={self.sro_open_status['Operations']}")
 
 		self.location = self.get_location(self.serial_number)
 		log.info(f"Attribute location='{self.location}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Location={self.location}")
 
 		self.warehouse = self.get_warehouse(self.serial_number)
 		log.info(f"Attribute warehouse='{self.warehouse}'")
+		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Warehouse={self.warehouse}")
 
 		self.batch_amt_default = 1
 
@@ -379,6 +396,7 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		# 		raise NoSROError(serial_number=str(self.serial_number))
 		# 	else:
 		# 		raise NoOpenSROError(serial_number=str(self.serial_number), sro=str(self.sro_num))
+		# FIXME: Only if no other reason codes have been entered
 		self.general_reason = 1000
 		self.specific_reason = 20
 		self.general_resolution = 10000
@@ -1374,7 +1392,8 @@ class DataGrid:
 
 	# TODO: Verify correct row creation
 
-class DataGrid:
+class DataGridNEW:
+	# TODO: This^
 	_type_dict = {0: bool, 1: int, 2: float, 3: datetime.datetime}
 	def __init__(self, control: WindowSpecification,  columns: Union[str, Iterable[str]], rows: int):
 		assert control.backend == registry.backends['uia']
@@ -1467,7 +1486,7 @@ class DataGrid:
 			return self.window_spec.child_window(title=f'{column} Row {row - 1}', visible_only=visible_only)
 
 	def get_visible_cells(self):
-		min_dim = max_dim = None
+		max_x = max_y = min_x = min_y = None
 		for i in np.arange(min(self.grid.shape[:2]), dtype=np.intp):
 			y = x = i
 			col = self.column_number_dict[x]
@@ -1479,33 +1498,91 @@ class DataGrid:
 			cell = self.get_cell(col, y, specific=specific)
 			visible = cell.is_visible()
 			self.visibility_grid[y, x] = visible
-			if min_dim is None and visible:
-				min_dim = i
-			if min_dim is not None and not visible:
-				max_dim = i
+			if min_x is None and visible:
+				min_x = min_y = i
+			elif min_x is not None and not visible:
+				max_x = max_y = i - 1
 				break
 
 		for dim in ('max', 'min'):
-			for mode in ('horizontal', 'vertical'):
-				while True:
-					try:
-						if mode == 'horizontal':
-							if dim == 'max':
-								pass
-							elif dim == 'min':
-								pass
-						elif mode == 'vertical':
-							if dim == 'max':
-								pass
-							elif dim == 'min':
-								pass
-					except Exception:
-						break
+			while True:
+				try:
+					if dim == 'max':
+						x2, y2 = x, y = max_x, max_y
+						while True:
+							x2 += 1
+							if x2 >= self.grid.shape[1]:
+								max_x = x2 - 1
+								break
+							col = self.column_number_dict[x2]
+							column_count = self.column_names.count(col)
+							specific = 1
+							if column_count > 1:
+								column_count_dict = {k2: i for i, k2 in enumerate({k: v for k, v in self.column_number_dict.items() if v == col}.keys())}
+								specific += column_count_dict[x2]
+							cell = self.get_cell(col, y, specific=specific)
+							visible = cell.is_visible()
+							self.visibility_grid[y, x2] = visible
+							if not visible:
+								max_x = x2 - 1
+								break
+						while True:
+							y2 += 1
+							if y2 >= self.grid.shape[0]:
+								max_y = y2 - 1
+								break
+							col = self.column_number_dict[x]
+							column_count = self.column_names.count(col)
+							specific = 1
+							if column_count > 1:
+								column_count_dict = {k2: i for i, k2 in enumerate({k: v for k, v in self.column_number_dict.items() if v == col}.keys())}
+								specific += column_count_dict[x]
+							cell = self.get_cell(col, y2, specific=specific)
+							visible = cell.is_visible()
+							self.visibility_grid[y2, x] = visible
+							if not visible:
+								max_y = y2 - 1
+								break
+					elif dim == 'min':
+						x2, y2 = x, y = min_x, min_y
+						while True:
+							x2 -= 1
+							if x2 < 0:
+								min_x = x2 + 1
+								break
+							col = self.column_number_dict[x2]
+							column_count = self.column_names.count(col)
+							specific = 1
+							if column_count > 1:
+								column_count_dict = {k2: i for i, k2 in enumerate({k: v for k, v in self.column_number_dict.items() if v == col}.keys())}
+								specific += column_count_dict[x2]
+							cell = self.get_cell(col, y, specific=specific)
+							visible = cell.is_visible()
+							self.visibility_grid[y, x2] = visible
+							if not visible:
+								min_x = x2 + 1
+								break
+						while True:
+							y2 -= 1
+							if y2 < 0:
+								min_y = y2 + 1
+								break
+							col = self.column_number_dict[x]
+							column_count = self.column_names.count(col)
+							specific = 1
+							if column_count > 1:
+								column_count_dict = {k2: i for i, k2 in enumerate({k: v for k, v in self.column_number_dict.items() if v == col}.keys())}
+								specific += column_count_dict[x]
+							cell = self.get_cell(col, y2, specific=specific)
+							visible = cell.is_visible()
+							self.visibility_grid[y2, x] = visible
+							if not visible:
+								min_y = y2 + 1
+								break
+				except Exception:
+					break
 
-
-
-
-
+		return min_x, min_y, max_x, max_y
 
 	@staticmethod
 	def get_min_area(cell: BaseWrapper, *, anchor: str) -> RECT:
@@ -1525,8 +1602,6 @@ class DataGrid:
 			top = bottom - int(h * h_factor)
 
 		return RECT(left, top, right, bottom)
-
-
 
 # class Singleton(type):
 # 	"""
