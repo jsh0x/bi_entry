@@ -410,6 +410,7 @@ def Transact(app: Application, units: List[Unit]):
 				pag.typewrite(str(num))
 				sleep(0.5)
 			pag.hotkey('ctrl', 's')
+			pag.press('up', 40)
 			resn_notes = sl_win.ReasonNotesEdit
 			resn_notes.click_input()
 			pag.press('end', 30)
