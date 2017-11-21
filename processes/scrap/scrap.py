@@ -9,7 +9,7 @@ import pywinauto.timings
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
-from _common import *
+from common import *
 from constants import SYTELINE_WINDOW_TITLE
 from exceptions import *
 

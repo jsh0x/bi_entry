@@ -53,6 +53,8 @@ class MyExceptionFileHandler(FileHandler):
 
 def initialize_logger(config: Dict[str, Any]):
 	for logger_name, logger_dict in config['loggers'].items():
+		if logger_name != 'root':
+			continue
 		logger = logging.getLogger(logger_name)
 		logger.setLevel(logger_dict['level'])
 
@@ -70,7 +72,7 @@ def initialize_logger(config: Dict[str, Any]):
 			else:
 				mod = importlib.import_module('logging')
 				class_name = 'StreamHandler'
-			handler_class = mod.__getattr__(class_name)
+			handler_class = mod.__getattribute__(class_name)
 
 			handler = handler_class(*args)
 			handler.setLevel(handler_dict['level'])

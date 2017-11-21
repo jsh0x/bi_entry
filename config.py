@@ -11,15 +11,13 @@ config = read_config(my_directory)
 
 version = config['Default'].get('version', '?.?.?')
 
-config['Paths'].get('syteline_exe', None)
+application_filepath = config['Paths'].get('syteline_exe', None)
 
 username = config['Login'].get('username', 'usr')
 password = config['Login'].get('password', 'pwd')
 
 active_days = config['Schedule'].get('active_days', list(range(7)))
 active_hours = config['Schedule'].get('active_hours', list(range(24)))
-
-logging_config = config['Logging']
 
 
 from utils import MSSQL
@@ -31,4 +29,4 @@ _adr_data, _adr_data_sl, _usr_data, _pwd_data, _db_data, _db_data_sl, _key = _as
 mssql = MSSQL.connect(key=_key, address=_adr_data, username=_usr_data, password=_pwd_data, database=_db_data, legacy_encryption=True)
 slsql = MSSQL.connect(key=_key, address=_adr_data_sl, username=_usr_data, password=_pwd_data, database=_db_data_sl, legacy_encryption=True)
 __all__ = ['active_hours', 'active_days', 'application_filepath', 'username', 'password',
-           'version', 'table', 'flow', 'process_default', 'mssql', 'slsql']
+           'version', 'mssql', 'slsql']

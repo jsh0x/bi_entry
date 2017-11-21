@@ -25,7 +25,8 @@ from constants import REGEX_NUMERIC_RANGES
 from _config import write_config, read_config
 from _logging import initialize_logger
 
-my_directory = pathlib.WindowsPath(os.environ["PROGRAMFILES"]) / 'BI_Entry'
+# my_directory = pathlib.WindowsPath(os.environ["PROGRAMFILES"]) / 'BI_Entry'
+my_directory = pathlib.WindowsPath(os.environ["PROGRAMDATA"]) / 'BI_Entry'
 
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
@@ -73,7 +74,7 @@ def update_config():
 def create_config(usr, pwd):
 	sl8_fp = find_SyteLine()
 	log_dir = my_directory / 'logs'
-	log_dir.mkdir(exist_ok=True)
+	log_dir.mkdir(parents=True, exist_ok=True)
 	module_list = packages
 	config_content = {'Default':
 		                  {'version': __version__},
@@ -157,24 +158,19 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 	shortcut.IconLocation = icon_path
 	shortcut.save()
 
-
-config = read_config(my_directory)
+try:
+	config = read_config(my_directory)
+except FileNotFoundError:
+	create_config('bigberae', 'W!nter17')
+	config = read_config(my_directory)
 initialize_logger(config['Logging'])
 
 desktop = pathlib.WindowsPath.home() / 'Desktop'
 shortcut = desktop / 'bi_entry.lnk'
 if not shortcut.exists():
-	create_shortcut(name='bi_entry', exe_path=pathlib.WindowsPath.cwd() / 'bi_entry.exe', startin=pathlib.WindowsPath.home() / 'Desktop' / 'build',
-	                icon_path=pathlib.WindowsPath.cwd() / 'bi_entry.ico')
+	create_shortcut(name='BI_Entry', exe_path=my_directory / 'bi_entry.exe', startin=my_directory,
+	                icon_path=my_directory / 'bi_entry.ico')
 	sys.exit()
-
-if 'config.ini' not in os.listdir(cwd.as_posix()):
-	write_config()
-
-# cwd = pathlib.WindowsPath.home() / 'Desktop' / 'build'
-config = configparser.ConfigParser()
-config.read_file(open('config.ini'))
-update_config()
 
 bit = 8 * struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro

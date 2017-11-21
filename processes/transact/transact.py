@@ -18,7 +18,7 @@ from exceptions import *
 from utils.sql import SQL
 from utils.tools import get_background_color
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('root')
 # TODO: Rework process
 
 starting_forms = {'Units'}
@@ -80,6 +80,9 @@ def dummy(self: PuppetMaster.Puppet, default_wait: float, units: List[Unit]):
 	sl_win.SROTransactionsButton.click()
 	sleep(default_wait)
 	transaction_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
+	transaction_rect = transaction_grid.rectangle()
+	pag.click((transaction_rect.width() / 2) + transaction_rect.left, (transaction_rect.height() / 2) + transaction_rect.top)
+	pag.press('down', 40)
 
 def runOLD(self, units: List[Unit]):
 	app = self.app
@@ -602,7 +605,7 @@ def runOLD(self, units: List[Unit]):
 def count_units(sql: SQL, table: str = DB_TABLE, group_serial: bool = False):
 	return _check_units(sql=sql, status=TRANSACTION_STATUS, table=table, group_serial=group_serial)
 
-def get_units(*, exclude: List[str] = set()) -> List[Unit]:
+def get_unitsNEW(*, exclude: List[str] = set()) -> List[Unit]:
 	serial_number = mssql.execute("""SELECT TOP 10 [Serial Number] FROM PyComm WHERE Status = %s AND DateTime <= DATEADD(MINUTE, -5, GETDATE()) ORDER BY DateTime ASC""", 'Queued')
 	serial_number = mssql.execute("""SELECT TOP 10 [Serial Number] FROM PyComm WHERE Status = %s ORDER BY DateTime ASC""", 'Queued')
 	if serial_number:
@@ -612,13 +615,16 @@ def get_units(*, exclude: List[str] = set()) -> List[Unit]:
 	else:
 		return None
 
+def get_units(serial_number: str) -> List[Unit]:
+	ID = mssql.execute("""SELECT [Id] FROM PyComm WHERE Status = %s AND [Serial Number] = %s ORDER BY DateTime ASC""", (TRANSACTION_STATUS, serial_number))
+	if ID:
+		return Unit.from_serial_number(serial_number, TRANSACTION_STATUS)
+	else:
+		return None
 
-def run(self: PuppetMaster.Puppet, units: List[Unit]):
-	print(units)
-	dummy(self, 15, units)
-	quit()
+def runNEW(self: PuppetMaster.Puppet, units: List[Unit]):
 	try:
-		_base_process(False, self, units=units)
+		_base_process(True, self, units=units)
 	except Exception as ex:
 		log.exception("SOMETHING HAPPENED!!!")
 		app = self.app
@@ -653,7 +659,47 @@ def run(self: PuppetMaster.Puppet, units: List[Unit]):
 	else:
 		log.info(f"Unit: {units[0].serial_number} completed")
 		for x in units:
-			x.complete(batch_amt=len(units))
+			# x.complete(batch_amt=len(units))
+			x.reset()
+
+def run(app: Application, units: List[Unit]):
+	try:
+		_base_process(False, app, units=units)
+	except Exception as ex:
+		log.exception("SOMETHING HAPPENED!!!")
+		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+		for x in units:
+			x.skip(ex, batch_amt=len(units))
+		if sl_uia.exists(2, 0.09):
+			if 'SRO Transactions' in app.forms:
+				sl_uia.CancelCloseButton.click()
+				dlg = app.get_popup()
+				while dlg:
+					log.debug(f"Transactions Cancel Close dialog text: '{dlg.Text}'")
+					dlg[0].close()
+					dlg = app.get_popup()
+			if 'Service Order Operations' in app.forms:
+				sl_uia.CancelCloseButton.click()
+				dlg = app.get_popup()
+				while dlg:
+					log.debug(f"Operations Cancel Close dialog text: '{dlg.Text}'")
+					dlg[0].close()
+					dlg = app.get_popup()
+			if 'Service Order Lines' in app.forms:
+				sl_uia.CancelCloseButton.click()
+				dlg = app.get_popup()
+				while dlg:
+					log.debug(f"Lines Cancel Close dialog text: '{dlg.Text}'")
+					dlg[0].close()
+					dlg = app.get_popup()
+			sl_win.send_keystrokes('{F4}')
+			sl_win.send_keystrokes('{F5}')
+	else:
+		log.info(f"Unit: {units[0].serial_number} completed")
+		for x in units:
+			# x.complete(batch_amt=len(units))
+			x.reset()
 
 def dummy2(self: PuppetMaster.Puppet, default_wait: float, units: List[Unit]):
 	try:
@@ -693,43 +739,37 @@ def dummy2(self: PuppetMaster.Puppet, default_wait: float, units: List[Unit]):
 			x.complete(batch_amt=len(units))
 		return True
 
-def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: float=None, units: List[Unit]=None):
-	app = self.app
-	if not dummy_mode:
-		pywinauto.timings.Timings.Fast()
-	if dummy_mode:
-		pywinauto.timings.Timings.Slow()
+"""def _base_process(debug_mode: bool, self: PuppetMaster.Puppet, *, units: List[Unit]=None):
+	app = self.app"""
+def _base_process(debug_mode: bool, app: Application, *, units: List[Unit]=None):
+	pywinauto.timings.Timings.Fast()
 	unit = units[0]
 	sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 	sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 	sleep(0.2)
-	sl_win.UnitEdit.set_text(unit.serial_number.to_string())
+	sl_win.UnitEdit.set_text(unit.serial_number)
 	sleep(0.2)
-	if dummy_mode:
-		sleep(default_wait)
 	sl_win.send_keystrokes('{F4}')
-	if dummy_mode:
-		sleep(default_wait)
 	while get_background_color(sl_win.UnitEdit) == WHITE:
 		if sl_win.UnitEdit.texts()[0].strip() != unit.serial_number:
 			if not sl_win.UnitEdit.texts()[0].strip():
 				raise InvalidSerialNumberError(unit.serial_number)
 			else:
-				raise SyteLineFilterInPlaceError(unit.serial_number, f"Expected input serial number '{unit.serial_number_prefix+unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
-	if not dummy_mode:
+				raise SyteLineFilterInPlaceError(unit.serial_number, f"Expected input serial number '{unit.serial_number}', returned '{sl_win.UnitEdit.texts()[0].strip()}'")
+	if not debug_mode:
 		for x in units:
 			x.start()
 	if not sl_win.ServiceOrderLinesButton.is_enabled():
 		raise NoOpenSROError(serial_number=unit.serial_number.number, sro=unit.sro, msg="Service Order Lines Button is disabled")
+	if debug_mode:
+		rogue_dict = unit.get_rogue_sros()
+		for k,v in rogue_dict.items():
+			print(k,v)
 	sl_win.set_focus()
 	sl_win.ServiceOrderLinesButton.click()
 	sl_win.ServiceOrderOperationsButton.wait('visible', 2, 0.09)
 	# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-	if dummy_mode:
-		sleep(default_wait)
 	app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro)
-	if dummy_mode:
-		sleep(default_wait)
 	dlg = app.get_popup(0.5)
 	count = 0
 	while dlg:
@@ -747,23 +787,13 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 	timer = Timer.start()
 	if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
-		if dummy_mode:
-			sleep(default_wait)
 		status.set_text('Open')
-		if dummy_mode:
-			sleep(default_wait)
 		status.click_input()
-		if dummy_mode:
-			sleep(default_wait)
 		pag.press('tab')
-		if dummy_mode:
-			sleep(default_wait)
 		# handle_popup(best_match='ResetDatesDialog')
 		pag.press('esc')
-		if dummy_mode:
-			sleep(default_wait)
 		save = sl_uia.SaveButton
-		if not dummy:
+		if not debug_mode:
 			save.click()
 	sro_operations_time = timer.stop().total_seconds() / len(units)
 	for x in units:
@@ -771,11 +801,9 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 	sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 	sl_win.SROTransactionsButton.wait('enabled', 2, 0.09)
 	# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-	if any(len(x.parts) > 0 for x in units) or dummy_mode:
+	if any(len(x.parts) > 0 for x in units) or debug_mode:
 		sl_win.set_focus()
 		sl_win.SROTransactionsButton.click()
-		if dummy_mode:
-			sleep(default_wait)
 		sl_win.FilterDateRangeEdit.wait('ready', 2, 0.09)
 		log.info("Starting transactions")
 		sl_win.FilterDateRangeEdit.set_text(unit.eff_date.strftime('%m/%d/%Y'))
@@ -783,21 +811,19 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 		sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
 		transaction_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 		log.debug(transaction_grid.get_properties())
-		if not dummy_mode:
-			posted_parts = access_grid(transaction_grid,
-			                           ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
-			                           condition=('Posted', True), requirement='Item')
-			log.debug(f"Posted parts: {posted_parts}")
-			posted_part_numbers = {p.Item for p in posted_parts}
+		posted_parts = access_grid(transaction_grid,
+		                           ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
+		                           condition=('Posted', True), requirement='Item')
+		log.debug(f"Posted parts: {posted_parts}")
+		posted_part_numbers = {p.Item for p in posted_parts}
 		sl_win.IncludePostedButton.click()
 		sl_win.ApplyFilterButton.click()
 		sl_win.ApplyFilterButton.wait('ready', 2, 0.09)
-		if not dummy_mode:
-			unposted_parts = access_grid(transaction_grid,
-			                             ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
-			                             requirement='Item')
-			log.debug(f"Unposted parts: {unposted_parts}")
-			unposted_part_numbers = {p.Item for p in unposted_parts}
+		unposted_parts = access_grid(transaction_grid,
+		                             ['Posted', 'Item', 'Location', 'Quantity', 'Billing Code', 'Trans Date'],
+		                             requirement='Item')
+		log.debug(f"Unposted parts: {unposted_parts}")
+		unposted_part_numbers = {p.Item for p in unposted_parts}
 		row_i = None
 		top_row = transaction_grid.children()[transaction_grid.children_texts().index('Top Row')]
 		log.debug(F"Columns: {top_row.children_texts()[1:10]}")
@@ -848,7 +874,7 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 				pag.press('enter')
 				sleep(0.5)
 			if len(unit.parts_transacted) > 0:  # TODO: Work on slimming down unneeded transaction time
-				if not dummy_mode:
+				if not debug_mode:
 					save = sl_uia.SaveButton
 					sl_win.set_focus()
 					save.click()
@@ -908,18 +934,18 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 	log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 	log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
 	log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
-	newest_datetime = max(x.datetime for x in units)
-	oldest_datetime = min(x.datetime for x in units)
 	# TODO: Get oldest unit since eff date
-	if not dummy_mode:
-		if not sl_win.ReceivedDateEdit.texts()[0].strip():
-			sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
+	if not sl_win.ReceivedDateEdit.texts()[0].strip():
+		sl_win.ReceivedDateEdit.set_text(unit.eff_date.strftime('%m/%d/%Y %I:%M:%S %p'))
+		if not debug_mode:
 			sl_win.ReceivedDateEdit.send_keystrokes('^s')
-		if not sl_win.FloorDateEdit.texts()[0].strip():
-			sl_win.FloorDateEdit.set_text(oldest_datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+	if not sl_win.FloorDateEdit.texts()[0].strip():
+		sl_win.FloorDateEdit.set_text(unit.oldest_datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+		if not debug_mode:
 			sl_win.FloorDateEdit.send_keystrokes('^s')
-		if not sl_win.CompletedDateEdit.texts()[0].strip() and any(x.is_QC for x in units):
-			sl_win.CompletedDateEdit.set_text(newest_datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+	if not sl_win.CompletedDateEdit.texts()[0].strip() and unit.passed_QC:
+		sl_win.CompletedDateEdit.set_text(unit.newest_datetime.strftime('%m/%d/%Y %I:%M:%S %p'))
+		if not debug_mode:
 			sl_win.CompletedDateEdit.send_keystrokes('^s')
 		sleep(0.5)
 		log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
@@ -927,7 +953,7 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 		log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
 	# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 	common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
-	if any(x.is_QC for x in units):
+	if unit.passed_QC:
 		reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
 		reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
 		full_row = None
@@ -974,7 +1000,7 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 			sleep(0.5)
 			pag.typewrite(str(num))
 			sleep(0.5)
-		if not dummy_mode:
+		if not debug_mode:
 			pag.hotkey('ctrl', 's')
 		pag.press('up', 40)
 	resn_notes = sl_win.ReasonNotesEdit
@@ -995,7 +1021,7 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 			resolution_notes += "[" + ", ".join([p.display_name for p in unit.parts]) + "]\n"
 			resolution_notes += f"[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]\n"
 		reso_notes.set_text(resolution_notes)
-	if not dummy_mode:
+	if not debug_mode:
 		pag.hotkey('ctrl', 's')
 		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 		status.send_keystrokes('^s')
@@ -1015,11 +1041,20 @@ def _base_process(dummy_mode: bool, self: PuppetMaster.Puppet, *, default_wait: 
 	sro_operations_time = timer.stop().total_seconds() / len(units)
 	for x in units:
 		x.sro_operations_time += sro_operations_time
-	for presses in range(2):
-		sl_uia.CancelCloseButton.click()
+	sl_uia.CancelCloseButton.click()
+	r_sros = unit.get_rogue_sros()
+	for k, v in r_sros.items():
+		print(k, v)
+	# while r_sros:
+	# 	pass
+	# 	r_sros = unit.get_rogue_sros()
+	# else:
+	# 	sl_uia.CancelCloseButton.click()
+	sl_uia.CancelCloseButton.click()
 	sl_win.UnitEdit.wait('visible', 2, 0.09)
 	sleep(0.2)
 	sl_win.send_keystrokes('{F4}')  # Clear Filter
 	sleep(0.2)
 	sl_win.send_keystrokes('{F5}')  # Clear Filter
 	sleep(0.2)
+	return True

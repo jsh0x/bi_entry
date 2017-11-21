@@ -1,11 +1,8 @@
 """Make sure the SyteLine Application is currently up and running"""
 
-from processes import renew_password, runthrough, status_report, transact
+from processes import renew_password, runthrough, status_report, transact, reason
 # from _common import Application, PuppetMaster, is_running
 # from config import *
-from processes.preprogram.preprogram import Preprogram as preprogram
-from processes.reason.reason import Reason as reason
-from processes.scrap.scrap import Scrap as scrap
 
 # host.start(application_filepath)
 # if is_running(application_filepath):

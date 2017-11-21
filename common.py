@@ -12,6 +12,7 @@ from functools import singledispatch
 from string import punctuation
 from time import sleep
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
+import importlib
 
 import numpy as np
 import pprofile
@@ -25,14 +26,14 @@ from pywinauto.win32structures import RECT, POINT
 from pywinauto.backend import registry
 from pywinauto.base_wrapper import BaseWrapper
 from pywinauto import WindowSpecification
-from pywinauto.controls import common_controls, uia_controls, win32_controls
+from pywinauto.controls import common_controls, uia_controls, win32_controls, hwndwrapper
 
 from config import *
 from constants import REGEX_WINDOW_MENU_FORM_NAME, SYTELINE_WINDOW_TITLE, carrier_dict, cellular_builds, part_number_regex, unit_type_dict, row_number_regex
 from exceptions import *
 from utils.tools import prepare_string, just_over_half
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('root')
 u_log = logging.getLogger('UnitLogger')
 completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 
@@ -66,6 +67,10 @@ class Dimensions(NamedTuple):
 	height: int
 
 
+# TODO: Process exception wrapper
+
+
+
 class Unit:  # TODO: Special methods __repr__ and __str__
 	#  THINK: Maybe Singleton/Serial Number-based restriction
 
@@ -78,6 +83,10 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 				raise ValueError()  # TODO: Specify error
 			self.product = data[0].Product
 			super().__init__(str(self._prefix) + str(self._number))
+
+		@property
+		def number(self):
+			return self._number
 
 		@property
 		def prefix(self):
@@ -162,11 +171,10 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		@classmethod
 		def from_string(cls, build: str, suffix_default: str = 'RTS'):  # TODO: Handle len(build.split('-')) == 1: 600, 800, etc and figure out prefix from related product
 			build = prepare_string(build, remove_all_whitespace=True)
-			print(build)
 			prefix, core = build.split('-')[:2]
 			if core.isnumeric():
 				core_base = core[-3:]
-				carrier = int(core[0]) if core[0] else None
+				carrier = int(core[0]) if len(core) > 3 else None
 			else:
 				core_base = core[:3]
 				carrier = core[-1]
@@ -294,15 +302,15 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 
 		self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number)
 		log.info(f"Attribute serial_number='{self.serial_number}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|ID={self.ID}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|ID={self.ID}")
 
 		self.product = self.serial_number.product
 		log.info(f"Attribute product='{self.product}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Product={self.product}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Product={self.product}")
 
 		self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix)
 		log.info(f"Attribute build='{self.build}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Build={self.build}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Build={self.build}")
 
 		self.parts = self.Part.from_string(data[0].Parts, self.build)
 		if self.parts:
@@ -310,18 +318,15 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		else:
 			part_string = 'None'
 		log.info(f"Attribute parts={part_string}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Parts={part_string}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Parts={part_string}")
 
 		self.operation = self.Operation.from_string(data[0].Operation, self.product)
 		log.info(f"Attribute operation='{self.operation}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Operation={self.operation}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Operation={self.operation}")
 
 		self.operator = self.Operator.from_username(data[0].Operator)
 		log.info(f"Attribute operator='{self.operator.username}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Operator={self.operator.username}")
-
-		self.is_QC = 'QC' in self.operation
-		log.info(f"Attribute is_QC={self.is_QC}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Operator={self.operator.username}")
 
 		self.is_cellular = self.build.cellular
 		log.info(f"Attribute is_cellular={self.is_cellular}")
@@ -329,41 +334,50 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		self.datetime = data[0].DateTime
 		datetime_str = self.datetime.strftime('%m/%d/%Y %H:%M:%S')
 		log.info(f"Attribute datetime='{datetime_str}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|DateTime={datetime_str}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|DateTime={datetime_str}")
 
 		self.notes = data[0].Notes
 		log.info(f"Attribute notes='{self.notes}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Notes={self.notes}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Notes={self.notes}")
 
 		self.status = data[0].Status
 		log.info(f"Attribute status='{self.status}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Status={self.status}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Status={self.status}")
 
 		self.parts_transacted = set()
 
 		self.sro, self.sro_line = self.get_sro(self.serial_number)
 		log.info(f"Attribute sro='{self.sro}'")
 		log.info(f"Attribute sro_line={self.sro_line}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO={self.sro}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Line={self.sro_line}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO={self.sro}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Line={self.sro_line}")
 
 		self.eff_date = self.get_eff_date(self.serial_number)
 		eff_date_str = self.eff_date.strftime('%m/%d/%Y')
 		log.info(f"Attribute eff_date={eff_date_str}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Eff Date={eff_date_str}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Eff Date={eff_date_str}")
 
 		self.sro_open_status = self.get_statuses(self.serial_number)
 		log.info(f"Attribute sro_open_status={self.sro_open_status}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Lines Status={self.sro_open_status['Lines']}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|SRO Operations Status={self.sro_open_status['Operations']}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Lines Status={self.sro_open_status['Lines']}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Operations Status={self.sro_open_status['Operations']}")
 
 		self.location = self.get_location(self.serial_number)
 		log.info(f"Attribute location='{self.location}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Location={self.location}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Location={self.location}")
 
 		self.warehouse = self.get_warehouse(self.serial_number)
 		log.info(f"Attribute warehouse='{self.warehouse}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number)).center(13)}|INFO|Warehouse={self.warehouse}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Warehouse={self.warehouse}")
+
+		self.passed_QC = self.has_passed_qc(self.serial_number)
+		log.info(f"Attribute passed_QC={self.passed_QC}")
+
+		self.oldest_datetime = self.get_oldest_datetime(self.serial_number)
+		log.info(f"Attribute oldest_datetime={self.oldest_datetime}")
+
+		self.newest_datetime = self.get_newest_datetime(self.serial_number)
+		log.info(f"Attribute newest_datetime={self.newest_datetime}")
 
 		self.batch_amt_default = 1
 
@@ -518,6 +532,47 @@ ORDER BY s.open_date DESC""", serial_number)
 		else:
 			return None
 
+	def get_oldest_datetime(self, serial_number: SerialNumber = None) -> datetime.datetime:
+		if serial_number is None:
+			serial_number = self.serial_number
+		oldest_datetime = mssql.execute("""SELECT MIN(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		if oldest_datetime:
+			return oldest_datetime[0].DateTime
+		else:
+			return None
+
+	def get_newest_datetime(self, serial_number: SerialNumber = None) -> datetime.datetime:
+		if serial_number is None:
+			serial_number = self.serial_number
+		newest_datetime = mssql.execute("""SELECT MAX(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		if newest_datetime:
+			return newest_datetime[0].DateTime
+		else:
+			return None
+
+	def has_passed_qc(self, serial_number: SerialNumber = None) -> bool:
+		if serial_number is None:
+			serial_number = self.serial_number
+		operations = mssql.execute("""SELECT DISTINCT Operation AS Operation FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		if operations:
+			return any(op.Operation == 'QC' for op in operations)
+		else:
+			return False
+
+	def get_rogue_sros(self):
+		serial_number = self.serial_number
+		results = mssql.execute("""Select o.sro_num as sro_num, o.sro_line as sro_line, o.stat as status, o.Open_date as open_date from fs_sro_oper o (nolock)
+Inner join fs_sro_serial s (nolock)
+on o.sro_line = s.sro_line and o.sro_num = s.sro_num
+Where s.ser_num = %s
+Order by o.open_date DESC
+""", serial_number)
+		# Why open_date?
+		if results:
+			return [{'sro': res.sro_num, 'status': res.status, 'open_date': res.open_date} for res in results if (res.sro_num != self.sro and res.sro_line != self.sro_line) and (res.status == 'O')]
+		else:
+			return None
+
 	def start(self):
 		started_status = f"Started({self.status})"
 		mssql.execute("""UPDATE PyComm SET Status = %s WHERE Id = %d""", (started_status, self.ID))
@@ -529,7 +584,7 @@ ORDER BY s.open_date DESC""", serial_number)
 		if batch_amt is None:
 			batch_amt = self.batch_amt_default
 		log.info(f"Batch amount: {batch_amt}")
-		life_time = self.life_timer.stop().total_seconds()
+		life_time = self.life_timer.stop()
 		parts_count = len(self.parts)
 		parts_transacted_count = len(self.parts_transacted)
 		if self.parts:
@@ -587,7 +642,7 @@ WHERE Id = %d""", (completion_dict[self.status], self.ID))
 		mssql.execute("""UPDATE PyComm SET Status = %s WHERE Id = %d""", (status_string, self.ID))
 
 	@skip.register(str)
-	def _(self, reason: str=None, *, batch_amt: int = None):
+	def _(self, reason: str = None, *, batch_amt: int = None):
 		reason = 'Skipped' if reason is None else reason
 		addon = f"({self.sro})" if reason == 'No Open SRO' else ""
 		self.end(results='Skipped', reason=reason, batch_amt=batch_amt)
@@ -595,7 +650,7 @@ WHERE Id = %d""", (completion_dict[self.status], self.ID))
 		mssql.execute("""UPDATE PyComm SET Status = %s WHERE Id = %d""", (status_string, self.ID))
 
 	@skip.register(BI_EntryError)
-	def _(self, reason: BI_EntryError=None, *, batch_amt: int = None):
+	def _(self, reason: BI_EntryError = None, *, batch_amt: int = None):
 		try:
 			reason = reason.status
 		except AttributeError:
@@ -636,7 +691,15 @@ class Application(psutil.Process):
 			self.win32.SignIn.PasswordEdit.set_text(pwd)
 			self.win32.SignIn.set_focus()
 			self.win32.SignIn.OKButton.click()
-			if not self.win32.SignIn.exists(10, 0.09):
+			for i in range(8):
+				top_window = self.win32.top_window()
+				try:
+					top_window.send_keystrokes('{ENTER}')
+				except hwndwrapper.InvalidWindowHandle:
+					pass
+			sleep(0.5)
+			log.debug(self.win32.top_window().texts()[0])
+			if (not self.win32.SignIn.exists(10, 0.09)) or ('(EM)' in self.win32.top_window().texts()[0]):
 				self.win32.window(title_re=SYTELINE_WINDOW_TITLE).wait('ready', 2, 0.09)
 				self._logged_in = True
 				self._user = usr
@@ -676,7 +739,10 @@ class Application(psutil.Process):
 			self.win32.SignIn.OKButton.click()
 			for i in range(8):
 				top_window = self.win32.top_window()
-				top_window.send_keystrokes('{ENTER}')
+				try:
+					top_window.send_keystrokes('{ENTER}')
+				except hwndwrapper.InvalidWindowHandle:
+					pass
 			sleep(0.5)
 			log.debug(self.win32.top_window().texts()[0])
 			if (not self.win32.SignIn.exists(1, 0.09)) or ('(EM)' in self.win32.top_window().texts()[0]):
@@ -732,13 +798,15 @@ class Application(psutil.Process):
 	def quick_open_form(self, *names):
 		for name in names:
 			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+			sl_win.set_focus()
 			sl_win.send_keystrokes('^o')
-			self.win32.SelectForm.AllContainingEdit.set_text(name)
-			self.win32.SelectForm.set_focus()
-			self.win32.SelectForm.FilterButton.click()
-			common_controls.ListViewWrapper(self.win32.SelectForm.ListView).item(name).click()
-			self.win32.SelectForm.set_focus()
-			self.win32.SelectForm.OKButton.click()
+			self.win32.SelectFormWindow.set_focus()
+			self.win32.SelectFormWindow.AllContainingEdit.set_text(name)
+			self.win32.SelectFormWindow.set_focus()
+			self.win32.SelectFormWindow.FilterButton.click()
+			common_controls.ListViewWrapper(self.win32.SelectFormWindow.ListView).item(name).click()
+			self.win32.SelectFormWindow.set_focus()
+			self.win32.SelectFormWindow.OKButton.click()
 			sleep(2)
 
 	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
@@ -874,21 +942,26 @@ class PuppetMaster:  # THINK: Make iterable?
 	# 		cls._instance = cls.__new__(cls, *args, **kwargs)
 	# 	return cls._instance
 
-	def __init__(self, fp, app_count: int = 0, skip_opt: bool = False):
+	def __init__(self, fp, app_count: int = 0, start_new: bool = True, grab_old: bool = False, skip_opt: bool = False):
+		#  TODO: Grab is VERY time intensive (~10sec minimum), reduce
+		timer = Timer.start()
 		if app_count > 0:
-			for i in range(app_count):
-				app = self.grab(fp)
-				if not app:
-					break
-			app_count -= len(self.children())
-			for i in range(app_count):
-				app = self.start(fp)
-				if not app:
-					break
+			if grab_old:
+				for i in range(app_count):
+					app = self.grab(fp)
+					if not app:
+						break
+				app_count -= len(self.children())
+			if start_new:
+				for i in range(app_count):
+					app = self.start(fp)
+					if not app:
+						break
 			if app_count > 0:
 				return None
 			if not skip_opt:
 				self.optimize_screen_space()
+			print("PM INIT DONE", timer.restart())
 
 	def start(self, fp: Union[str, pathlib.Path], name: str = None) -> 'Puppet':
 		# try:
@@ -950,11 +1023,11 @@ class PuppetMaster:  # THINK: Make iterable?
 	def children(self) -> List['Puppet']:
 		return [self.__getattribute__(ch) for ch in self._children]
 
-	def apply_all(self, func: Callable, *args, **kwargs):
-		with ThreadPoolExecutor(max_workers=len(self.children())) as e:
-			for ch in self.children():
-				e.submit(func, ch, *args, **kwargs)
-				sleep(1)
+	# def apply_all(self, func: Callable, *args, **kwargs):
+	# 	with ThreadPoolExecutor(max_workers=len(self.children())) as e:
+	# 		for ch in self.children():
+	# 			e.submit(func, ch, *args, **kwargs)
+	# 			sleep(1)
 
 	def get_puppet(self, ppt: Union[str, int, 'Puppet']) -> 'Puppet':
 		if type(ppt) is str:
@@ -984,17 +1057,18 @@ class PuppetMaster:  # THINK: Make iterable?
 	def wait_for_puppets(self, puppets, max_time=10):
 		puppets = [self.get_puppet(ppt) for ppt in puppets]
 		res = []
-		start_time = datetime.datetime.now()
+		timer = Timer.start()
 		while len(res) < len(puppets):
 			if __debug__:
 				pass
-			# print(res, (datetime.datetime.now() - start_time).total_seconds())
 			sleep(0.001)
 			for ppt in puppets:
 				res2 = ppt.get_output()
 				if res2:
 					res.append(res2)
-			if (datetime.datetime.now() - start_time).total_seconds() > max_time:
+				elif ppt.status == 'Idle':
+					res.append(ppt.status)
+			if timer.lap() > max_time:
 				raise TimeoutError()
 
 	class Puppet(threading.Thread):
@@ -1009,7 +1083,7 @@ class PuppetMaster:  # THINK: Make iterable?
 				try:
 					command, args, kwargs = self.q_in.get_nowait()
 				except queue.Empty:
-					observer_affect()
+					sleep(0.0001)
 				else:
 					self.status = 'Busy'
 					self.q_out.put_nowait(command(self, *args, **kwargs))
@@ -1025,7 +1099,7 @@ class PuppetMaster:  # THINK: Make iterable?
 			self._stop_event = threading.Event()
 
 		def set_input(self, func: callable, *args, **kwargs):
-			self.q_in.put_nowait((func, tuple(arg for arg in args), {k: v for k, v in kwargs.items()}))
+			self.q_in.put_nowait({'cmd': func, 'args': tuple(arg for arg in args), 'kwargs': {k: v for k, v in kwargs.items()}})
 
 		def get_output(self):
 			try:
@@ -1044,7 +1118,7 @@ class PuppetMaster:  # THINK: Make iterable?
 	def __enter__(self):
 		return self
 
-	def __exit__(self, type, value, traceback):
+	def __exit__(self, etype, value, traceback):
 		procs = [ch.app for ch in self.children()]
 		for p in procs:
 			# print(p)
@@ -1060,11 +1134,11 @@ class PuppetMaster:  # THINK: Make iterable?
 
 
 class SyteLinePupperMaster(PuppetMaster):
-	def __init__(self, n: int, fp=application_filepath, skip_opt: bool = True, forms=[]):
+	def __init__(self, n: int, fp=application_filepath, start_new: bool = True, grab_old: bool = False, skip_opt: bool = True, forms=[]):
 		# print(n, forms)
 		user_list = ['bigberae', username, 'BISync01', 'BISync02', 'BISync03']
 		pwd_list = ['W!nter17', password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
-		super().__init__(fp, n, skip_opt)
+		super().__init__(fp, n, start_new, grab_old, skip_opt)
 		for ppt, usr, pwd in zip(self.children(), user_list, pwd_list):
 			ppt.set_input(lambda x, y: x.app.quick_log_in(*y), [usr, pwd])
 		self.wait_for_puppets(self.children(), 4)
@@ -1076,7 +1150,7 @@ class SyteLinePupperMaster(PuppetMaster):
 				ppt.set_input(lambda x, y: x.app.quick_open_form(*y), form)
 				sleep(1)
 			while not all(ppt.status == 'Idle' for ppt in self.children()):
-				observer_affect()
+				sleep(0.0001)
 
 	@classmethod
 	def for_processes(cls, *processes):
@@ -1096,45 +1170,65 @@ class SyteLinePupperMaster(PuppetMaster):
 	def run_process(self, process, ppt: Union[str, int, 'Puppet'] = None) -> bool:
 		"""Run process, return whether it was successful or not."""
 		ppt = self.get_puppet(ppt)
+		if hasattr(process, 'starting_forms'):
+			ppt.set_input(lambda x, y: x.app.quick_open_form(*y), process.starting_forms)
+			sleep(1)
+			while ppt.status != 'Idle':
+				sleep(0.01)
 		if hasattr(process, 'get_units'):
 			units = process.get_units(exclude=[sn for ch in self.children() for sn in ch.units])
 			if units:
-				ppt.run_process(process, {unit.serial_number for unit in units}, units)
+				while ppt.status != 'Idle':
+					sleep(0.01)
+				units2 = {unit.serial_number for unit in units}
+				ppt.run_process(process, units2, units)
+				while ppt.status != 'Idle':
+					sleep(0.01)
 				return ppt
 			return False
 		else:
 			ppt.run_process(process)
+			while ppt.status != 'Idle':
+				sleep(0.01)
 			return ppt
 
 	class Puppet(PuppetMaster.Puppet):
 		def target(self):
 			while True:
-				self.status = 'Idle'
-				observer_affect()
 				try:
-					command, args, kwargs = self.q_in.get_nowait()
+					values = self.q_in.get_nowait()
 				except queue.Empty:
-					observer_affect()
+					sleep(0.0001)
 				else:
 					self.status = 'Busy'
-					print(args)
-					self.q_out.put_nowait(command(self, *args, **kwargs))
+					command = values['cmd']
+					args = values['args']
+					kwargs = values['kwargs']
+					if hasattr(command, 'run'):
+						from processes.transact import run
+						res = run(self, *args, **kwargs)
+						print(callable(run))
+						print(type(run), type(run) is function)
+					else:
+						res = command(self, *args, **kwargs)
+					self.q_out.put_nowait(res)
 					self.status = 'Idle'
 					self.units.clear()
-				self.status = 'Idle'
 
 		def __init__(self, app: Application, name):
 			self.units = set()
+			self.status = 'Idle'
 			super().__init__(app, name)
 
 		def run_process(self, proc, unit_sn=None, *args, **kwargs):
-			self.q_in.put_nowait((proc.run, tuple(arg for arg in args), {k: v for k, v in kwargs.items()}))
+			self.q_in.put_nowait({'cmd': proc, 'args': tuple(arg for arg in args), 'kwargs': {k: v for k, v in kwargs.items()}})
 			if unit_sn:
-				self.units = {str(sn) for sn in unit_sn}
+				thing = {str(sn) for sn in unit_sn}
+				self.units = thing
 
 
 class Timer:
-	def __init__(self, *, start_time=None, return_timedelta: bool=False):
+	def __init__(self, *, start_time=None, return_timedelta: bool = False):
 		self._start_time = start_time
 		self._return_timedelta = return_timedelta
 
@@ -1161,6 +1255,11 @@ class Timer:
 
 	def reset(self):
 		self._start_time = None
+
+	def restart(self):
+		retval = self.lap()
+		self._start_time = datetime.datetime.now()
+		return retval
 
 	def stop(self) -> float:
 		retval = self.lap()
@@ -1262,7 +1361,7 @@ class DataGrid:
 		                          'bottom': old_rect.bottom}
 
 	@classmethod
-	def from_name(cls, app: Application, name: str='DataGridView', columns: Union[str, Iterable[str]]=None, row_limit: int=None):
+	def from_name(cls, app: Application, name: str = 'DataGridView', columns: Union[str, Iterable[str]] = None, row_limit: int = None):
 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 		name_new = name.title().replace(' ', '')
 		grid = uia_controls.ListViewWrapper(sl_uia.__getattribute__(name_new).element_info)
@@ -1392,10 +1491,12 @@ class DataGrid:
 
 	# TODO: Verify correct row creation
 
+
 class DataGridNEW:
 	# TODO: This^
 	_type_dict = {0: bool, 1: int, 2: float, 3: datetime.datetime}
-	def __init__(self, control: WindowSpecification,  columns: Union[str, Iterable[str]], rows: int):
+
+	def __init__(self, control: WindowSpecification, columns: Union[str, Iterable[str]], rows: int):
 		assert control.backend == registry.backends['uia']
 		self.window_spec = control
 		self.control = uia_controls.uiawrapper.UIAWrapper(control.element_info)
@@ -1467,14 +1568,14 @@ class DataGridNEW:
 
 	def count_rows(self) -> int:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
-		return max([int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')) + 1 for row in self.control.children() if row_number_regex.fullmatch(row.texts()[0].strip())]+[0, 0])
+		return max([int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')) + 1 for row in self.control.children() if row_number_regex.fullmatch(row.texts()[0].strip())] + [0, 0])
 
 	def get_column_names(self) -> List[str]:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
 		return [col.texts()[0].strip() for col in self.top_row.children() if col.texts()[0]]
 
 	@singledispatch
-	def get_cell(self, column: str, row: int, visible_only: bool=False, *, specific: int=0):
+	def get_cell(self, column: str, row: int, visible_only: bool = False, *, specific: int = 0):
 		if row > self.row_count:
 			return None
 		column_count = self.column_names.count(column)
@@ -1588,7 +1689,7 @@ class DataGridNEW:
 	def get_min_area(cell: BaseWrapper, *, anchor: str) -> RECT:
 		rect = cell.rectangle()
 		w, h = rect.width(), rect.height()
-		w_factor, h_factor = [min(2 ** x for x in range(3,10) if (just_over_half(y, x) - z) < 10) for y,z in ((w, w / 2), (h, h / 2))]
+		w_factor, h_factor = [min(2 ** x for x in range(3, 10) if (just_over_half(y, x) - z) < 10) for y, z in ((w, w / 2), (h, h / 2))]
 		left, top, right, bottom = split_RECT(cell)
 
 		if 'l' in anchor:
@@ -1602,6 +1703,7 @@ class DataGridNEW:
 			top = bottom - int(h * h_factor)
 
 		return RECT(left, top, right, bottom)
+
 
 # class Singleton(type):
 # 	"""
@@ -1836,14 +1938,17 @@ def check_serial_number(sql, serial_number: str, status: str, table: str = 'PyCo
 		return status
 	return row.Status
 
+
 @singledispatch
 def split_RECT(control: BaseWrapper) -> Tuple[int, int, int, int]:
 	rect = control.rectangle()
 	return rect.left, rect.top, rect.right, rect.bottom
 
+
 @split_RECT.register(RECT)
 def _(control):
 	return control.left, control.top, control.right, control.bottom
+
 
 # Not one Item Price exists for Item that has
 @singledispatch
@@ -1857,6 +1962,7 @@ def center(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 	y2 -= y1
 	return arg + (x2 // 2), y1 + (y2 // 2)
 
+
 @center.register(int)
 def _(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 	assert 0 < arg < x2
@@ -1865,6 +1971,7 @@ def _(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 	y2 -= y1
 	return arg + (x2 // 2), y1 + (y2 // 2)
 
+
 # @center.register(RECT)
 @center.register(BaseWrapper)
 def _(arg) -> Tuple[int, int]:
@@ -1872,6 +1979,7 @@ def _(arg) -> Tuple[int, int]:
 	x2 -= x1
 	y2 -= y1
 	return x1 + (x2 // 2), y1 + (y2 // 2)
+
 
 # noinspection SpellCheckingInspection
 def sigfig(template, x):
@@ -1894,7 +2002,10 @@ def get_screen_exact():
 
 
 def get_screen_size() -> List[Tuple[int, int]]:
-	size1 = get_screen_exact().size
+	size1 = get_screen_exact()
+	while not size1:
+		size1 = get_screen_exact()
+	size1 = size1.size
 	size2 = ImageGrab.grab().size
 	return [size2] * (size1[0] // size2[0])
 

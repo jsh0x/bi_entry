@@ -5,9 +5,11 @@ from string import ascii_letters, digits, punctuation, whitespace
 from time import sleep
 
 import pywinauto.timings
-from common import SyteLinePupperMaster, Unit
+import os
+from common import Application
 from config import *
-from processes import transact
+from processes import transact, reason
+import datetime
 
 # _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410', '3660426037804620468050404740384034653780366030253080',
 #                                '474046203600486038404260432039003960', '63004620S875486038404260S875432039003960',
@@ -17,16 +19,17 @@ from processes import transact
 
 
 # print(_check_units(mssql, 'Queued'))
-# quit()
 fp = application_filepath
 fp2 = r'C:\Windows\System32\notepad.exe'
 n = 2
-pywinauto.timings.Timings.Fast()
+# pywinauto.timings.Timings.Fast()
 # 1053 [255, 128, 128]
 # 1059 [0, 255, 0]
 colors = {}
 val_list = ['10' + str(x).rjust(2, '0') for x in range(70)] + ['11' + str(x).rjust(2, '0') for x in range(17)]
 rem = ['1015', '1038', '1044', '1065', '1066', '1067']
+# my_name = os.environ['COMPUTERNAME']
+my_name = 'MFGW10PC-1'
 
 user_list = ['bigberae', username, 'BISync01', 'BISync02', 'BISync03']
 pwd_list = ['W!nter17', password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
@@ -65,14 +68,32 @@ def parse_text(text: str) -> str:
 
 
 def main(process):
-	with SyteLinePupperMaster(1) as pm:
-		for ppt in pm.children():
-			forms = process.starting_forms
-			ppt.set_input(lambda x, y: x.app.quick_open_form(*y), forms)
-		pm.run_process(process, ppt)
-	quit()
+	# with SyteLinePupperMaster(1) as pm:
+	# 	for ppt in pm.children():
+	# 		forms = process.starting_forms
+	# 		ppt.set_input(lambda x, y: x.app.quick_open_form(*y), forms)
+	# 	pm.run_process(process, ppt)
+	pass
 
-main(transact)
+# main(transact)
 
 if __name__ == '__main__':
-	main(transact)
+	app = Application.start(application_filepath)
+	sleep(1)
+	while True:
+		sleep(1)
+		current_datetime = datetime.datetime.now()
+		if app.logged_in:
+			if current_datetime.day in active_days and current_datetime.hour in active_hours:  # If logged in and within schedule
+				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
+				if serial:
+					for process in (reason, transact):
+						units = process.get_units(serial[0].SerialNumber)
+						process.run(app, units)
+			else:
+				app.log_out()  # If logged in and not within schedule
+		else:
+			if current_datetime.day in active_days and current_datetime.hour in active_hours:
+				app.log_in(username, password)  # If not logged in and within schedule
+			else:
+				sleep(10)  # If not logged in and not within schedule
