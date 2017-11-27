@@ -1,6 +1,7 @@
 # coding=utf-8
 from collections import Counter
 from typing import Tuple
+import datetime
 
 import numpy as np
 from pywinauto.base_wrapper import BaseWrapper
@@ -42,6 +43,21 @@ def just_over_half(y: int, x: int = None) -> float:
 	base = 2 ** x
 	half_base = base / 2
 	return y * ((half_base + 1) / base)
+
+
+def fix_isoweekday(dt) -> int:
+	val = dt.isoweekday()
+	mod = (val // 7) * 7
+	return val - mod
+
+
+def log_friendly_string(text: str) -> str:
+	while ('\r' in text) or ('\n' in text) or ('\t' in text):
+		text = text.replace('\r', '')
+		text = text.replace('\n', '')
+		text = text.replace('\t', '')
+	else:
+		return text
 
 
 # TODO: TA Login

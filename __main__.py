@@ -9,7 +9,10 @@ import os
 from common import Application
 from config import *
 from processes import transact, reason
+import logging
 import datetime
+from constants import SYTELINE_WINDOW_TITLE
+from utils.tools import fix_isoweekday
 
 # _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410', '3660426037804620468050404740384034653780366030253080',
 #                                '474046203600486038404260432039003960', '63004620S875486038404260S875432039003960',
@@ -33,7 +36,7 @@ my_name = 'MFGW10PC-1'
 
 user_list = ['bigberae', username, 'BISync01', 'BISync02', 'BISync03']
 pwd_list = ['W!nter17', password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
-
+log = logging.getLogger('root')
 
 def temp(char: str):
 	if char in whitespace:
@@ -79,21 +82,53 @@ def main(process):
 
 if __name__ == '__main__':
 	app = Application.start(application_filepath)
+	log.debug("Started")
 	sleep(1)
 	while True:
 		sleep(1)
 		current_datetime = datetime.datetime.now()
+		current_hour = current_datetime.hour
+		current_day = fix_isoweekday(current_datetime)
+		log.info(f"Current hour: {current_hour}")
+		log.info(f"Current day: {current_day}")
 		if app.logged_in:
-			if current_datetime.day in active_days and current_datetime.hour in active_hours:  # If logged in and within schedule
+			if current_day in active_days and current_hour in active_hours:  # If logged in and within schedule
+				log.debug(f"DateTime: {str(current_datetime)} within active schedule of days: {active_days} and hours: {active_hours}")
+
+				if 'Units' not in app.get_focused_form():
+					dlg = app.win32.window(class_name="#32770")
+					while dlg.exists(1, 0.09):
+						dlg.send_keystrokes('{ESC}')
+						dlg = app.win32.window(class_name="#32770")
+					sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+					while sl_uia.CancelCloseButton.is_enabled():
+						sl_uia.CancelCloseButton.click()
+						dlg = app.win32.window(class_name="#32770")
+						while dlg.exists(1, 0.09):
+							dlg.send_keystrokes('{ESC}')
+							dlg = app.win32.window(class_name="#32770")
+					app.verify_form('Units')
+
 				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
 				if serial:
 					for process in (reason, transact):
 						units = process.get_units(serial[0].SerialNumber)
-						process.run(app, units)
+						if units:
+							process.run(app, units)
+				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
+				if not serial:
+					log.info("No valid results, waiting...")
+					sleep(10)
+					continue
 			else:
+				log.debug(f"DateTime: {str(current_datetime)} NOT within active schedule of days: {active_days} and hours: {active_hours}")
+				log.info("Logging out...")
 				app.log_out()  # If logged in and not within schedule
 		else:
-			if current_datetime.day in active_days and current_datetime.hour in active_hours:
+			if current_day in active_days and current_hour in active_hours:
+				log.debug(f"DateTime: {str(current_datetime)} within active schedule of days: {active_days} and hours: {active_hours}")
+				log.info("Logging in...")
 				app.log_in(username, password)  # If not logged in and within schedule
 			else:
+				log.debug(f"DateTime: {str(current_datetime)} NOT within active schedule of days: {active_days} and hours: {active_hours}")
 				sleep(10)  # If not logged in and not within schedule

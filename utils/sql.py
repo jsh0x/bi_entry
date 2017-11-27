@@ -10,9 +10,9 @@ from typing import NamedTuple, Tuple, Union, overload
 
 from constants import REGEX_SQL_DATE as sql_date_regex, REGEX_SQL_TIME as sql_time_regex
 from utils.crypt import legacy_decrypt
-from utils.tools import prepare_string
+from utils.tools import prepare_string, log_friendly_string
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('root')
 
 SimpleValue = Union[str, int]
 
@@ -96,9 +96,10 @@ class MSSQL(SQL):
 		with self._conn as conn:
 			c = conn.cursor()
 			params = sql_standardize(params)
+			log_command = log_friendly_string(command)
 			if command.upper().startswith('SELECT'):
 				if not self.quiet:
-					log.debug(f"Executing SQL query: '{command}'")
+					log.debug(f"Executing SQL query: '{log_command}' with parameters: {params}")
 				c.execute(command, params)
 				SQL_Results = NamedTuple('SQL_Results', [(x[0].replace(' ', '_'), self._type_codes[x[1]]) for x in c.description])
 				results = tuple([SQL_Results(*[self._adapt_type(y) for y in x]) for x in c.fetchall() if x is not None])
@@ -107,8 +108,8 @@ class MSSQL(SQL):
 				return results
 			elif 'DELETE' in command.upper():
 				if not self.quiet:
-					log.debug(f"Executing SQL transaction: '{command}'")
-					log.info(f"Executing SQL transaction: '{command}'")
+					log.debug(f"Executing SQL transaction: '{log_command}' with parameters: {params}")
+					log.info(f"Executing SQL transaction: '{log_command}' with parameters: {params}")
 				c.execute(command, params)
 				conn.commit()
 				if not self.quiet:
@@ -116,7 +117,7 @@ class MSSQL(SQL):
 					log.info("SQL transaction successful")
 			else:
 				if not self.quiet:
-					log.debug(f"Executing SQL transaction: '{command}'")
+					log.debug(f"Executing SQL transaction: '{log_command}' with parameters: {params}")
 				c.execute(command, params)
 				conn.commit()
 				if not self.quiet:

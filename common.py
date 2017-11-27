@@ -26,10 +26,11 @@ from pywinauto.win32structures import RECT, POINT
 from pywinauto.backend import registry
 from pywinauto.base_wrapper import BaseWrapper
 from pywinauto import WindowSpecification
-from pywinauto.controls import common_controls, uia_controls, win32_controls, hwndwrapper
+from pywinauto.controls import common_controls, uia_controls, win32_controls, hwndwrapper, uiawrapper
+import pywinauto.findwindows
 
 from config import *
-from constants import REGEX_WINDOW_MENU_FORM_NAME, SYTELINE_WINDOW_TITLE, carrier_dict, cellular_builds, part_number_regex, unit_type_dict, row_number_regex
+from constants import REGEX_WINDOW_MENU_FORM_NAME, SYTELINE_WINDOW_TITLE, carrier_dict, cellular_builds, part_number_regex, unit_type_dict, row_number_regex, REGEX_RESOLUTION
 from exceptions import *
 from utils.tools import prepare_string, just_over_half
 
@@ -265,7 +266,7 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 				raise ValueError()  # TODO: Specify error
 			self.ID = ID
 			self.username = data[0].Username
-			self.initials = data[0].FirstName.upper() + data[0].LastName.upper()
+			self.initials = data[0].FirstName[0].upper() + data[0].LastName[0].upper()
 			super().__init__(self.initials)
 
 		@classmethod
@@ -411,10 +412,35 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		# 	else:
 		# 		raise NoOpenSROError(serial_number=str(self.serial_number), sro=str(self.sro_num))
 		# FIXME: Only if no other reason codes have been entered
-		self.general_reason = 1000
-		self.specific_reason = 20
-		self.general_resolution = 10000
-		self.specific_resolution = 100
+		# FIXME: AND Clean this up
+		m = REGEX_RESOLUTION.fullmatch(str(self.notes))
+		if m:
+			self.general_reason = 1000
+			self.specific_reason = 20
+			self.general_resolution, self.specific_resolution = [int(x) for x in m.groups()]
+			if self.general_resolution == 10000 and self.specific_resolution == 100:
+				self.general_resolution_name = 'Pass'
+			else:
+				res = mssql.execute("""SELECT TOP 1 Failure FROM FailuresRepairs WHERE ReasonCodes = %s""", str(self.notes))
+				if res:
+					self.general_resolution_name = res[0].Failure
+					if self.status == 'Scrap':
+						self.specific_resolution_name = self.status.upper()
+				else:
+					raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.ID))
+		elif self.status == 'Queued':
+			self.general_reason = 1000
+			self.specific_reason = 20
+			self.general_resolution = 10000
+			self.specific_resolution = 100
+		elif not self.notes:  # Because HomeGuard -_-
+			self.general_resolution = None
+			self.specific_resolution = None
+			self.general_resolution_name = None
+		else:
+			raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.ID))
+
+
 
 	# if 'queued' not in self._status.lower():
 	# 	try:
@@ -535,16 +561,19 @@ ORDER BY s.open_date DESC""", serial_number)
 	def get_oldest_datetime(self, serial_number: SerialNumber = None) -> datetime.datetime:
 		if serial_number is None:
 			serial_number = self.serial_number
-		oldest_datetime = mssql.execute("""SELECT MIN(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		eff_date = self.eff_date_backstep(self.eff_date)
+		oldest_datetime = mssql.execute("""SELECT MIN(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %d""", (serial_number.number, eff_date))
 		if oldest_datetime:
 			return oldest_datetime[0].DateTime
+		#
 		else:
 			return None
 
 	def get_newest_datetime(self, serial_number: SerialNumber = None) -> datetime.datetime:
 		if serial_number is None:
 			serial_number = self.serial_number
-		newest_datetime = mssql.execute("""SELECT MAX(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		eff_date = self.eff_date_backstep(self.eff_date)
+		newest_datetime = mssql.execute("""SELECT MAX(DateTime) AS DateTime FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %d""", (serial_number.number, eff_date))
 		if newest_datetime:
 			return newest_datetime[0].DateTime
 		else:
@@ -553,7 +582,8 @@ ORDER BY s.open_date DESC""", serial_number)
 	def has_passed_qc(self, serial_number: SerialNumber = None) -> bool:
 		if serial_number is None:
 			serial_number = self.serial_number
-		operations = mssql.execute("""SELECT DISTINCT Operation AS Operation FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %s""", (serial_number.number, self.eff_date))
+		eff_date = self.eff_date_backstep(self.eff_date)
+		operations = mssql.execute("""SELECT DISTINCT Operation AS Operation FROM PyComm WHERE [Serial Number] = %s AND DateTime >= %d""", (serial_number.number, eff_date))
 		if operations:
 			return any(op.Operation == 'QC' for op in operations)
 		else:
@@ -561,11 +591,11 @@ ORDER BY s.open_date DESC""", serial_number)
 
 	def get_rogue_sros(self):
 		serial_number = self.serial_number
-		results = mssql.execute("""Select o.sro_num as sro_num, o.sro_line as sro_line, o.stat as status, o.Open_date as open_date from fs_sro_oper o (nolock)
-Inner join fs_sro_serial s (nolock)
-on o.sro_line = s.sro_line and o.sro_num = s.sro_num
-Where s.ser_num = %s
-Order by o.open_date DESC
+		results = slsql.execute("""SELECT o.sro_num AS 'sro_num', o.sro_line AS 'sro_line', o.stat AS 'status', o.Open_date AS 'open_date' FROM fs_sro_oper o ( NOLOCK )
+INNER JOIN fs_sro_serial s ( NOLOCK )
+ON o.sro_line = s.sro_line AND o.sro_num = s.sro_num
+WHERE s.ser_num = %s
+ORDER BY o.open_date DESC
 """, serial_number)
 		# Why open_date?
 		if results:
@@ -600,6 +630,9 @@ Order by o.open_date DESC
 		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
 		carrier_str = self.build.carrier[0].upper() if self.build.carrier is not None else '-'
+		log.debug((self.serial_number.number, carrier_str, self.build.core, self.build.type, self.operator.username, self.operation, parts_string, parts_transacted_string,
+		               parts_count, parts_transacted_count, self.datetime.strftime('%m/%d/%Y %H:%M:%S'), self.start_date, self.start_time, self.sro_operations_time,
+		               self.sro_transactions_time, self.misc_issue_time, end_time, life_time, process, results, reason, version))
 		mssql.execute("""INSERT INTO [Statistics] ([Serial Number], 
 Carrier, 
 Build, 
@@ -635,7 +668,7 @@ WHERE Id = %d""", (completion_dict[self.status], self.ID))
 
 	@singledispatch
 	def skip(self, reason=None, *, batch_amt: int = None):
-		reason = 'Skipped' if reason is None else reason
+		reason = reason.status if issubclass(reason.__class__, BI_EntryError) and hasattr(reason, 'status') else 'Skipped'
 		addon = f"({self.sro})" if reason == 'No Open SRO' else ""
 		self.end(results='Skipped', reason=reason, batch_amt=batch_amt)
 		status_string = f"{reason}({self.status}){addon}"
@@ -663,6 +696,14 @@ WHERE Id = %d""", (completion_dict[self.status], self.ID))
 
 	def reset(self):
 		mssql.execute("""UPDATE PyComm SET Status = %s WHERE Id = %d""", (self.status, self.ID))
+
+	def eff_date_backstep(self, eff_date: datetime.date=None) -> datetime.date:
+		if eff_date is None:
+			eff_date = self.eff_date
+		eff_date -= datetime.timedelta(1)
+		if eff_date.weekday() > 4:
+			eff_date -= datetime.timedelta(eff_date.weekday() - 4)
+		return eff_date
 
 
 class Application(psutil.Process):
@@ -779,6 +820,7 @@ class Application(psutil.Process):
 		                    coord['bottom'] - coord['top'], True)
 
 	def open_form(self, *names):
+		# TODO: wait until passes
 		open_forms = self.forms.keys()
 		log.debug(f"Opening form(s): {', '.join(names)}")
 		for name in names:
@@ -841,7 +883,10 @@ class Application(psutil.Process):
 		          sl_uia.WindowMenu.items() if
 		          (item.texts()[0].lower() != 'cascade') and (item.texts()[0].lower() != 'tile') and (
 			          item.texts()[0].lower() != 'close all')}
-		log.debug(f"Forms open: {', '.join(retval.keys())}")
+		if retval:
+			log.debug(f"Forms open: {', '.join(retval.keys())}")
+		else:
+			log.debug("No forms open")
 		return retval
 
 	@property
@@ -903,6 +948,8 @@ class Application(psutil.Process):
 			log.debug(f"Form State: {state}")
 			if int(bin_state[-5], base=2):  # If the fifth bit == 1
 				return name
+		else:
+			return ''
 
 	def verify_form(self, name: str):
 		if name not in self.forms.keys():
@@ -1494,21 +1541,33 @@ class DataGrid:
 
 class DataGridNEW:
 	# TODO: This^
+	# TODO: Base on pywinauto.controls.uia_controls.ListViewWrapper
+	# TODO: Multithreaded grid population
 	_type_dict = {0: bool, 1: int, 2: float, 3: datetime.datetime}
 
 	def __init__(self, control: WindowSpecification, columns: Union[str, Iterable[str]], rows: int):
+		# TODO: If columns and/or rows == None, auto-detect
 		assert control.backend == registry.backends['uia']
 		self.window_spec = control
+		self.window_spec_win32 = swap_backend(self.window_spec)
+		self.edit_control = self.window_spec_win32.Edit
 		self.control = uia_controls.uiawrapper.UIAWrapper(control.element_info)
 		self.scrollbar_h = self.window_spec.child_window(title='Horizontal Scroll Bar')
 		self.scrollbar_v = self.window_spec.child_window(title='Vertical Scroll Bar')
 		self.top_row = self.window_spec.child_window(title='Top Row')
-		self.column_names = self.get_column_names()
+		if columns:
+			self.column_names = columns
+		else:
+			self.column_names = self.get_column_names()
 		self.column_number_dict = {i: name for i, name in enumerate(self.column_names)}
-		self.master_grid = np.zeros((len(self.column_names), self.row_count, 3), dtype=object)
-		self.grid = self.master_grid[..., 0].view().astype(dtype=np.float, copy=False)
+		self.master_grid = np.zeros((self.row_count, len(self.column_names), 3), dtype=object)
+		self.grid = self.master_grid[..., 0].view()
 		self.types_grid = self.master_grid[..., 1].view()
 		self.visibility_grid = self.master_grid[..., 2].view().astype(dtype=np.bool_, copy=False)
+		for row in self.control.children():
+			# if row_number_regex.fullmatch(row.texts()[0].strip()):
+			# 	log.debug("Row", str(int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')) + 1))
+			log.debug(row.texts()[0])
 
 	@property
 	def row_count(self) -> int:
@@ -1518,11 +1577,11 @@ class DataGridNEW:
 	def element_info(self):
 		return self.control.element_info
 
-	def apply_all(self, func: Callable, *args, **kwargs):
-		with ThreadPoolExecutor(max_workers=len(self.children())) as e:
-			for ch in self.children():
-				e.submit(func, ch, *args, **kwargs)
-				sleep(1)
+	# def apply_all(self, func: Callable, *args, **kwargs):
+	# 	with ThreadPoolExecutor(max_workers=len(self.children())) as e:
+	# 		for ch in self.children():
+	# 			e.submit(func, ch, *args, **kwargs)
+	# 			sleep(1)
 
 	@property
 	def grid_area(self) -> RECT:
@@ -1555,8 +1614,29 @@ class DataGridNEW:
 		return cls(sl_uia.__getattribute__(name), columns, rows)
 
 	@classmethod
+	def from_AutomationId(cls, app: Application, auto_id: str, columns: Union[str, Iterable[str]] = None, rows: int = None):
+		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
+		return cls(sl_uia.child_window(auto_id=auto_id), columns, rows)
+
+	@classmethod
 	def default(cls, app: Application, columns: Union[str, Iterable[str]] = None, rows: int = None):
 		return cls.from_name(app, 'DataGridView', columns, rows)
+
+	def select_cell(self, cell: WindowSpecification):
+		cell.invoke()
+
+	def populate(self):
+		# TODO: Only do requested columns and/or rows
+		# THINK: Use row value string to define values?
+		for y in np.arange(self.grid.shape[0], dtype=np.intp):
+			for x in np.arange(self.grid.shape[1], dtype=np.intp):
+				col = self.column_number_dict[x]
+				try:
+					cell = self.get_cell(col, y + 1)
+					self.grid[y, x] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+				except Exception:
+					cell = self.get_cell(col, y + 1, specific=1)
+					self.grid[y, x] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
 
 	def row(self, name: str):
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
@@ -1574,17 +1654,37 @@ class DataGridNEW:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
 		return [col.texts()[0].strip() for col in self.top_row.children() if col.texts()[0]]
 
-	@singledispatch
-	def get_cell(self, column: str, row: int, visible_only: bool = False, *, specific: int = 0):
+	def get_cell(self, column: str, row: int, *, visible_only: bool = False, specific: int = 0):
 		if row > self.row_count:
 			return None
 		column_count = self.column_names.count(column)
-		if column_count > 1:  # Best-Match method, slower
-			if specific:
+		for x in range(3):
+			specific += x
+			if column_count > 1:  # Best-Match method, slower
+				if specific:
+					return self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{specific}', visible_only=visible_only)
+				return [self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{i + 1}', visible_only=visible_only) for i in range(column_count)]
+			elif specific:
 				return self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{specific}', visible_only=visible_only)
-			return [self.window_spec.child_window(best_match=f'{column}Row{row - 1}DataItem{i + 1}', visible_only=visible_only) for i in range(column_count)]
-		else:  # Title-Match method, faster & more precise
-			return self.window_spec.child_window(title=f'{column} Row {row - 1}', visible_only=visible_only)
+			else:  # Title-Match method, faster & more precise
+				log.debug(f'{column} Row {row - 1}')
+				return self.window_spec.child_window(title=f'{column} Row {row - 1}', visible_only=visible_only)
+
+	def set_cell(self, column: str, row: int, value, *, visible_only: bool = False, specific: int = 0):
+		cell = self.get_cell(column, row, visible_only=visible_only, specific=specific)
+		self.select_cell(cell)
+		if not self.edit_control.exists():
+			start_pos = pag.position()
+			pag.click(*center(cell))
+			pag.moveTo(*start_pos)
+		self.edit_control.set_text(str(value))
+		old_shape = self.master_grid.shape
+		zero_pad = np.zeros((1, old_shape[1], old_shape[2]))
+		while self.master_grid.shape[0] < self.row_count:
+			self.master_grid = np.vstack((self.master_grid, zero_pad))
+		new_shape = self.master_grid.shape
+		if old_shape != new_shape:
+			log.debug(f"Master Grid shape changed from {old_shape} to {new_shape}")
 
 	def get_visible_cells(self):
 		max_x = max_y = min_x = min_y = None
@@ -1704,6 +1804,46 @@ class DataGridNEW:
 
 		return RECT(left, top, right, bottom)
 
+	@staticmethod
+	def pyType_to_cellType(value):
+		# TODO: Regex for datetime, Item Number, etc
+		if value == '(null)':
+			value = 'None'
+		if '-' in value:
+			retval = value
+		elif '/' in value and ':' in value:
+			retval = datetime.datetime.strptime(value, '%m/%d/%y %H:%M:%S')
+		elif '/' in value:
+			retval = datetime.datetime.strptime(value, '%m/%d/%Y').date()
+		elif ':' in value:
+			retval = datetime.datetime.strptime(value, '%H:%M:%S').time()
+		else:
+			try:
+				retval = eval(value)
+			except Exception:
+				retval = value
+		return retval
+
+	@staticmethod
+	def cellType_to_pyType(value):
+		# TODO: Regex for datetime, Item Number, etc
+		if value == None:
+			value = '(null)'
+		if '-' in value:
+			retval = value
+		elif '/' in value and ':' in value:
+			retval = datetime.datetime.strptime(value, '%m/%d/%y %H:%M:%S')
+		elif '/' in value:
+			retval = datetime.datetime.strptime(value, '%m/%d/%Y').date()
+		elif ':' in value:
+			retval = datetime.datetime.strptime(value, '%H:%M:%S').time()
+		else:
+			try:
+				retval = eval(value)
+			except Exception:
+				retval = value
+		return retval
+
 
 # class Singleton(type):
 # 	"""
@@ -1811,7 +1951,6 @@ class DataGridNEW:
 1115	Will Not Charge
 1116	Will not hold a charge"""
 
-
 # - - - - - - - - - - - - - - - - - - - FUNCTIONS - - - - - - - - - - - - - - - - - - - -  # THINK: Maybe move to tools?
 def process_pid(filename: str, exclude: Optional[Union[int, Iterable[int]]] = None) -> int:
 	if isinstance(filename, pathlib.Path):
@@ -1851,6 +1990,16 @@ def is_running(filename: str, exclude: Optional[Union[int, Iterable[int]]] = Non
 		except (psutil.NoSuchProcess, psutil.AccessDenied):
 			pass
 	return False
+
+
+def swap_backend(control: WindowSpecification) -> WindowSpecification:
+	if control.handle is None:
+		return control
+	if control.backend == registry.backends['uia']:
+		app = pwn.Application(backend='win32').connect(process=control.process_id())
+	elif control.backend == registry.backends['win32']:
+		app = pwn.Application(backend='uia').connect(process=control.process_id())
+	return app.window(handle=control.handle)
 
 
 @legacy
@@ -1952,15 +2101,14 @@ def _(control):
 
 # Not one Item Price exists for Item that has
 @singledispatch
-def center(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
+def center(arg) -> Tuple[int, int]:
 	"""Return the center of given coordinates.
 	:rtype: tuple
 	"""
-	assert 0 < arg < x2
-	assert 0 < y1 < y2
-	x2 -= arg
+	x1, y1, x2, y2 = split_RECT(arg)
+	x2 -= x1
 	y2 -= y1
-	return arg + (x2 // 2), y1 + (y2 // 2)
+	return x1 + (x2 // 2), y1 + (y2 // 2)
 
 
 @center.register(int)
@@ -1970,15 +2118,6 @@ def _(arg, y1: int, x2: int, y2: int) -> Tuple[int, int]:
 	x2 -= arg
 	y2 -= y1
 	return arg + (x2 // 2), y1 + (y2 // 2)
-
-
-# @center.register(RECT)
-@center.register(BaseWrapper)
-def _(arg) -> Tuple[int, int]:
-	x1, y1, x2, y2 = split_RECT(arg)
-	x2 -= x1
-	y2 -= y1
-	return x1 + (x2 // 2), y1 + (y2 // 2)
 
 
 # noinspection SpellCheckingInspection

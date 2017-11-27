@@ -122,7 +122,7 @@ def create_config(usr, pwd):
 				                     'args': [(log_dir / 'err.log').as_posix(), 'a']},  # 'args': [log_dir.as_posix()]},
 			                    'console':
 				                    {'class': 'StreamHandler',
-				                     'level': 'INFO',
+				                     'level': 'DEBUG',
 				                     'formatter': 'verbose'},
 			                    'info':
 				                    {'class': 'FileHandler',
@@ -161,7 +161,7 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 try:
 	config = read_config(my_directory)
 except FileNotFoundError:
-	create_config('bigberae', 'W!nter17')
+	create_config('jredding', 'JRSep17!')
 	config = read_config(my_directory)
 initialize_logger(config['Logging'])
 

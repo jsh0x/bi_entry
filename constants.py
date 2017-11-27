@@ -39,4 +39,7 @@ TRANSACTION_STATUS = 'Queued'
 SCRAP_STATUS = 'Scrap'
 REASON_STATUS = 'Reason'
 
+# Original column order:
+# Posted, Bill Hold, Partner, Dept, Trans Date, SRO, Line#, Oper#, Trans Type, Item, Quantity, Customer Item, U/M, Item Description, Warehouse, Location, Lot, Impact Inventory, Billing Code, Matl Cost
+
 # The quick brown fox jumps over the lazy dog.
