@@ -112,7 +112,8 @@ if __name__ == '__main__':
 				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
 				if serial:
 					for process in (reason, transact):
-						units = process.get_units(serial[0].SerialNumber)
+						# units = process.get_units(serial[0].SerialNumber)
+						units = process.get_units('1352061')
 						if units:
 							process.run(app, units)
 				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")

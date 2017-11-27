@@ -13,6 +13,7 @@ from string import punctuation
 from time import sleep
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 import importlib
+import win32api as wapi
 
 import numpy as np
 import pprofile
@@ -1550,7 +1551,7 @@ class DataGridNEW:
 		assert control.backend == registry.backends['uia']
 		self.window_spec = control
 		self.window_spec_win32 = swap_backend(self.window_spec)
-		self.edit_control = self.window_spec_win32.Edit
+		self.edit_control = uia_controls.EditWrapper(control.element_info)
 		self.control = uia_controls.uiawrapper.UIAWrapper(control.element_info)
 		self.scrollbar_h = self.window_spec.child_window(title='Horizontal Scroll Bar')
 		self.scrollbar_v = self.window_spec.child_window(title='Vertical Scroll Bar')
@@ -1673,11 +1674,8 @@ class DataGridNEW:
 	def set_cell(self, column: str, row: int, value, *, visible_only: bool = False, specific: int = 0):
 		cell = self.get_cell(column, row, visible_only=visible_only, specific=specific)
 		self.select_cell(cell)
-		if not self.edit_control.exists():
-			start_pos = pag.position()
-			pag.click(*center(cell))
-			pag.moveTo(*start_pos)
-		self.edit_control.set_text(str(value))
+		cell.iface_value.SetValue(str(value))
+		self.validate_cell_value(cell)
 		old_shape = self.master_grid.shape
 		zero_pad = np.zeros((1, old_shape[1], old_shape[2]))
 		while self.master_grid.shape[0] < self.row_count:
@@ -1685,6 +1683,11 @@ class DataGridNEW:
 		new_shape = self.master_grid.shape
 		if old_shape != new_shape:
 			log.debug(f"Master Grid shape changed from {old_shape} to {new_shape}")
+
+	# TODO: singledispatch for cell input and column/row input
+	def validate_cell_value(self, cell):
+		edit_control = uia_controls.EditWrapper(cell.element_info)
+		edit_control.set_text(cell.iface_value.CurrentValue.strip())
 
 	def get_visible_cells(self):
 		max_x = max_y = min_x = min_y = None

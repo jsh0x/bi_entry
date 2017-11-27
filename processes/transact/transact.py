@@ -671,9 +671,9 @@ def run(app: Application, units: List[Unit]):
 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 		for x in units:
-			# x.reset()
-			x.skip(ex, batch_amt=len(units))
-		# quit()
+			x.reset()
+			# x.skip(ex, batch_amt=len(units))
+		quit()
 		if sl_uia.exists(2, 0.09):
 			if 'SRO Transactions' in app.forms:
 				sl_uia.CancelCloseButton.click()
@@ -819,7 +819,7 @@ def _base_process(debug_mode: bool, app: Application, *, units: List[Unit]=None)
 			bc = 'No Charge'
 
 		for i, row in enumerate(transaction_grid.grid):
-			if not np.count_nonzero(row):
+			if not row[1]:
 				empty_row_index = i
 				break
 
@@ -840,6 +840,8 @@ def _base_process(debug_mode: bool, app: Application, *, units: List[Unit]=None)
 				# transaction_grid.select_cell(transaction_grid.get_cell('Item', i))
 				# pag.press('enter', 10, interval=0.05)
 				unit.parts_transacted.add(part)
+				pag.press('enter')
+				pag.press('esc', 10)
 
 			# for part, row_num in part_list:
 			# 	transaction_grid.set_cell('Location', row_num, part.location)
