@@ -38,7 +38,7 @@ def main():
 	config = configparser.ConfigParser()
 	logging.config.fileConfig('config.ini')
 	log = logging
-	sleep(randint(10, 20) / 10)
+	sleep(1.5)
 	log.info("Attempting to read 'config.ini'")
 	config.read_file(open('config.ini'))
 	log.info("Starting Application")
@@ -74,8 +74,14 @@ def main():
 					offset = 5
 				else:
 					offset = (offset.Total_Time // 60) + 2
-				while datetime.datetime.now().minute < offset:
-					pass
+				if not (0 < offset < 5):
+					offset = 5
+				now_dt = datetime.datetime.now()
+				start_dt = datetime.datetime(now_dt.year, now_dt.month, now_dt.day, now_dt.hour, 0)
+				offset_dt = datetime.datetime(now_dt.year, now_dt.month, now_dt.day, now_dt.hour, offset + 1)
+				while start_dt < now_dt < offset_dt:
+					now_dt = datetime.datetime.now()
+					sleep(1)
 				else:
 					choice = random.choice(range(2, 10, 2))
 					random.seed(usr)

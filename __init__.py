@@ -1,5 +1,5 @@
 __author__ = 'jsh0x'
-__version__ = '1.4.2'
+__version__ = '1.4.3'
 
 import configparser
 import os
