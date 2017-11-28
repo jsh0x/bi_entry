@@ -31,7 +31,7 @@ class BI_EntryError(Exception):
 
 	__str__ = __repr__
 
-
+# TODO: DataGrid-Specific Error
 # General/Input-caused error - - - - - - - - - - - - - -
 class NoSROError(BI_EntryError):
 	def __init__(self, serial_number: str, msg=""):

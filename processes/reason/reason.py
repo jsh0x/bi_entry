@@ -3,6 +3,7 @@ import logging
 import sys
 from time import sleep
 from typing import List
+import numpy as np
 
 import pyautogui as pag
 import pywinauto.timings
@@ -10,6 +11,7 @@ from pywinauto.controls import common_controls, uia_controls, win32_controls
 
 from config import *
 from common import *
+from common import DataGridNEW
 from constants import SYTELINE_WINDOW_TITLE
 from exceptions import *
 from constants import REASON_STATUS
@@ -114,7 +116,7 @@ def _base_process(app: Application, units: List[Unit]):
 	log.debug("Service Order Lines Button clicked")
 	sl_win.set_focus()
 	sl_win.ServiceOrderLinesButton.click()
-	sl_win.ServiceOrderOperationsButton.wait('visible', 3, 0.09)
+	sl_win.ServiceOrderOperationsButton.wait('visible', 10, 0.09)
 	sl_win.set_focus()
 	app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro)
 	dlg = app.get_popup(0.5)
@@ -130,7 +132,7 @@ def _base_process(app: Application, units: List[Unit]):
 	log.debug("Service Order Operations Button clicked")
 	sl_win.set_focus()
 	sl_win.ServiceOrderOperationsButton.click()
-	sl_win.SROLinesButton.wait('visible', 3, 0.09)
+	sl_win.SROLinesButton.wait('visible', 10, 0.09)
 	timer = Timer.start()
 	if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 		status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
@@ -141,18 +143,41 @@ def _base_process(app: Application, units: List[Unit]):
 		pag.press('esc')
 		save = sl_uia.SaveButton
 		save.click()
-	sl_win.SROTransactionsButton.wait('enabled', 3, 0.09)
-	sl_win.SROTransactionsButton.wait('enabled', 3, 0.09)
+	sl_win.SROTransactionsButton.wait('enabled', 10, 0.09)
 	common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
-	for sub_unit in units:
-		reason_grid = uia_controls.ListViewWrapper(sl_uia.DataGridView.element_info)
-		reason_rows = access_grid(reason_grid, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
-		done = False
-		for row in reason_rows:
-			if str(row.General_Resolution).strip() == str(sub_unit.general_resolution).strip() and \
-							str(row.Specific_Resolution).strip() == str(sub_unit.specific_resolution).strip():
-				done = True
-				break
+	reason_grid = DataGridNEW.default(app, ['General Reason', 'Specific Reason', 'General Resolution', 'Specific Resolution'])
+	reason_grid.populate()
+	gen_rsn = 1000
+	for i, row in enumerate(reason_grid.grid):
+		if reason_grid.grid[i, 0]:
+			gen_rsn = reason_grid.grid[i, 0]
+		if np.count_nonzero(row) < 4:
+			break
+	for unit in units:
+		resolution_pairs = [(gen, spec) for gen, spec in zip(reason_grid.grid[..., 2], reason_grid.grid[..., 3])]
+		if (unit.general_resolution, unit.specific_resolution) in resolution_pairs:
+			continue
+		i += 1
+		row = reason_grid.grid[i]
+		count = np.count_nonzero(row)
+		if count == 1:
+			reason_grid.set_cell('Specific Reason', i, 20)
+			reason_grid.set_cell('General Resolution', i, unit.general_resolution)
+			reason_grid.set_cell('Specific Resolution', i, unit.specific_resolution)
+		elif count == 2:
+			reason_grid.set_cell('General Resolution', i, unit.general_resolution)
+			reason_grid.set_cell('Specific Resolution', i, unit.specific_resolution)
+		else:
+			reason_grid.set_cell('General Reason', i, gen_rsn)
+			reason_grid.set_cell('Specific Reason', i, 20)
+			reason_grid.set_cell('General Resolution', i, unit.general_resolution)
+			reason_grid.set_cell('Specific Resolution', i, unit.specific_resolution)
+		reason_grid.select_cell(reason_grid.get_cell('General Reason', 1))
+		sleep(0.5)
+		pag.hotkey('ctrl', 's')
+		sleep(1)
+
+
 		if not done:
 			if len(reason_rows) >= 6:
 				top_row_temp = reason_grid.children()[reason_grid.children_texts().index('Top Row')]

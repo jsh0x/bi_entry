@@ -78,7 +78,17 @@ def main(process):
 	# 	pm.run_process(process, ppt)
 	pass
 
-# main(transact)
+
+# TODO: Reason/Resolution notes by-line textblock reading
+# THINK: Maybe TextBlock class? If so, using win32's "set_text" function and "texts" method would be ideal
+# Note: from the texts() method, index 0 returns a text block, while the indices that follow return each individual line, respectively
+# Example:
+#       raw_text = reason_notes.texts()[1:]
+#       clean_text = [line.strip() for line in raw_text if line.strip()]
+#       # or just:      clean_text = [line.strip() for line in reason_notes.texts()[1:] if line.strip()]
+#       # Append new lines to list 'clean_text'
+#       reason_notes.set_text('\r\n'.join(line.strip() for line in clean_text if line.strip()))
+
 
 if __name__ == '__main__':
 	app = Application.start(application_filepath)
@@ -112,8 +122,7 @@ if __name__ == '__main__':
 				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
 				if serial:
 					for process in (reason, transact):
-						# units = process.get_units(serial[0].SerialNumber)
-						units = process.get_units('1352061')
+						units = process.get_units(serial[0].SerialNumber)
 						if units:
 							process.run(app, units)
 				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")

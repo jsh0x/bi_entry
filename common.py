@@ -1655,7 +1655,7 @@ class DataGridNEW:
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
 		return [col.texts()[0].strip() for col in self.top_row.children() if col.texts()[0]]
 
-	def get_cell(self, column: str, row: int, *, visible_only: bool = False, specific: int = 0):
+	def get_cell(self, column: str, row: int, *, visible_only: bool = False, specific: int = 0) -> Union[WindowSpecification, List[WindowSpecification]]:
 		if row > self.row_count:
 			return None
 		column_count = self.column_names.count(column)
@@ -1673,9 +1673,15 @@ class DataGridNEW:
 
 	def set_cell(self, column: str, row: int, value, *, visible_only: bool = False, specific: int = 0):
 		cell = self.get_cell(column, row, visible_only=visible_only, specific=specific)
-		self.select_cell(cell)
-		cell.iface_value.SetValue(str(value))
-		self.validate_cell_value(cell)
+		if str(value) in {'True', 'False'}:
+			pass
+		else:
+			self.select_cell(cell)
+			cell.iface_value.SetValue(str(value))
+			valid = self.validate_cell(cell)
+			if not valid:
+				raise ZeroDivisionError()
+		self.grid[row, self.column_names.index(column)] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
 		old_shape = self.master_grid.shape
 		zero_pad = np.zeros((1, old_shape[1], old_shape[2]))
 		while self.master_grid.shape[0] < self.row_count:
@@ -1685,9 +1691,12 @@ class DataGridNEW:
 			log.debug(f"Master Grid shape changed from {old_shape} to {new_shape}")
 
 	# TODO: singledispatch for cell input and column/row input
-	def validate_cell_value(self, cell):
+	def validate_cell(self, cell: WindowSpecification) -> bool:
+		value = cell.iface_value.CurrentValue.strip()
+		cell.click_input()
 		edit_control = uia_controls.EditWrapper(cell.element_info)
-		edit_control.set_text(cell.iface_value.CurrentValue.strip())
+		edit_control.type_keys(value + '{ENTER 20}', with_spaces=True, with_newlines=True)
+		return cell.iface_value.CurrentValue.strip() == value
 
 	def get_visible_cells(self):
 		max_x = max_y = min_x = min_y = None

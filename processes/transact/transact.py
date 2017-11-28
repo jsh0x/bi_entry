@@ -965,29 +965,28 @@ def _base_process(debug_mode: bool, app: Application, *, units: List[Unit]=None)
 			sleep(1)
 
 		reason_notes = sl_win.ReasonNotesEdit
-		reason_notes_text = reason_notes.texts()[0].strip()
-		if '[UDI]\n[PASSED ALL TESTS]' not in reason_notes_text:
-			if reason_notes_text:
-				reason_notes_text += '\n'
-			reason_notes_text += '[UDI]\n[PASSED ALL TESTS]'
-			reason_notes.set_text(reason_notes_text.strip())
-			sleep(0.5)
-			pag.hotkey('ctrl', 's')
-			sleep(1)
+		reason_notes_text_lines = reason_notes.texts()[1:]
+		reason_notes_text = [line.strip() for line in reason_notes_text_lines if line.strip()]
+		if '[UDI]' not in reason_notes_text:
+			reason_notes_text.append('[UDI]')
+		if '[PASSED ALL TESTS]' not in reason_notes_text:
+			reason_notes_text.append('[PASSED ALL TESTS]')
+		reason_notes.set_text('\r\n'.join(line.strip() for line in reason_notes_text if line.strip()))
+		reason_notes.send_keystrokes('^s')
 
 	if any(len(x.parts) > 0 for x in units):
 		resolution_notes = sl_win.ResolutionNotesEdit
-		resolution_notes_text = resolution_notes.texts()[0].strip()
-		if resolution_notes_text:
-			resolution_notes_text += '\n'
+		resolution_notes_text_lines = resolution_notes.texts()[1:]
+		resolution_notes_text = [line.strip() for line in resolution_notes_text_lines if line.strip()]
 		for unit in units:
-			additional_text = "[" + ", ".join([p.display_name for p in unit.parts]) + f"]\n[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]\n"
-			if additional_text not in resolution_notes_text:
-				resolution_notes_text += additional_text
-		resolution_notes.set_text(resolution_notes_text.strip())
-		sleep(0.5)
-		pag.hotkey('ctrl', 's')
-		sleep(1)
+			reason_notes_text_pairs = [(string1, string2) for string1, string2 in zip(reason_notes_text[:-1], reason_notes_text[1:])]
+			part_text = f"[{', '.join([p.display_name for p in unit.parts])}]"
+			operator_text = f"[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]"
+			if (part_text, operator_text) not in reason_notes_text_pairs:
+				resolution_notes_text.append(part_text)
+				resolution_notes_text.append(operator_text)
+		resolution_notes.set_text('\r\n'.join(line.strip() for line in resolution_notes_text if line.strip()))
+		resolution_notes.send_keystrokes('^s')
 
 	if not debug_mode:
 		pag.hotkey('ctrl', 's')
