@@ -121,7 +121,7 @@ def main():
 					reason_results = None
 					queued_results = None
 					serial_number = mssql.execute(f"SELECT SerialNumber FROM PuppetMaster WHERE MachineName = '{my_name}'")
-					if serial_number:
+					if serial_number and serial_number.SerialNumber:
 						serial_number = serial_number.SerialNumber
 						statuses = mssql.execute(f"SELECT DISTINCT Status FROM PyComm WHERE [Serial Number] = '{serial_number}'", fetchall=True)
 						if statuses:
