@@ -542,8 +542,8 @@ ORDER BY s.open_date DESC""", serial_number)
 	def get_eff_date(self, serial_number: SerialNumber = None) -> datetime.date:
 		if serial_number is None:
 			serial_number = self.serial_number
-		eff_date = slsql.execute("""SELECT TOP 1 c.eff_date AS 'Eff Date'
-FROM fs_sro s
+		eff_date1 = slsql.execute("""SELECT TOP 1 c.eff_date AS 'Eff Date'
+FROM fs_sro s ( NOLOCK )
 	INNER JOIN fs_sro_line t ( NOLOCK )
 		ON s.sro_num = t.sro_num
 	INNER JOIN fs_unit_cons c ( NOLOCK )
@@ -555,8 +555,22 @@ FROM fs_sro s
 WHERE c2.eff_date IS NULL AND
       t.ser_num = %s
 ORDER BY s.open_date DESC""", serial_number)
-		if eff_date:
-			return eff_date[0].Eff_Date.date()
+		if eff_date1:
+			eff_date2 = slsql.execute("""SELECT TOP 1 c.eff_date AS 'Eff Date'
+			FROM fs_sro s ( NOLOCK )
+				INNER JOIN fs_sro_line t ( NOLOCK )
+					ON s.sro_num = t.sro_num
+				INNER JOIN fs_unit_cons c ( NOLOCK )
+					ON t.ser_num = c.ser_num
+				INNER JOIN fs_sro_oper o ( NOLOCK )
+					ON t.sro_num = o.sro_num AND t.sro_line = o.sro_line
+			WHERE c.eff_date < %d AND
+			      t.ser_num = %s
+			ORDER BY s.open_date DESC""", (self.datetime.date(), serial_number))
+			if eff_date2:
+				if eff_date2[0].Eff_Date < self.datetime < eff_date1[0].Eff_Date:
+					return eff_date2[0].Eff_Date.date()
+			return eff_date1[0].Eff_Date.date()
 		else:
 			return None
 

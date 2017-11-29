@@ -79,7 +79,7 @@ def main(process):
 	pass
 
 
-'''res = mssql.execute("""SELECT DISTINCT [Serial Number] FROM PyComm WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017""")
+res = mssql.execute("""SELECT DISTINCT [Serial Number] FROM PyComm WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017""")
 for sn in res:
 	number = sn.Serial_Number
 	results = mssql.execute("""SELECT p.Prefix FROM Prefixes p INNER JOIN Prefixes r ON r.Product=p.Product WHERE r.Prefix = %s AND r.Type = 'N' AND p.Type = 'P'""", number[:2])
@@ -108,7 +108,7 @@ for sn in res:
 	ORDER BY s.open_date DESC""", serial_number)
 	if statuses:
 		mssql.execute("""UPDATE PyComm SET [Status] = 'Queued' WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017 AND [Serial Number] = %s""", number)
-quit()'''
+quit()
 
 # TODO: Reason/Resolution notes by-line textblock reading
 # THINK: Maybe TextBlock class? If so, using win32's "set_text" function and "texts" method would be ideal
