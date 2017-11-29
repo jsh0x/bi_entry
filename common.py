@@ -304,6 +304,18 @@ class Unit:
 	def update_sl_data(self):
 		try:
 			self.sro_num, self.sro_line, self.eff_date, self.SRO_Operations_status, self.SRO_Line_status = self.sl_data
+			self.eff_date = f"""Select TOP 1 c.eff_date as 'Eff Date'
+From fs_sro s (nolock)
+ Inner join fs_sro_line l (nolock)
+ on s.sro_num = l.sro_num
+ Inner join fs_unit_cons c (nolock)
+ on l.ser_num = c.ser_num
+ Inner join fs_sro_oper o (nolock)
+ on l.sro_num = o.sro_num and l.sro_line = o.sro_line
+ Where
+ c.eff_date < '{self.datetime.date().strftime("%m/%d/%Y")}' and
+ l.ser_num = '{self.serial_number_prefix+self.serial_number}'
+  Order by c.eff_date DESC"""
 		except TypeError as ex:
 			if re.search(r"NoneType.*not iterable", str(exc_info()[1])) is None:
 				raise ex
