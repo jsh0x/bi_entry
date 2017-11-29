@@ -10,7 +10,7 @@ starting_forms = {'User Information'}
 def run(self: PuppetMaster.Puppet):
 	app = self.app
 	print(app)
-	app.verify_form('User Information')
+	app.ensure_form('User Information')
 	sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
 	sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
 	print(app)

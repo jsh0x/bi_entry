@@ -79,6 +79,37 @@ def main(process):
 	pass
 
 
+'''res = mssql.execute("""SELECT DISTINCT [Serial Number] FROM PyComm WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017""")
+for sn in res:
+	number = sn.Serial_Number
+	results = mssql.execute("""SELECT p.Prefix FROM Prefixes p INNER JOIN Prefixes r ON r.Product=p.Product WHERE r.Prefix = %s AND r.Type = 'N' AND p.Type = 'P'""", number[:2])
+	for res in results:
+		if slsql.execute("""SELECT ser_num FROM serial ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)):
+			break
+	serial_number = res.Prefix + str(number)
+	statuses = slsql.execute("""SELECT TOP 1
+		CASE WHEN t.stat = 'C'
+			THEN 'Closed'
+		ELSE 'Open' END AS [SRO Line Status],
+		CASE WHEN o.stat = 'C'
+			THEN 'Closed'
+		ELSE 'Open' END AS [SRO Operation Status]
+	FROM fs_sro s
+		INNER JOIN fs_sro_line t ( NOLOCK )
+			ON s.sro_num = t.sro_num
+		INNER JOIN fs_unit_cons c ( NOLOCK )
+			ON t.ser_num = c.ser_num
+		INNER JOIN fs_sro_oper o ( NOLOCK )
+			ON t.sro_num = o.sro_num AND t.sro_line = o.sro_line
+		LEFT JOIN fs_unit_cons c2 ( NOLOCK )
+			ON c.ser_num = c2.ser_num AND c.eff_date < c2.eff_date
+	WHERE c2.eff_date IS NULL AND
+	      t.ser_num = %s
+	ORDER BY s.open_date DESC""", serial_number)
+	if statuses:
+		mssql.execute("""UPDATE PyComm SET [Status] = 'Queued' WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017 AND [Serial Number] = %s""", number)
+quit()'''
+
 # TODO: Reason/Resolution notes by-line textblock reading
 # THINK: Maybe TextBlock class? If so, using win32's "set_text" function and "texts" method would be ideal
 # Note: from the texts() method, index 0 returns a text block, while the indices that follow return each individual line, respectively
@@ -117,7 +148,7 @@ if __name__ == '__main__':
 						while dlg.exists(1, 0.09):
 							dlg.send_keystrokes('{ESC}')
 							dlg = app.win32.window(class_name="#32770")
-					app.verify_form('Units')
+					app.ensure_form('Units')
 
 				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
 				if serial:

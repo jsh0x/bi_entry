@@ -33,7 +33,7 @@ def Preprogram(app: Application, units: List[Unit]):
 				x.reset()
 			sys.exit(1)
 		log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-		app.verify_form('Units')
+		app.ensure_form('Units')
 		sleep(0.2)
 		sl_win.UnitEdit.set_text(unit.serial_number_prefix + unit.serial_number)  # Input serial number
 		sleep(0.2)

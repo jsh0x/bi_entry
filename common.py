@@ -14,6 +14,7 @@ from time import sleep
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 import importlib
 import win32api as wapi
+import os
 
 import numpy as np
 import pprofile
@@ -852,19 +853,25 @@ class Application(psutil.Process):
 			self.win32.SelectFormWindow.OKButton.click()
 			sleep(2)
 
-	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False):
-		sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
-		sl_win.send_keystrokes('%e')
-		sleep(0.02)
-		sl_win.send_keystrokes('v')
-		find_window = self.win32['Find']
-		find_window.InCollectionComboBox.select(collection)
-		find_window.InPropertyComboBox.select(property_)
-		find_window.FindEdit.set_text(value)
-		if case_sensitive:
-			find_window.CaseSensitiveButton.check()
-		find_window.set_focus()
-		find_window.OKButton.click()
+	def find_value_in_collection(self, collection: str, property_: str, value, case_sensitive=False) -> bool:
+		try:
+			sl_win = self.win32.window(title_re=SYTELINE_WINDOW_TITLE)
+			sl_win.send_keystrokes('%e')
+			sleep(0.02)
+			sl_win.send_keystrokes('v')
+			find_window = self.win32['Find']
+			find_window.InCollectionComboBox.select(collection)
+			find_window.InPropertyComboBox.select(property_)
+			find_window.FindEdit.set_text(value)
+			if case_sensitive:
+				find_window.CaseSensitiveButton.check()
+			find_window.set_focus()
+			find_window.OKButton.click()
+		except Exception:
+			sl_win.send_keystrokes('{ESC}')
+			return False
+		else:
+			return True
 
 	def change_form(self, name: str):
 		forms = self.forms
@@ -952,10 +959,13 @@ class Application(psutil.Process):
 		else:
 			return ''
 
-	def verify_form(self, name: str):
+	def verify_form(self, name: str) -> bool:
+		return name == self.get_focused_form()
+
+	def ensure_form(self, name: str):
 		if name not in self.forms.keys():
 			self.open_form(name)
-		if name != self.get_focused_form():
+		if not self.verify_form(name):
 			self.change_form(name)
 
 	def get_popup(self, timeout=1) -> Dialog:
@@ -1550,8 +1560,6 @@ class DataGridNEW:
 		# TODO: If columns and/or rows == None, auto-detect
 		assert control.backend == registry.backends['uia']
 		self.window_spec = control
-		self.window_spec_win32 = swap_backend(self.window_spec)
-		self.edit_control = uia_controls.EditWrapper(control.element_info)
 		self.control = uia_controls.uiawrapper.UIAWrapper(control.element_info)
 		self.scrollbar_h = self.window_spec.child_window(title='Horizontal Scroll Bar')
 		self.scrollbar_v = self.window_spec.child_window(title='Vertical Scroll Bar')
@@ -2229,6 +2237,18 @@ def weekday_string(dt: datetime.datetime, abbreviated: bool = True) -> str:
 
 def month_string(dt: datetime.datetime, abbreviated: bool = True) -> str:
 	return dt.strftime("%b") if abbreviated else dt.strftime("%B")
+
+
+def execfile(fp: Union[str, bytes, os.PathLike], global_vars: dict=dict(), local_vars: dict=dict()):
+	fp = pathlib.Path(str(fp))
+	with fp.open() as f:  # THINK: Maybe fp.read_text()
+		exec(f.read(), global_vars, local_vars)
+
+def exec_script(fp: Union[str, bytes, os.PathLike], global_vars: dict=dict(), local_vars: dict=dict()):
+	fp = pathlib.Path(str(fp))
+	with fp.open() as f:  # THINK: Maybe fp.read_text()
+		code = compile(f.read(), fp.name, 'exec')
+		exec(code, global_vars, local_vars)
 
 
 def pprint_dict(text: Dict[str, Union[Any, Tuple[Any, int]]], justify_keys: int = 0, justify_values: int = 0):

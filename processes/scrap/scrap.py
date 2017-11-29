@@ -32,8 +32,8 @@ def Scrap(app: Application, units: List[Unit]):
 				unit.reset()
 			sys.exit(1)
 		log.debug([x.texts()[0] for x in sl_uia.WindowMenu.items()])
-		app.verify_form('Units')
-		app.verify_form('Miscellaneous Issue')
+		app.ensure_form('Units')
+		app.ensure_form('Miscellaneous Issue')
 		# Sort Units by build and location, and order by serial number ascending
 
 		_assorted_lengths_of_string = ('30803410313510753080335510753245107531353410',
@@ -73,13 +73,13 @@ def Scrap(app: Application, units: List[Unit]):
 			unit.start()
 		max_qty = 9999999
 		for build, v in unit_dict.items():
-			app.verify_form('Miscellaneous Issue')
+			app.ensure_form('Miscellaneous Issue')
 			sl_win.ItemEdit.set_text(build)
 			sleep(0.2)
 			sl_win.ItemEdit.send_keystrokes('{TAB}')
 			reason_code = 22  # 24 if direct'
 			for location, units in v.items():
-				app.verify_form('Miscellaneous Issue')
+				app.ensure_form('Miscellaneous Issue')
 				if location.lower() == 'out of inventory':
 					for unit in units:
 						global_units.append(unit)
@@ -142,7 +142,7 @@ def Scrap(app: Application, units: List[Unit]):
 		app.change_form('Units')
 		sl_win.UnitEdit.wait('ready', 2, 0.09)
 		for unit in global_units:
-			app.verify_form('Units')
+			app.ensure_form('Units')
 			sl_win.UnitEdit.set_text(unit.serial_number_prefix + unit.serial_number)
 			sl_win.UnitEdit.send_keystrokes('{F4}')  # Filter in Place
 			while (sl_win.UnitEdit.texts()[0].strip() != unit.serial_number_prefix + unit.serial_number) and sl_win.UnitEdit.texts()[
