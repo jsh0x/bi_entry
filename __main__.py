@@ -6,12 +6,12 @@ from time import sleep
 
 import pywinauto.timings
 import os
-from common import Application
+from common import Application, Unit
 from config import *
-from processes import transact, reason
+import processes
 import logging
 import datetime
-from constants import SYTELINE_WINDOW_TITLE
+from constants import SYTELINE_WINDOW_TITLE, TRANSACTION_STATUS, REASON_STATUS
 from utils.tools import fix_isoweekday
 
 # _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410', '3660426037804620468050404740384034653780366030253080',
@@ -79,7 +79,7 @@ def main(process):
 	pass
 
 
-res = mssql.execute("""SELECT DISTINCT [Serial Number] FROM PyComm WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017""")
+'''res = mssql.execute("""SELECT DISTINCT [Serial Number] FROM PyComm WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017""")
 for sn in res:
 	number = sn.Serial_Number
 	results = mssql.execute("""SELECT p.Prefix FROM Prefixes p INNER JOIN Prefixes r ON r.Product=p.Product WHERE r.Prefix = %s AND r.Type = 'N' AND p.Type = 'P'""", number[:2])
@@ -108,7 +108,7 @@ for sn in res:
 	ORDER BY s.open_date DESC""", serial_number)
 	if statuses:
 		mssql.execute("""UPDATE PyComm SET [Status] = 'Queued' WHERE [Status] = 'Skipped(Queued)' AND [Operation] = 'QC' AND [DateTime] >= 11/01/2017 AND [Serial Number] = %s""", number)
-quit()
+quit()'''
 
 # TODO: Reason/Resolution notes by-line textblock reading
 # THINK: Maybe TextBlock class? If so, using win32's "set_text" function and "texts" method would be ideal
@@ -119,8 +119,13 @@ quit()
 #       # or just:      clean_text = [line.strip() for line in reason_notes.texts()[1:] if line.strip()]
 #       # Append new lines to list 'clean_text'
 #       reason_notes.set_text('\r\n'.join(line.strip() for line in clean_text if line.strip()))
-
-
+'''_'''
+# res = mssql.execute("""SELECT [Serial Number], Operation, Parts, Status, DateTime FROM PyComm where (Status like 'Queued%' or Status like '%Queued' or Status like '%Queued%') and Status <> 'Queued' and Status <> 'Started(Queued)' order by DateTime desc""")
+# final = '\n'.join(f"{r.Serial_Number}\t{r.Operation}\t{','.join(' x '.join(str(x) for x in mssql.execute('''SELECT PartNum,Qty FROM Parts WHERE ID = %d''', int(part_id))[0]) if '-' not in part_id else ' x '.join(str(x) for x in mssql.execute('''SELECT PartNum,Qty FROM Parts WHERE PartNum = %s''', part_id)[0]) for part_id in r.Parts.split(',')) if r.Parts else ''}\t{r.Status}\t{r.DateTime}\t" for r in res)
+#
+# print(final)
+#
+# quit()
 if __name__ == '__main__':
 	app = Application.start(application_filepath)
 	log.debug("Started")
@@ -152,10 +157,11 @@ if __name__ == '__main__':
 
 				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
 				if serial:
-					for process in (reason, transact):
-						units = process.get_units(serial[0].SerialNumber)
+					for process, status in zip((processes.reason, processes.transact), (REASON_STATUS, TRANSACTION_STATUS)):
+						# units = process.get_units()
+						units = Unit.from_serial_number(serial[0].SerialNumber, status)
 						if units:
-							process.run(app, units)
+							process.main(app, units)
 				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 				if not serial:
 					log.info("No valid results, waiting...")

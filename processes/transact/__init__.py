@@ -8,11 +8,9 @@ from typing import List, Sequence
 
 import pyautogui as pag
 import pywinauto.timings
-from pywinauto import keyboard
-from pywinauto.controls import common_controls, uia_controls, win32_controls
+from pywinauto.controls import common_controls, win32_controls
 
 from common import *
-from common import PuppetMaster, DataGridNEW
 from config import *
 from constants import REGEX_CREDIT_HOLD, REGEX_NEGATIVE_ITEM, SYTELINE_WINDOW_TITLE, TRANSACTION_STATUS, WHITE
 from exceptions import *
@@ -134,9 +132,9 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 	app.ensure_form('Units')
 
 	def stage1() -> bool:
-		if debug_mode:
-			log.debug("Stage 1 started")
-			# log.debug("Stage 1: 0%")
+		unit = units[0]
+		log.debug("Stage 1 started")
+		# log.debug("Stage 1: 0%")
 		sl_win.UnitEdit.exists()
 		sl_win.UnitEdit.wait('visible', wait_duration, wait_interval)
 		if get_background_color(sl_win.UnitEdit) != WHITE:
@@ -169,14 +167,13 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 		except TimeoutError:
 			return False
 		else:
-			if debug_mode:
-				# log.debug("Stage 1: 100%")
-				log.debug("Stage 1 completed")
+			# log.debug("Stage 1: 100%")
+			log.debug("Stage 1 completed")
 			return True
 
 	def stage2() -> bool:
-		if debug_mode:
-			log.debug("Stage 2 started")
+		unit = units[0]
+		log.debug("Stage 2 started")
 		for i in range(3):
 			found_sro = app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', unit.sro)
 			if found_sro:
@@ -201,13 +198,12 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 		except TimeoutError:
 			return False
 		else:
-			if debug_mode:
-				log.debug("Stage 2 completed")
+			log.debug("Stage 2 completed")
 			return True
 
 	def stage3() -> bool:
-		if debug_mode:
-			log.debug("Stage 3 started")
+		unit = units[0]
+		log.debug("Stage 3 started")
 		timer = Timer.start()
 		if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
@@ -227,13 +223,12 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 		except TimeoutError:
 			return False
 		else:
-			if debug_mode:
-				log.debug("Stage 3 completed")
+			log.debug("Stage 3 completed")
 			return True
 
 	def stage4() -> bool:
-		if debug_mode:
-			log.debug("Stage 4 started")
+		unit = units[0]
+		log.debug("Stage 4 started")
 		if any(len(x.parts) > 0 for x in units) or debug_mode:
 			sl_win.set_focus()
 			sl_win.SROTransactionsButton.click()
@@ -343,18 +338,17 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
 			sl_win.set_focus()
 			sl_win.ServiceOrderOperationsButton.click()
-			try:
-				sl_win.SROLinesButton.wait('visible', wait_duration, wait_interval)
-			except TimeoutError:
-				return False
-			else:
-				if debug_mode:
-					log.debug("Stage 4 completed")
-				return True
+		try:
+			sl_win.SROLinesButton.wait('visible', wait_duration, wait_interval)
+		except TimeoutError:
+			return False
+		else:
+			log.debug("Stage 4 completed")
+			return True
 
 	def stage5() -> bool:
-		if debug_mode:
-			log.debug("Stage 5 started")
+		unit = units[0]
+		log.debug("Stage 5 started")
 		timer = Timer.start()
 		log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 		log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
@@ -375,7 +369,7 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 		log.debug(f"Recieved date: {sl_win.ReceivedDateEdit.texts()[0].strip()}")
 		log.debug(f"Floor date: {sl_win.FloorDateEdit.texts()[0].strip()}")
 		log.debug(f"Completed date: {sl_win.CompletedDateEdit.texts()[0].strip()}")
-		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 		common_controls.TabControlWrapper(sl_win.TabControl).select('Reasons')  # Open 'Reasons' Tab
 
 		if unit.passed_QC:
@@ -388,10 +382,14 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 				for i, row in enumerate(reason_grid.grid):
 					if reason_grid.grid[i, 0]:
 						gen_rsn = reason_grid.grid[i, 0]
-					if np.count_nonzero(row) < 4:
+					if np.count_nonzero(list(reason_grid.grid[i, :1]) + list(reason_grid.grid[i, 2:])) < 3:
 						break
 				i += 1
 				count = np.count_nonzero(row)
+				if reason_grid.scrollbar_v.exists():
+					page_down = reason_grid.scrollbar_v.PagedownButton
+					for move in range((reason_grid.row_count // 6) + 1):
+						page_down.invoke()
 				if count == 1:
 					reason_grid.set_cell('Specific Reason', i, 20)
 					reason_grid.set_cell('General Resolution', i, 10000)
@@ -404,6 +402,10 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 					reason_grid.set_cell('Specific Reason', i, 20)
 					reason_grid.set_cell('General Resolution', i, 10000)
 					reason_grid.set_cell('Specific Resolution', i, 100)
+				if reason_grid.scrollbar_v.exists():
+					page_up = reason_grid.scrollbar_v.PageupButton
+					for move in range((reason_grid.row_count // 6) + 2):
+						page_up.invoke()
 				reason_grid.select_cell(reason_grid.get_cell('General Reason', 1))
 				sleep(0.5)
 				pag.hotkey('ctrl', 's')
@@ -450,55 +452,78 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 					pass
 				finally:
 					pag.press('esc')
+			if unit.passed_QC and unit.sro_open_status['Operations']:
+				for x in units:
+					x.closed_sros += 1
 		sro_operations_time = timer.stop() / len(units)
 		for x in units:
 			x.sro_operations_time += sro_operations_time
 		sl_uia.CancelCloseButton.click()
-		if unit.passed_QC:  # FIXME: Refine recursive sro closing
-			r_sros = unit.get_rogue_sros()
-			while r_sros:
-				sl_win.ServiceOrderOperationsButton.wait('visible', 5, 0.09)
-				sleep(2)
-				app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', r_sros[0]['sro'])
-				dlg = app.get_popup(0.5)
-				count = 0
-				while dlg:
-					log.debug(f"Lines Find SRO dialog text: '{dlg.Text}'")
-					dlg[0].close()
-					count += 1
-					dlg = app.get_popup()
-				sl_win.set_focus()
-				sl_win.ServiceOrderOperationsButton.click()
-				sl_win.SROLinesButton.wait('visible', 5, 0.09)
+		try:
+			sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
+		except TimeoutError:
+			return False
+		else:
+			log.debug("Stage 5 completed")
+			return True
+
+	def stage6() -> bool:
+		unit = units[0]
+		log.debug("Stage 6 started")
+		if unit.passed_QC:
+			closed_sros = 0
+			rogue_sros = unit.get_rogue_sros()
+			if rogue_sros:
 				timer = Timer.start()
-				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
-				sl_win.set_focus()
-				status.set_keyboard_focus()
-				status.send_keystrokes('{DOWN}{DOWN}')
-				try:
-					status.send_keystrokes('^s')
-					sleep(1)
-				except TimeoutError:
-					pass
-				finally:
-					keyboard.SendKeys('{ESC}')
-				sro_operations_time = timer.stop() / len(units)
+				log.debug(f"{len(rogue_sros)} Rogue SRO's detected!")
+				for r_sro in rogue_sros:
+					sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
+					sleep(2)
+					app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', r_sro['sro'])
+					dlg = app.get_popup(0.5)
+					count = 0
+					while dlg:
+						log.debug(f"Lines Find SRO dialog text: '{dlg.Text}'")
+						dlg[0].close()
+						count += 1
+						dlg = app.get_popup()
+					sl_win.set_focus()
+					sl_win.ServiceOrderOperationsButton.click()
+					sl_win.SROLinesButton.wait('visible', wait_duration, wait_interval)
+					timer = Timer.start()
+					status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
+					sl_win.set_focus()
+					status.set_keyboard_focus()
+					status.send_keystrokes('{DOWN}{DOWN}')
+					try:
+						status.send_keystrokes('^s')
+						sleep(1)
+					except TimeoutError:
+						pass
+					finally:
+						pag.press('esc')
+					closed_sros += 1
+					log.debug(f"Rogue SRO {r_sro['sro']} closed.")
+				extra_sro_time = timer.stop() / len(units)
+				for x in units:
+					x.extra_sro_time += extra_sro_time
+					x.closed_sros += closed_sros
 				sl_uia.CancelCloseButton.click()
-				sl_win.ServiceOrderOperationsButton.wait('visible', 5, 0.09)
+				sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
 				sleep(2)
-				r_sros = unit.get_rogue_sros()
-			# else:
-			# 	sl_uia.CancelCloseButton.click()
 		sl_uia.CancelCloseButton.click()
-		sl_win.UnitEdit.wait('visible', 2, 0.09)
 		sleep(0.2)
 		sl_win.send_keystrokes('{F4}')  # Clear Filter
 		sleep(0.2)
 		sl_win.send_keystrokes('{F5}')  # Clear Filter
 		sleep(0.2)
-		if debug_mode:
-			log.debug("Stage 5 completed")
-		return True
+		try:
+			sl_win.UnitEdit.wait('visible', wait_duration, wait_interval)
+		except TimeoutError:
+			return False
+		else:
+			log.debug("Stage 6 completed")
+			return True
 
 	try:
 		done = False
@@ -507,7 +532,8 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 				if stage3():
 					if stage4():
 						if stage5():
-							done = True
+							if stage6():
+								done = True
 		if not done:
 			raise ValueError()
 	except Exception as ex:
@@ -545,7 +571,3 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 		log.info(f"Unit: {units[0].serial_number} completed")
 		for x in units:
 			x.complete(batch_amt=len(units))
-
-if __name__ == '__main__':
-	sys.argv  # TODO: Handle arguments, such as debug mode, etc
-	main()

@@ -12,7 +12,7 @@ from constants import REGEX_SQL_DATE as sql_date_regex, REGEX_SQL_TIME as sql_ti
 from utils.crypt import legacy_decrypt
 from utils.tools import prepare_string, log_friendly_string
 
-log = logging.getLogger('root')
+log = logging.getLogger('SQLLogger')
 
 SimpleValue = Union[str, int]
 

@@ -43,8 +43,6 @@ completion_dict = {'Queued': 'C1', 'Scrap': 'C2', 'Reason': 'C3'}
 Dialog = NamedTuple('Dialog', [('self', pwn.WindowSpecification), ('Title', str), ('Text', str),
                                ('Buttons', Dict[str, win32_controls.ButtonWrapper])])
 
-observer_affect = lambda: sleep(0.0001)
-
 
 # - - - - - - - - - - - - - - - - - - -  CLASSES  - - - - - - - - - - - - - - - - - - - -
 # Move classes to bi_entry.py?
@@ -384,9 +382,12 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 
 		self.batch_amt_default = 1
 
+		self.closed_sros = 0
+
 		self.sro_operations_time = 0
 		self.sro_transactions_time = 0
 		self.misc_issue_time = 0
+		self.extra_sro_time = 0
 
 		self.life_timer = Timer().start()
 		self.start_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
@@ -441,8 +442,6 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 			self.general_resolution_name = None
 		else:
 			raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.ID))
-
-
 
 	# if 'queued' not in self._status.lower():
 	# 	try:
@@ -605,19 +604,20 @@ ORDER BY s.open_date DESC""", serial_number)
 		else:
 			return False
 
-	def get_rogue_sros(self):
+	def get_rogue_sros(self) -> List[Dict[str, Any]]:
 		serial_number = self.serial_number
-		results = slsql.execute("""SELECT o.sro_num AS 'sro_num', o.sro_line AS 'sro_line', o.stat AS 'status', o.Open_date AS 'open_date' FROM fs_sro_oper o ( NOLOCK )
+		results = slsql.execute("""SELECT o.sro_num AS 'sro_num', o.sro_line AS 'sro_line', o.stat AS 'status', o.Open_date AS 'open_date' 
+FROM fs_sro_oper o ( NOLOCK )
 INNER JOIN fs_sro_serial s ( NOLOCK )
 ON o.sro_line = s.sro_line AND o.sro_num = s.sro_num
-WHERE s.ser_num = %s
+WHERE s.ser_num = %s AND o.stat = 'O'
 ORDER BY o.open_date DESC
 """, serial_number)
 		# Why open_date?
 		if results:
-			return [{'sro': res.sro_num, 'status': res.status, 'open_date': res.open_date} for res in results if (res.sro_num != self.sro and res.sro_line != self.sro_line) and (res.status == 'O')]
+			return [{'sro': res.sro_num, 'line': res.sro_line, 'status': res.status, 'open_date': res.open_date} for res in results if (res.sro_num != self.sro) and (res.sro_line != self.sro_line)]
 		else:
-			return None
+			return []
 
 	def start(self):
 		started_status = f"Started({self.status})"
@@ -659,22 +659,24 @@ Operation,
 [Part Nums Transacted], 
 [Parts Requested], 
 [Parts Transacted], 
+[SROs Closed], 
 [Input DateTime], 
 Date, 
 [Start Time], 
 [SRO Operations Time], 
 [SRO Transactions Time], 
 [Misc Issue Time], 
+[Extra SROs Time], 
 [End Time], 
 [Total Time], 
 Process, 
 Results, 
 Reason,
 Version
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s, %s, %s, %d, %d, %d, %s, %d, %s, %s, %s, %s)""",
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s)""",
 		              (self.serial_number.number, carrier_str, self.build.core, self.build.type, self.operator.username, self.operation, parts_string, parts_transacted_string,
-		               parts_count, parts_transacted_count, self.datetime.strftime('%m/%d/%Y %H:%M:%S'), self.start_date, self.start_time, self.sro_operations_time,
-		               self.sro_transactions_time, self.misc_issue_time, end_time, life_time, process, results, reason, version))
+		               parts_count, parts_transacted_count, self.closed_sros, self.datetime.strftime('%m/%d/%Y %H:%M:%S'), self.start_date, self.start_time, self.sro_operations_time,
+		               self.sro_transactions_time, self.misc_issue_time, self.extra_sro_time, end_time, life_time, process, results, reason, version))
 
 	def complete(self, *, batch_amt: int = None):
 		self.end(results='Completed', reason='None', batch_amt=batch_amt)
@@ -1703,13 +1705,19 @@ class DataGridNEW:
 			valid = self.validate_cell(cell)
 			if not valid:
 				raise ZeroDivisionError()
+		self.update_grid_size()
 		self.grid[row, self.column_names.index(column)] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+
+	def update_grid_size(self):
 		old_shape = self.master_grid.shape
 		zero_pad = np.zeros((1, old_shape[1], old_shape[2]))
 		while self.master_grid.shape[0] < self.row_count:
 			self.master_grid = np.vstack((self.master_grid, zero_pad))
 		new_shape = self.master_grid.shape
 		if old_shape != new_shape:
+			self.grid = self.master_grid[..., 0].view()
+			self.types_grid = self.master_grid[..., 1].view()
+			self.visibility_grid = self.master_grid[..., 2].view().astype(dtype=np.bool_, copy=False)
 			log.debug(f"Master Grid shape changed from {old_shape} to {new_shape}")
 
 	# TODO: singledispatch for cell input and column/row input
@@ -2360,4 +2368,4 @@ or:                                     database, detect_types
 
 __all__ = ['Unit', 'Application', 'center', 'access_grid', 'parse_numeric_ranges', 'process_pid', 'Timer',
            'is_running', 'get_screen_size', 'count_screens', 'total_screen_space', 'enumerate_screens', 'DataGrid',
-           '_check_units', 'check_serial_number']
+           'check_serial_number', 'PuppetMaster', 'SyteLinePupperMaster', 'DataGridNEW']

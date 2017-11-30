@@ -27,6 +27,7 @@ from _logging import initialize_logger
 
 # my_directory = pathlib.WindowsPath(os.environ["PROGRAMFILES"]) / 'BI_Entry'
 my_directory = pathlib.WindowsPath(os.environ["PROGRAMDATA"]) / 'BI_Entry'
+file_bytes = 104800000
 
 packages = ['matplotlib', 'numpy', 'PIL', 'psutil', 'win32api',
             'pyautogui', 'pymssql', 'pywinauto', 'win32gui']
@@ -96,14 +97,18 @@ def create_config(usr, pwd):
 			                    'UnitLogger':
 				                    {'level':    'DEBUG',
 				                     'handlers': ['errors', 'unitInfo'],
-				                     'qualname': 'UnitLogger'}},
+				                     'qualname': 'UnitLogger'},
+			                    'SQLLogger':
+				                    {'level':   'DEBUG',
+				                     'handlers': ['errors', 'sqlInfo'],
+				                     'qualname': 'SQLLogger'}},
 		                   'formatters':
 			                   {'simple':
-				                    {'format': '[{asctime}]{levelname!s:^8}| {message}',
+				                    {'format': '[{asctime}]{levelname!s:>5}| {message}',
 				                     'datefmt': '%X',
 				                     'style': '{'},
-			                    'detailed':
-				                    {'format': '[{asctime}]{levelname} | {filename}(Thread-{threadName}) | function:{funcName} | line:{lineno!s} | {message}',
+			                    'error':
+				                    {'format': '[{asctime}]{levelname} | {filename}(Thread-{threadName}) | function:{funcName} | line:{lineno!s} | {message}\n',
 				                     'datefmt': '%x %X',
 				                     'style': '{'},
 			                    'verbose':
@@ -113,34 +118,43 @@ def create_config(usr, pwd):
 			                    'unitSpecialized':
 				                    {'format': '{asctime}.{msecs:0>3.0f}|{message}',
 				                     'datefmt': '%X',
-				                     'style': '{'}},
+				                     'style': '{'},
+			                    'sqlSpecialized':
+				                    {'format':  '{asctime}.{msecs:0>3.0f}{levelname!s:>5}| {message}',
+				                     'datefmt': '%X',
+				                     'style':   '{'}},
 		                   'handlers':
 			                   {'errors':
-				                    {'class': 'FileHandler',
+				                    {'class': 'RotatingFileHandler',
 				                     'level': 'ERROR',
-				                     'formatter': 'detailed',
-				                     'args': [(log_dir / 'err.log').as_posix(), 'a']},  # 'args': [log_dir.as_posix()]},
+				                     'formatter': 'error',
+				                     'args': [(log_dir / 'err.log').as_posix(), 'a', file_bytes, 5]},  # 'args': [log_dir.as_posix()]},
 			                    'console':
 				                    {'class': 'StreamHandler',
 				                     'level': 'DEBUG',
 				                     'formatter': 'verbose'},
 			                    'info':
-				                    {'class': 'FileHandler',
+				                    {'class': 'RotatingFileHandler',
 				                     'level': 'INFO',
 				                     'formatter': 'simple',
-				                     'args': [(log_dir / 'info.log').as_posix(), 'a']},  # 'args': [(log_dir / 'info').as_posix()]},
+				                     'args': [(log_dir / 'info.log').as_posix(), 'a', file_bytes, 5]},  # 'args': [(log_dir / 'info').as_posix()]},
 			                    'debug':
-				                    {'class': 'FileHandler',
+				                    {'class': 'RotatingFileHandler',
 				                     'level': 'DEBUG',
-				                     'formatter': 'detailed',
-				                     'args': [(log_dir / 'debug.log').as_posix(), 'a']},
+				                     'formatter': 'verbose',
+				                     'args': [(log_dir / 'debug.log').as_posix(), 'a', file_bytes, 5]},
 			                    'unitInfo':
-				                    {'class': 'FileHandler',
+				                    {'class': 'RotatingFileHandler',
 				                     'level': 'DEBUG',
 				                     'formatter': 'unitSpecialized',
-				                     'args': [(log_dir / 'unitInfo.log').as_posix(), 'a']}}}}
+				                     'args': [(log_dir / 'unit.log').as_posix(), 'a', file_bytes, 5]},
+			                    'sqlInfo':
+				                    {'class':     'RotatingFileHandler',
+				                     'level':     'DEBUG',
+				                     'formatter': 'sqlSpecialized',
+				                     'args':      [(log_dir / 'sql.log').as_posix(), 'a', file_bytes, 5]}}}}
 	write_config(config_content, my_directory)
-
+#
 
 def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.PathLike], startin: Union[str, bytes, pathlib.Path, os.PathLike], icon_path: Union[str, bytes, pathlib.Path, os.PathLike]):
 	shell = Dispatch('WScript.Shell')

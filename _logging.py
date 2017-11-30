@@ -51,10 +51,11 @@ class MyExceptionFileHandler(FileHandler):
 		self._baseFilename = value
 
 
-def initialize_logger(config: Dict[str, Any]):
+# TODO: Logging file & folder naming based on year/month/day
+def initialize_logger(config: Dict[str, Any]):  # TODO: Expand logging functionality
 	for logger_name, logger_dict in config['loggers'].items():
-		if logger_name != 'root':
-			continue
+		# if logger_name != 'root':
+		# 	continue
 		logger = logging.getLogger(logger_name)
 		logger.setLevel(logger_dict['level'])
 
