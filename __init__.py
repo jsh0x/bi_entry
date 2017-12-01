@@ -175,16 +175,31 @@ def create_shortcut(name: str, exe_path: Union[str, bytes, pathlib.Path, os.Path
 try:
 	config = read_config(my_directory)
 except FileNotFoundError:
-	create_config('jredding', 'JRSep17!')
+	my_name = os.environ['COMPUTERNAME']
+	if my_name == 'BIGBERAESEW10':
+		create_config('BISync03', 'Gue$$!ngN0')
+	elif my_name == 'MFGW10PC-1':
+		create_config('jredding', 'JRSep17!')
+	elif my_name == 'MFGPC89':
+		create_config('BISync01', 'Trans@cti0nsN0')
+	elif my_name == 'MFGW10PC-27':
+		create_config('BISync02', 'Re@s0nsN0')
+	else:
+		create_config('jredding', 'JRSep17!')
+	if False:
+		create_config('bigberae', 'W!nter17')
 	config = read_config(my_directory)
-initialize_logger(config['Logging'])
+try:
+	initialize_logger(config['Logging'])
+except ModuleNotFoundError:
+	pass
 
-desktop = pathlib.WindowsPath.home() / 'Desktop'
-shortcut = desktop / 'bi_entry.lnk'
-if not shortcut.exists():
-	create_shortcut(name='BI_Entry', exe_path=my_directory / 'bi_entry.exe', startin=my_directory,
-	                icon_path=my_directory / 'bi_entry.ico')
-	sys.exit()
+# desktop = pathlib.WindowsPath.home() / 'Desktop'
+# shortcut = desktop / 'bi_entry.lnk'
+# if not shortcut.exists():
+# 	create_shortcut(name='BI_Entry', exe_path=my_directory / 'bin' / 'exe.win-amd64-3.6' / 'bi_entry.exe', startin=my_directory,
+# 	                icon_path=my_directory / 'bin' / 'exe.win-amd64-3.6' / 'bi_entry.ico')
+# 	sys.exit()
 
 bit = 8 * struct.calcsize("P")
 major, minor, micro = version.major, version.minor, version.micro

@@ -1,7 +1,7 @@
 ;!@Install@!UTF-8!
-Title="EOM Closeout"
-BeginPrompt="Start EOM?"
+Title="BI_Entry Installer"
+BeginPrompt="Install BI_Entry?"
 Progress="yes"
-Directory=""
-RunProgram="C:\\Users\\mfgpc00\Documents\\GitHub\bi_entry\\build\\exe.win-amd64-3.6\\EOM.exe"
+RunProgram="install.exe"
+Directory=".\\build\\exe.win-amd64-3.6\\"
 ;!@InstallEnd@!

@@ -426,10 +426,10 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			resolution_notes_text_lines = resolution_notes.texts()[1:]
 			resolution_notes_text = [line.strip() for line in resolution_notes_text_lines if line.strip()]
 			for unit in units:
-				reason_notes_text_pairs = [(string1, string2) for string1, string2 in zip(reason_notes_text[:-1], reason_notes_text[1:])]
+				resolution_notes_pairs = [(string1, string2) for string1, string2 in zip(resolution_notes_text[:-1], resolution_notes_text[1:])]
 				part_text = f"[{', '.join([p.display_name for p in unit.parts])}]"
 				operator_text = f"[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]"
-				if (part_text, operator_text) not in reason_notes_text_pairs:
+				if (part_text, operator_text) not in resolution_notes_pairs:
 					resolution_notes_text.append(part_text)
 					resolution_notes_text.append(operator_text)
 			resolution_notes.set_text('\r\n'.join(line.strip() for line in resolution_notes_text if line.strip()))

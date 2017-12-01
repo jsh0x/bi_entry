@@ -31,11 +31,8 @@ n = 2
 colors = {}
 val_list = ['10' + str(x).rjust(2, '0') for x in range(70)] + ['11' + str(x).rjust(2, '0') for x in range(17)]
 rem = ['1015', '1038', '1044', '1065', '1066', '1067']
-# my_name = os.environ['COMPUTERNAME']
-my_name = 'MFGW10PC-1'
+my_name = os.environ['COMPUTERNAME']
 
-user_list = ['bigberae', username, 'BISync01', 'BISync02', 'BISync03']
-pwd_list = ['W!nter17', password, 'N0Trans@cti0ns', 'N0Re@s0ns', 'N0Gue$$!ng']
 log = logging.getLogger('root')
 
 def temp(char: str):

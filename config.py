@@ -22,6 +22,8 @@ password = config['Login'].get('password', 'pwd')
 active_days = config['Schedule'].get('active_days', list(range(7)))
 active_hours = config['Schedule'].get('active_hours', list(range(24)))
 
+# active_days = list(range(7))
+# active_hours = list(range(24))
 
 from utils import MSSQL
 
