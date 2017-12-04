@@ -350,10 +350,10 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		try:
 			self.sro, self.sro_line = self.get_sro(self.serial_number)
 		except TypeError:
-			if self.status != 'Scrap':
-				raise NoSROError(serial_number=self.serial_number.number)
 			self.sro = None
 			self.sro_line = None
+			if self.status != 'Scrap':
+				raise NoSROError(serial_number=self.serial_number.number)
 		finally:
 			log.info(f"Attribute sro='{self.sro}'")
 			log.info(f"Attribute sro_line={self.sro_line}")
