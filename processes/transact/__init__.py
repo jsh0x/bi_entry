@@ -482,7 +482,13 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 				for r_sro in rogue_sros:
 					sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
 					sleep(2)
-					app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', r_sro['sro'])
+					for i in range(3):
+						found_sro = app.find_value_in_collection('Service Order Lines', 'SRO (SroNum)', r_sro['sro'])
+						if found_sro:
+							break
+						sleep(1)
+					else:
+						raise ValueError()
 					dlg = app.get_popup(0.5)
 					count = 0
 					while dlg:
