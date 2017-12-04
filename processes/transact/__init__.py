@@ -260,7 +260,10 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 				for part in unit.parts:
 					if (part.part_number in posted_parts) or (part.part_number in unposted_parts):
 						continue
-					i += 1
+					try:
+						i += 1
+					except IndexError:
+						pass
 					log.debug(f"Attempting to transact part {part}")
 					transaction_grid.set_cell('Item', i, part.part_number, specific=1)
 					part_list.append((part, i))

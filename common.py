@@ -347,11 +347,18 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 
 		self.parts_transacted = set()
 
-		self.sro, self.sro_line = self.get_sro(self.serial_number)
-		log.info(f"Attribute sro='{self.sro}'")
-		log.info(f"Attribute sro_line={self.sro_line}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO={self.sro}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Line={self.sro_line}")
+		try:
+			self.sro, self.sro_line = self.get_sro(self.serial_number)
+		except TypeError:
+			if self.status != 'Scrap':
+				raise NoSROError(serial_number=self.serial_number.number)
+			self.sro = None
+			self.sro_line = None
+		finally:
+			log.info(f"Attribute sro='{self.sro}'")
+			log.info(f"Attribute sro_line={self.sro_line}")
+			u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO={self.sro}")
+			u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Line={self.sro_line}")
 
 		self.eff_date = self.get_eff_date(self.serial_number)
 		eff_date_str = self.eff_date.strftime('%m/%d/%Y')

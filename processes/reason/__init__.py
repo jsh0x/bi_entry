@@ -253,7 +253,10 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			resolution_pairs = [(gen, spec) for gen, spec in zip(reason_grid.grid[..., 2], reason_grid.grid[..., 3])]
 			if (unit.general_resolution, unit.specific_resolution) in resolution_pairs:
 				continue
-			i += 1
+			try:
+				i += 1
+			except IndexError:
+				pass
 			row = reason_grid.grid[i]
 			count = np.count_nonzero(row)
 			if reason_grid.scrollbar_v.exists():

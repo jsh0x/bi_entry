@@ -13,6 +13,7 @@ import logging
 import datetime
 from constants import SYTELINE_WINDOW_TITLE, TRANSACTION_STATUS, REASON_STATUS
 from utils.tools import fix_isoweekday
+from exceptions import *
 
 # _assorted_lengths_of_string = ('30803410313510753080335510753245107531353410', '3660426037804620468050404740384034653780366030253080',
 #                                '474046203600486038404260432039003960', '63004620S875486038404260S875432039003960',
@@ -156,9 +157,15 @@ if __name__ == '__main__':
 				if serial:
 					for process, status in zip((processes.reason, processes.transact), (REASON_STATUS, TRANSACTION_STATUS)):
 						# units = process.get_units()
-						units = Unit.from_serial_number(serial[0].SerialNumber, status)
-						if units:
-							process.main(app, units)
+						try:
+							units = Unit.from_serial_number(serial[0].SerialNumber, status)
+						except NoSROError:
+							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No SRO({status2})', serial[0].SerialNumber, status2))  # or   """... AND Status like %s""", (f'No SRO({status2})', serial[0].SerialNumber, f'%{status2}%'))"""
+							break
+						else:
+							if units:
+								process.main(app, units)
 				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
 				if not serial:
 					log.info("No valid results, waiting...")
