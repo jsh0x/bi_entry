@@ -424,19 +424,19 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			reason_notes.set_text('\r\n'.join(line.strip() for line in reason_notes_text if line.strip()))
 			reason_notes.send_keystrokes('^s')
 
-		if any(len(x.parts) > 0 for x in units):
-			resolution_notes = sl_win.ResolutionNotesEdit
-			resolution_notes_text_lines = resolution_notes.texts()[1:]
-			resolution_notes_text = [line.strip() for line in resolution_notes_text_lines if line.strip()]
-			for unit in units:
-				resolution_notes_pairs = [(string1, string2) for string1, string2 in zip(resolution_notes_text[:-1], resolution_notes_text[1:])]
-				part_text = f"[{', '.join([p.display_name for p in unit.parts])}]"
-				operator_text = f"[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]"
-				if (part_text, operator_text) not in resolution_notes_pairs:
-					resolution_notes_text.append(part_text)
-					resolution_notes_text.append(operator_text)
-			resolution_notes.set_text('\r\n'.join(line.strip() for line in resolution_notes_text if line.strip()))
-			resolution_notes.send_keystrokes('^s')
+		#Because people -_-   # if any(len(x.parts) > 0 for x in units):
+		resolution_notes = sl_win.ResolutionNotesEdit
+		resolution_notes_text_lines = resolution_notes.texts()[1:]
+		resolution_notes_text = [line.strip() for line in resolution_notes_text_lines if line.strip()]
+		for unit in units:
+			resolution_notes_pairs = [(string1, string2) for string1, string2 in zip(resolution_notes_text[:-1], resolution_notes_text[1:])]
+			part_text = f"[{', '.join([p.display_name for p in unit.parts])}]"
+			operator_text = f"[{unit.operator} {unit.datetime.strftime('%m/%d/%Y')}]"
+			if (part_text, operator_text) not in resolution_notes_pairs:
+				resolution_notes_text.append(part_text)
+				resolution_notes_text.append(operator_text)
+		resolution_notes.set_text('\r\n'.join(line.strip() for line in resolution_notes_text if line.strip()))
+		resolution_notes.send_keystrokes('^s')
 
 		if not debug_mode:
 			pag.hotkey('ctrl', 's')
@@ -553,6 +553,11 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			else:
 				x.skip(ex, batch_amt=len(units))
 		if sl_uia.exists(2, 0.09):
+			dlg = app.get_popup()
+			while dlg:
+				log.debug(f"Operations Cancel Close dialog text: '{dlg.Text}'")
+				dlg[0].close()
+				dlg = app.get_popup()
 			if 'SRO Transactions' in app.forms:
 				sl_uia.CancelCloseButton.click()
 				dlg = app.get_popup()

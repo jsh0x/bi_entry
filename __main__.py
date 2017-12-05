@@ -163,6 +163,14 @@ if __name__ == '__main__':
 							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
 								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No SRO({status2})', serial[0].SerialNumber, status2))  # or   """... AND Status like %s""", (f'No SRO({status2})', serial[0].SerialNumber, f'%{status2}%'))"""
 							break
+						except NoOpenSROError as ex:
+							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No Open SRO({status2})({ex.sro})', serial[0].SerialNumber, status2))
+							break
+						except NewUnitError:
+							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'New Unit({status2})', serial[0].SerialNumber, status2))
+							break
 						else:
 							if units:
 								process.main(app, units)

@@ -120,8 +120,10 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 			for res in results:
 				if slsql.execute("""SELECT ser_num FROM serial ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)):
 					return cls(res.Prefix, number)
-			else:
-				raise ValueError()  # TODO: Specify error
+			for res in results:
+				if slsql.execute("""SELECT ser_num FROM fs_unit ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)):
+					raise NewUnitError(serial_number=number)
+			raise ValueError()  # TODO: Specify error
 
 	class Build(UserString):  # FIXME: UNIT TEST THIS
 		def __init__(self, prefix: str, core: str, suffix: str = None, *, type_: str, carrier_ref: Union[str, int] = None, carrier: str = None):
@@ -367,8 +369,11 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 
 		self.sro_open_status = self.get_statuses(self.serial_number)
 		log.info(f"Attribute sro_open_status={self.sro_open_status}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Lines Status={self.sro_open_status['Lines']}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Operations Status={self.sro_open_status['Operations']}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Lines Status Open={self.sro_open_status['Lines']}")
+		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Operations Status Open={self.sro_open_status['Operations']}")
+
+		if not self.sro_open_status['Lines']:
+			raise NoOpenSROError(serial_number=self.serial_number.number, sro=self.sro)
 
 		self.location = self.get_location(self.serial_number)
 		log.info(f"Attribute location='{self.location}'")
@@ -693,7 +698,10 @@ WHERE Id = %d""", (completion_dict[self.status], self.ID))
 
 	@singledispatch
 	def skip(self, reason=None, *, batch_amt: int = None):
-		reason = reason.status if issubclass(reason.__class__, BI_EntryError) and hasattr(reason, 'status') else 'Skipped'
+		try:
+			reason = reason.status
+		except AttributeError:
+			reason = 'Skipped'
 		addon = f"({self.sro})" if reason == 'No Open SRO' else ""
 		self.end(results='Skipped', reason=reason, batch_amt=batch_amt)
 		status_string = f"{reason}({self.status}){addon}"
@@ -883,15 +891,20 @@ class Application(psutil.Process):
 			sleep(0.02)
 			sl_win.send_keystrokes('v')
 			find_window = self.win32['Find']
-			find_window.InCollectionComboBox.select(collection)
-			find_window.InPropertyComboBox.select(property_)
-			find_window.FindEdit.set_text(value)
-			if case_sensitive:
-				find_window.CaseSensitiveButton.check()
-			find_window.set_focus()
-			find_window.OKButton.click()
+			if find_window.exists():
+				find_window.set_focus()
+				find_window.InCollectionComboBox.select(collection)
+				find_window.InPropertyComboBox.select(property_)
+				find_window.FindEdit.set_text(value)
+				if case_sensitive:
+					find_window.CaseSensitiveButton.check()
+				find_window.set_focus()
+				find_window.OKButton.click()
+			else:
+				self.win32.top_window().send_keystrokes('{ESC}')
+				return False
 		except Exception:
-			sl_win.send_keystrokes('{ESC}')
+			self.win32.top_window().send_keystrokes('{ESC}')
 			return False
 		else:
 			return True

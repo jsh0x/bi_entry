@@ -1,7 +1,7 @@
 #! python3 -W ignore
 # coding=utf-8
 __author__ = 'jsh0x'
-__version__ = '1.5.0'
+__version__ = '1.5.3'
 
 import json
 import os

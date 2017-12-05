@@ -365,6 +365,11 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			else:
 				x.skip(ex, batch_amt=len(units))
 		if sl_uia.exists(2, 0.09):
+			dlg = app.get_popup()
+			while dlg:
+				log.debug(f"Operations Cancel Close dialog text: '{dlg.Text}'")
+				dlg[0].close()
+				dlg = app.get_popup()
 			if 'SRO Transactions' in app.forms:
 				sl_uia.CancelCloseButton.click()
 				dlg = app.get_popup()

@@ -19,6 +19,7 @@ class BI_EntryError(Exception):
 	"""Base exception class. All other exceptions inherit
 	from this one.
 	"""
+
 	def __init__(self, status: str, msg=""):
 		Exception.__init__(self, msg)
 		self.status = status
@@ -30,6 +31,7 @@ class BI_EntryError(Exception):
 		return ret.strip()
 
 	__str__ = __repr__
+
 
 # TODO: DataGrid-Specific Error
 # General/Input-caused error - - - - - - - - - - - - - -
@@ -79,6 +81,8 @@ class InvalidReasonCodeError(BI_EntryError, ValueError):
 		self.status = 'Invalid Reason Code'
 		self.reason_code = reason_code
 		self.spec_id = spec_id
+
+
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -111,6 +115,8 @@ class SQLResultError(SQLError, ValueError):
 	def __init__(self, cmd: str, msg=""):
 		msg2 = f"Invalid response from query '{cmd}'"
 		ValueError.__init__(self, "%s\n%s" % (msg2, msg))
+
+
 # - - - - - - - - - - - - - - - - - - - - - - - -
 
 
@@ -118,13 +124,14 @@ class SQLResultError(SQLError, ValueError):
 class SyteLineError(BI_EntryError):
 	def __init__(self, msg=""):
 		msg2 = ""
-		super().__init__("%s\n%s" % (msg2, msg))
+		super().__init__('SyteLine Error', "%s\n%s" % (msg2, msg))
 
 
 class SyteLineFilterInPlaceError(SyteLineError):
 	def __init__(self, value, msg=""):
 		msg2 = f"'Filter In Place' failed for value '{value}'"
 		super().__init__("%s\n%s" % (msg2, msg))
+		self.status = 'Filter In Place'
 
 
 class SyteLineFormError(SyteLineError):
@@ -145,10 +152,21 @@ class SyteLineCreditHoldError(SyteLineError):
 		msg2 = f"Customer '{cust}' on credit hold"
 		# self._cust = cust
 		super().__init__("%s\n%s" % (msg2, msg))
+		self.status = 'Credit Hold'
 
 
 class NegativeQuantityWarning(BI_EntryWarning):
 	def __init__(self, part: str, qty: int, loc: str, msg=""):
 		msg2 = f"Quantity for part '{part}' = -{qty}.000 in location '{loc}'"
 		super().__init__("%s\n%s" % (msg2, msg))
+
+
+class NewUnitError(SyteLineError):
+	def __init__(self, serial_number: str, msg=""):
+		msg2 = f"Unit with serial number '{serial_number}' is too new and must pass through QC first"
+		super().__init__("%s\n%s" % (msg2, msg))
+		self.status = 'New Unit'
+		self.serial_number = serial_number
+
 # - - - - - - - - - - - - - - - - - - - - - - - -
+# TODO: Individual status modifiers for each error

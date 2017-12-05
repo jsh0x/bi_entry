@@ -21,7 +21,7 @@ from cx_Freeze import setup, Executable
 
 config = configparser.ConfigParser()
 config.read_file(open('config.ini'))
-__version__ = '1.5.1'
+__version__ = '1.5.3'
 major, minor, micro = map(int, map(str.strip, __version__.split('.', 3)))
 version = f"{major}.{minor}.{micro}"
 
