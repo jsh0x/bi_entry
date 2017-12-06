@@ -253,12 +253,12 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 				if not row[1]:
 					empty_row_index = i
 					break
-
+			overall_parts = set()
 			for unit in units:
 				part_list = []
 				timer = Timer.start()
 				for part in unit.parts:
-					if (part.part_number in posted_parts) or (part.part_number in unposted_parts):
+					if (part.part_number in posted_parts) or (part.part_number in unposted_parts) or (part in overall_parts):
 						continue
 					try:
 						i += 1
@@ -274,6 +274,7 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 					# transaction_grid.select_cell(transaction_grid.get_cell('Item', i))
 					# pag.press('enter', 10, interval=0.05)
 					unit.parts_transacted.add(part)
+					overall_parts.add(part)
 					pag.press('enter')
 					pag.press('esc', 10)
 
