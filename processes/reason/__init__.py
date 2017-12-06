@@ -317,7 +317,7 @@ def main(app: Application, units: Sequence[Unit], *, debug_mode: bool=False):
 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 			status.send_keystrokes('^s')
 			status.wait_for_idle()
-			if unit.sro_open_status['Operations']:
+			if not unit.sro_open_status['Operations']:
 				status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
 				sl_win.set_focus()
 				status.set_keyboard_focus()
