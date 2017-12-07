@@ -9,15 +9,18 @@ from logging import FileHandler, Handler, StreamHandler
 
 config = read_config(my_directory)
 
-version = config['Default'].get('version', '?.?.?')
+try:
+    version = config['Default'].get('version', '?.?.?')
+except:
+    version = '?.?.?'
 
 application_filepath = config['Paths'].get('syteline_exe', None)
 
 username = config['Login'].get('username', 'usr')
 password = config['Login'].get('password', 'pwd')
 
-# username = 'bigberae'  ###
-# password = 'W!nter17'  ###
+username = 'bigberae'  ###
+password = 'W!nter17'  ###
 
 active_days = config['Schedule'].get('active_days', list(range(7)))
 active_hours = config['Schedule'].get('active_hours', list(range(24)))
