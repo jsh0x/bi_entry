@@ -1605,7 +1605,14 @@ class DataGridNEW:
 		else:
 			self.column_names = self.get_column_names()
 		self.column_number_dict = {i: name for i, name in enumerate(self.column_names)}
-		self.master_grid = np.zeros((self.row_count, len(self.column_names), 3), dtype=object)
+		self.column_name_dict = {}
+		try:
+			for i, name in enumerate(self.get_column_names()):
+				if name not in self.column_name_dict:
+					self.column_name_dict[name] = i
+		except Exception:
+			pass
+		self.master_grid = np.empty((self.row_count, len(self.column_names), 3), dtype=object)
 		self.grid = self.master_grid[..., 0].view()
 		self.types_grid = self.master_grid[..., 1].view()
 		self.visibility_grid = self.master_grid[..., 2].view().astype(dtype=np.bool_, copy=False)
@@ -1670,9 +1677,7 @@ class DataGridNEW:
 	def select_cell(self, cell: WindowSpecification):
 		cell.invoke()
 
-	def populate(self):
-		# TODO: Only do requested columns and/or rows
-		# THINK: Use row value string to define values?
+	def legacy_populate(self):
 		for y in np.arange(self.grid.shape[0], dtype=np.intp):
 			for x in np.arange(self.grid.shape[1], dtype=np.intp):
 				col = self.column_number_dict[x]
@@ -1682,6 +1687,27 @@ class DataGridNEW:
 				except Exception:
 					cell = self.get_cell(col, y + 1, specific=1)
 					self.grid[y, x] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+
+	def parse_row(self, y: int, row_values: str):
+		if isinstance(row_values, list) or isinstance(row_values, tuple):
+			row_values = row_values[0]
+		row = [self.pyType_to_cellType(val.strip()) for val in row_values.split(';')]
+		if not (len(row) == 1 and row[0] == '(Create New)'):
+			for x, name in enumerate(self.column_names):
+				i = self.column_name_dict[name]
+				self.grid[y, x] = row[i]
+
+	def get_rows(self):
+		return {int(row_number_regex.fullmatch(row.texts()[0].strip()).group('row_number')): row for row in self.control.children() if row_number_regex.fullmatch(row.texts()[0].strip())}
+
+	def populate(self):
+		# TODO: Only do requested columns and/or rows
+		# THINK: Use row value string to define values?
+		rows = self.get_rows()
+		for i, row in rows.items():
+			worker = threading.Thread(target=self.parse_row, args=(i, row.legacy_properties()['Value']), daemon=True)
+			worker.start()
+		worker.join()
 
 	def row(self, name: str):
 		pywinauto.timings.wait_until_passes(20, 0.09, self.control.children, ValueError)
