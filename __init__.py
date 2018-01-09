@@ -179,13 +179,13 @@ except FileNotFoundError:
 	if my_name == 'BIGBERAESEW10':
 		create_config('BISync03', 'Gue$$!ngN0')
 	elif my_name == 'MFGW10PC-1':
-		create_config('jredding', 'JRSep17!')
+		create_config('jredding', 'JRJan18!')
 	elif my_name == 'MFGPC89':
 		create_config('BISync01', 'Trans@cti0nsN0')
 	elif my_name == 'MFGW10PC-27':
 		create_config('BISync02', 'Re@s0nsN0')
 	else:
-		create_config('jredding', 'JRSep17!')
+		create_config('jredding', 'JRJan18!')
 	if False:
 		create_config('bigberae', 'W!nter17')
 	config = read_config(my_directory)

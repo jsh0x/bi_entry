@@ -6,12 +6,12 @@ from typing import List
 
 import pyautogui as pag
 import pywinauto.timings
+from core import *
+from exceptions import *
 from pywinauto import keyboard
 from pywinauto.controls import common_controls, uia_controls, win32_controls
 
-from common import *
-from constants import SYTELINE_WINDOW_TITLE
-from exceptions import *
+from bi_entry.constants import SYTELINE_WINDOW_TITLE
 
 log = logging.getLogger(__name__)
 reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
@@ -19,7 +19,8 @@ reason_dict = {'Monitoring': 22, 'RTS': 24, 'Direct': 24}
 
 # TODO: Rework process
 
-def Scrap(app: Application, units: List[Unit]):
+def main(app: Application, units: List[Unit]):
+	log.debug(len(units))
 	completed_units = []
 	global_units = []
 	try:

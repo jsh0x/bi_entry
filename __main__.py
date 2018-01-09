@@ -124,145 +124,6 @@ quit()'''
 # print(final)
 #
 # quit()
-# def quick_fix():
-# 	from time import sleep
-# 	import numpy as np
-#
-# 	import pyautogui as pag
-# 	import pywinauto.timings
-# 	from pywinauto.controls import common_controls, uia_controls, win32_controls
-# 	from constants import SYTELINE_WINDOW_TITLE
-# 	from constants import WHITE
-# 	from utils.tools import get_background_color
-# 	serials = """1121932
-# 	1127035
-# 	1127047
-# 	1137694
-# 	1141151
-# 	1144203
-# 	1147406
-# 	1155304
-# 	1161067
-# 	1301487
-# 	1302153
-# 	1302181
-# 	1303537
-# 	1304276
-# 	1304629
-# 	1307927
-# 	1310577
-# 	1315835
-# 	1316784
-# 	1319483
-# 	1320947
-# 	1326074
-# 	1327436
-# 	1327507
-# 	1327626
-# 	1328556
-# 	1329539
-# 	1331110
-# 	1333530
-# 	1342422
-# 	1352666
-# 	1353079
-# 	6100151
-# 	6101949
-# 	6501082
-# 	6501664
-# 	6503127
-# 	6503454
-# 	6503603
-# 	7750617
-# 	7751912
-# 	7758426
-# 	7760219
-# 	7760652
-# 	7762971
-# 	7763500
-# 	7764195
-# 	7765692
-# 	7768866
-# 	7769995
-# 	7770126
-# 	7771256
-# 	7772329
-# 	7774954
-# 	7775986
-# 	7777253
-# 	7777831
-# 	7780848
-# 	9308825
-# 	9421839
-# 	9441661
-# 	9457589
-# 	9461628
-# 	9467680
-# 	9801623
-# 	9803419
-# 	9803645
-# 	9803770
-# 	9804654
-# 	9807064
-# 	9807228
-# 	9807544
-# 	9809409
-# 	9809622
-# 	9809798
-# 	9811296
-# 	9811835
-# 	9812581""".splitlines()
-# 	app = Application.start(application_filepath)
-# 	app.log_in(username, password)  # If not logged in and within schedule
-# 	wait_duration = 60  # slow speed
-# 	wait_duration = 15  # normal speed
-#
-# 	wait_interval = 1  # slow speed
-# 	wait_interval = 0.09  # normal & fast speeds
-# 	prefix_dict = {'98': 'TD', '11': 'OT', '13': 'LC', '93': 'HGS', '94': 'HGM', '77': 'HGR', '65': 'HB', '61': 'HB'}
-# 	for sn in serials:
-# 		sn = sn.strip()
-# 		app.ensure_form("Units")
-# 		sl_win = app.win32.window(title_re=SYTELINE_WINDOW_TITLE)
-# 		sl_uia = app.uia.window(title_re=SYTELINE_WINDOW_TITLE)
-# 		sl_win.send_keystrokes('{F4}')
-# 		sl_win.UnitEdit.exists()
-# 		sl_win.UnitEdit.wait('visible', wait_duration, wait_interval)
-# 		if get_background_color(sl_win.UnitEdit) != WHITE:
-# 			sl_win.send_keystrokes('{F4}')
-# 			sl_win.send_keystrokes('{F5}')
-# 		pfx = prefix_dict.get(sn[:2], '*')
-# 		sl_win.UnitEdit.set_text(pfx+sn)
-# 		sleep(0.2)
-# 		sl_win.send_keystrokes('{F4}')
-# 		sleep(1)
-# 		sl_win.set_focus()
-# 		sl_win.ServiceOrderLinesButton.click()
-# 		sl_win.ServiceOrderOperationsButton.wait('visible', wait_duration, wait_interval)
-# 		sleep(1)
-# 		sl_win.set_focus()
-# 		sl_win.ServiceOrderOperationsButton.click()
-# 		sl_win.SROLinesButton.wait('visible', wait_duration, wait_interval)
-# 		if sl_win.StatusEdit3.texts()[0].strip() == 'Closed':
-# 			status = win32_controls.EditWrapper(sl_win.StatusEdit3.element_info)
-# 			status.set_text('Open')
-# 			status.click_input()
-# 			pag.press('tab')
-# 			pag.press('esc')
-# 			save = sl_uia.SaveButton
-# 			save.click()
-# 		sl_uia.CancelCloseButton.click()
-# 		sl_uia.CancelCloseButton.click()
-# 		sl_win.UnitEdit.wait('visible', 2, 0.09)
-# 		sleep(0.2)
-# 		sl_win.send_keystrokes('{F4}')  # Clear Filter
-# 		sleep(0.2)
-# 		sl_win.send_keystrokes('{F5}')  # Clear Filter
-# 		sleep(0.2)
-# 		sl_win.UnitEdit.wait('visible', wait_duration, wait_interval)
-# 		print(sn)
-# quick_fix()
-# quit()
 if __name__ == '__main__':
 	app = Application.start(application_filepath)
 	log.debug("Started")
@@ -292,28 +153,33 @@ if __name__ == '__main__':
 							dlg = app.win32.window(class_name="#32770")
 					app.ensure_form('Units')
 
-				serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
-				if serial:
-					for process, status in zip((processes.reason, processes.transact), (REASON_STATUS, TRANSACTION_STATUS)):
-						# units = process.get_units()
-						try:
-							units = Unit.from_serial_number(serial[0].SerialNumber, status)
-						except NoSROError:
-							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
-								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No SRO({status2})', serial[0].SerialNumber, status2))  # or   """... AND Status like %s""", (f'No SRO({status2})', serial[0].SerialNumber, f'%{status2}%'))"""
-							break
-						except NoOpenSROError as ex:
-							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
-								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No Open SRO({status2})({ex.sro})', serial[0].SerialNumber, status2))
-							break
-						except NewUnitError:
-							for status2 in (REASON_STATUS, TRANSACTION_STATUS):
-								mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'New Unit({status2})', serial[0].SerialNumber, status2))
-							break
-						else:
-							if units:
-								process.main(app, units)
-				mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
+				if False:
+					serial = mssql.execute("""SELECT SerialNumber from PuppetMaster WHERE MachineName = %s""", my_name)
+					if serial:
+						for process, status in zip((processes.reason, processes.transact), (REASON_STATUS, TRANSACTION_STATUS)):
+							# units = process.get_units()
+							try:
+								units = Unit.from_serial_number(serial[0].SerialNumber, status)
+							except NoSROError:
+								for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+									mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No SRO({status2})', serial[0].SerialNumber, status2))  # or   """... AND Status like %s""", (f'No SRO({status2})', serial[0].SerialNumber, f'%{status2}%'))"""
+								break
+							except NoOpenSROError as ex:
+								for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+									mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'No Open SRO({status2})({ex.sro})', serial[0].SerialNumber, status2))
+								break
+							except NewUnitError:
+								for status2 in (REASON_STATUS, TRANSACTION_STATUS):
+									mssql.execute("""UPDATE PyComm SET Status = %s WHERE [Serial Number] = %s AND Status = %s""", (f'New Unit({status2})', serial[0].SerialNumber, status2))
+								break
+							else:
+								if units:
+									process.main(app, units)
+					mssql.execute(f"UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = '{my_name}'")
+				else:
+					serial = mssql.execute("""SELECT TOP 100 [Id] from PyComm WHERE Status = %s""", 'Scrap')
+					units = [Unit(ID.Id) for ID in serial]
+					processes.scrap.main(app, units)
 				if not serial:
 					log.info("No valid results, waiting...")
 					sleep(10)

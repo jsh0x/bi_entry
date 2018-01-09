@@ -29,7 +29,7 @@ verizon_only = {'100'}
 numeric_carriers = {'200', '206'}
 alphabetic_carriers = {'600', '110', '625', '680', '800', '825'}
 cellular_builds = verizon_only | numeric_carriers | alphabetic_carriers
-carrier_dict = {'V': 'Verizon', 'S': 'Sprint', 3: 'Verizon', 4: 'Sprint', 2: None, None: 'Verizon'}
+carrier_dict = {'V': 'Verizon', 'S': 'Sprint', 3: 'Verizon', 4: 'Sprint', 2: None, None: 'Verizon', 'v': 'Verizon', 's': 'Sprint', }
 unit_type_dict = {'M': 'Monitoring', 'R': 'Refurb', 'T': 'Trial', 'DEMO': 'Demo'}
 
 WHITE = (255, 255, 255)

@@ -112,7 +112,7 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 			self.data = str(self._prefix) + str(self._number)
 
 		@classmethod
-		def from_base_number(cls, number: str):
+		def from_base_number(cls, number: str, except_new: bool=False):
 			number = prepare_string(number, remove_all_whitespace=True)
 			results = mssql.execute("""SELECT p.Prefix FROM Prefixes p INNER JOIN Prefixes r ON r.Product=p.Product WHERE r.Prefix = %s AND r.Type = 'N' AND p.Type = 'P'""", number[:2])
 			if not results:
@@ -121,8 +121,11 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 				if slsql.execute("""SELECT ser_num FROM serial ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)):
 					return cls(res.Prefix, number)
 			for res in results:
-				if slsql.execute("""SELECT ser_num FROM fs_unit ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)):
+				if slsql.execute("""SELECT ser_num FROM fs_unit ( NOLOCK ) WHERE ser_num = %s""", (res.Prefix + number)) and not except_new:
 					raise NewUnitError(serial_number=number)
+			if except_new:
+				for res in results:
+					return cls(res.Prefix, number)
 			raise ValueError()  # TODO: Specify error
 
 	class Build(UserString):  # FIXME: UNIT TEST THIS
@@ -188,9 +191,18 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 				return cls(prefix, core_base, type_=suffix_default, carrier_ref=carrier, carrier=carrier_dict[carrier])
 
 		@classmethod
-		def from_SerialNumber(cls, serial_number: 'SerialNumber', suffix: str):
+		def from_SerialNumber(cls, serial_number: 'SerialNumber', suffix: str, except_new: bool=False):
 			build = slsql.execute("""SELECT item FROM serial ( NOLOCK ) WHERE ser_num = %s""", serial_number)
-			return cls.from_string(build[0].item, suffix_default=suffix)
+			if not except_new:
+				return cls.from_string(build[0].item, suffix_default=suffix)
+			else:
+				i = 1
+				while not build:
+					build = slsql.execute("""SELECT TOP 1 item FROM serial ( NOLOCK ) WHERE ser_num LIKE %s""", str(serial_number)[:-i] + '%')
+					i += 1
+					if i == 6:
+						raise ValueError()  # TODO: Specify error
+				return cls.from_string(build[0].item, suffix_default=suffix)
 
 		def __repr__(self):
 			if self.carrier:
@@ -303,7 +315,7 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		if not data:
 			raise ValueError()  # TODO: Specify error
 
-		self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number)
+		self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number, data[0].Status == 'Scrap')
 		log.info(f"Attribute serial_number='{self.serial_number}'")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|ID={self.ID}")
 
@@ -311,7 +323,7 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		log.info(f"Attribute product='{self.product}'")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Product={self.product}")
 
-		self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix)
+		self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix, data[0].Status == 'Scrap')
 		log.info(f"Attribute build='{self.build}'")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Build={self.build}")
 
@@ -323,7 +335,10 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		log.info(f"Attribute parts={part_string}")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Parts={part_string}")
 
-		self.operation = self.Operation.from_string(data[0].Operation, self.product)
+		if data[0].Status == 'Scrap':
+			self.operation = 'Scrap'
+		else:
+			self.operation = self.Operation.from_string(data[0].Operation, self.product)
 		log.info(f"Attribute operation='{self.operation}'")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Operation={self.operation}")
 
@@ -362,17 +377,33 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 			u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO={self.sro}")
 			u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Line={self.sro_line}")
 
-		self.eff_date = self.get_eff_date(self.serial_number)
-		eff_date_str = self.eff_date.strftime('%m/%d/%Y')
+		if self.status == 'Scrap':
+			try:
+				self.eff_date = self.get_eff_date(self.serial_number)
+				eff_date_str = self.eff_date.strftime('%m/%d/%Y')
+			except AttributeError:
+				years = 20
+				self.eff_date = self.datetime - datetime.timedelta(weeks=50 * years)
+				self.eff_date = self.get_oldest_datetime(self.serial_number)
+				eff_date_str = self.eff_date.strftime('%m/%d/%Y')
+		else:
+			self.eff_date = self.get_eff_date(self.serial_number)
+			eff_date_str = self.eff_date.strftime('%m/%d/%Y')
 		log.info(f"Attribute eff_date={eff_date_str}")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Eff Date={eff_date_str}")
 
-		self.sro_open_status = self.get_statuses(self.serial_number)
+		if self.status == 'Scrap':
+			self.sro_open_status = self.get_statuses(self.serial_number)
+			if self.sro_open_status is None:
+				self.sro_open_status = {'Lines': True,
+				                        'Operations': True}
+		else:
+			self.sro_open_status = self.get_statuses(self.serial_number)
 		log.info(f"Attribute sro_open_status={self.sro_open_status}")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Lines Status Open={self.sro_open_status['Lines']}")
 		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Operations Status Open={self.sro_open_status['Operations']}")
 
-		if not self.sro_open_status['Lines']:
+		if not self.sro_open_status['Lines'] and self.status != 'Scrap':
 			raise NoOpenSROError(serial_number=self.serial_number.number, sro=self.sro)
 
 		self.location = self.get_location(self.serial_number)

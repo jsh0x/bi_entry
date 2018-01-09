@@ -1,6 +1,6 @@
 """Make sure the SyteLine Application is currently up and running"""
 
-from processes import renew_password, runthrough, status_report, transact, reason
+from processes import renew_password, runthrough, status_report, transact, reason, scrap
 # from _common import Application, PuppetMaster, is_running
 # from config import *
 
