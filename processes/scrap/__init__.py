@@ -253,6 +253,14 @@ def main(app, units):
 						reason_grid.set_cell('Specific Reason', i, 20)
 						reason_grid.set_cell('General Resolution', i, unit.general_resolution)
 						reason_grid.set_cell('Specific Resolution', i, unit.specific_resolution)
+
+					dlg = app.get_popup(2)
+					while dlg:
+						if (str(unit.specific_resolution) == '702' or str(unit.specific_resolution) == '705') and (str(unit.specific_resolution) in dlg.Text):
+							log.debug("Detected '702' or '705' in dialog text")
+							dlg[0].send_keystrokes('n')
+						dlg = app.get_popup()
+
 					if reason_grid.scrollbar_v.exists():
 						page_up = reason_grid.scrollbar_v.PageupButton
 						for move in range((reason_grid.row_count // 6) + 2):
