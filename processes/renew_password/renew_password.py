@@ -1,6 +1,7 @@
 import logging
 
-from common import PuppetMaster
+from core import PuppetMaster
+
 from constants import SYTELINE_WINDOW_TITLE
 
 log = logging.getLogger(__name__)

@@ -5,16 +5,19 @@ import logging
 import pymssql
 import sqlite3
 from abc import ABC, abstractmethod
-from collections import namedtuple, UserString, UserDict, UserList
+from collections import UserDict, UserList, UserString, namedtuple
 from typing import NamedTuple, Tuple, Union, overload
 
-from constants import REGEX_SQL_DATE as sql_date_regex, REGEX_SQL_TIME as sql_time_regex
+from exceptions import *
 from utils.crypt import legacy_decrypt
-from utils.tools import prepare_string, log_friendly_string
+from utils.tools import log_friendly_string, prepare_string
+
+from constants import REGEX_SQL_DATE as sql_date_regex, REGEX_SQL_TIME as sql_time_regex
 
 log = logging.getLogger('SQLLogger')
 
 SimpleValue = Union[str, int]
+
 
 def sql_standardize(value):
 	if isinstance(value, (str, UserString)):
@@ -29,6 +32,7 @@ def sql_standardize(value):
 		return {sql_standardize(k): sql_standardize(v) for k, v in value.items()}
 	else:
 		return value
+
 
 class SQL(ABC):
 	def __init__(self, *, quiet: bool, **kwargs):
@@ -81,7 +85,8 @@ class MSSQL(SQL):
 		except Exception:
 			raise ConnectionError("Connection to SQL Server failed!")
 		else:
-			return cls(server=legacy_decrypt(address, key), user=legacy_decrypt(username, key), password=legacy_decrypt(password, key), database=legacy_decrypt(database, key), login_timeout=10, quiet=quiet)
+			return cls(server=legacy_decrypt(address, key), user=legacy_decrypt(username, key), password=legacy_decrypt(password, key), database=legacy_decrypt(database, key), login_timeout=10,
+			           quiet=quiet)
 
 	@property
 	def _conn(self) -> pymssql.Connection:
@@ -132,7 +137,7 @@ class SQLite(SQL):
 		except Exception:
 			raise ConnectionError("Connection to SQLite3 Database failed!")
 		else:
-			return cls(database=datetime, detect_types=detect_types, quiet=quiet)
+			return cls(database=database, detect_types=detect_types, quiet=quiet)
 
 	@property
 	def _conn(self) -> sqlite3.Connection:
@@ -150,7 +155,10 @@ class SQLite(SQL):
 			if command.upper().startswith('SELECT'):
 				if not self.quiet:
 					log.debug(f"Executing SQL query: '{command}'")
-				c.execute(command, params)
+				if params is not None:
+					c.execute(command, params)
+				else:
+					c.execute(command)
 				SQL_Results = namedtuple('SQL_Results', [x[0].replace(' ', '_') for x in c.description])
 				results = tuple([SQL_Results(*[y for y in x]) for x in c.fetchall() if x is not None])
 				if not self.quiet:
@@ -160,7 +168,10 @@ class SQLite(SQL):
 				if not self.quiet:
 					log.debug(f"Executing SQL transaction: '{command}'")
 					log.info(f"Executing SQL transaction: '{command}'")
-				c.execute(command, params)
+				if params is not None:
+					c.execute(command, params)
+				else:
+					c.execute(command)
 				conn.commit()
 				if not self.quiet:
 					log.debug("SQL transaction successful")
@@ -168,7 +179,10 @@ class SQLite(SQL):
 			else:
 				if not self.quiet:
 					log.debug(f"Executing SQL transaction: '{command}'")
-				c.execute(command, params)
+				if params is not None:
+					c.execute(command, params)
+				else:
+					c.execute(command)
 				conn.commit()
 				if not self.quiet:
 					log.debug("SQL transaction successful")

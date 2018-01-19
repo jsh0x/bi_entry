@@ -2,7 +2,7 @@
 import datetime
 
 from _common import Timer, pprint_dict, week_number
-from config import *
+from _globals import *
 
 null_replacer = """UPDATE table_name SET col1 = NULL WHERE col1 = ''"""
 

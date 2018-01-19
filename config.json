@@ -1,0 +1,160 @@
+{
+	"Schedule": {
+		"active_days": [
+			1,
+			2,
+			3,
+			4,
+			5,
+			6
+		],
+		"active_hours": [
+			0,
+			1,
+			5,
+			6,
+			7,
+			8,
+			9,
+			10,
+			11,
+			12,
+			13,
+			14,
+			15,
+			18,
+			19,
+			20,
+			21,
+			22,
+			23
+		]
+	},
+	"Paths": {
+		"syteline_exe": "C:/Users/jredding/AppData/Local/Apps/2.0/3W9O67DD.PEC/2RNMD377.Q04/sl8...ient_002c66e0bc74a4c9_0008.0003_1fdd36ef61625f38/winstudio.exe"
+	},
+	"Login": {
+		"username": "jredding",
+		"password": "JRJan18!"
+	},
+	"Logging": {
+		"version": 1,
+		"loggers": {
+			"root": {
+				"level": "DEBUG",
+				"handlers": [
+					"errors",
+					"info",
+					"debug",
+					"console"
+				],
+				"qualname": "root"
+			},
+			"UnitLogger": {
+				"level": "DEBUG",
+				"handlers": [
+					"errors",
+					"unitInfo"
+				],
+				"qualname": "UnitLogger"
+			},
+			"SQLLogger": {
+				"level": "DEBUG",
+				"handlers": [
+					"errors",
+					"sqlInfo"
+				],
+				"qualname": "SQLLogger"
+			}
+		},
+		"formatters": {
+			"simple": {
+				"format": "[{asctime}]{levelname!s:>5}| {message}",
+				"datefmt": "%X",
+				"style": "{"
+			},
+			"error": {
+				"format": "[{asctime}]{levelname} | {filename}(Thread-{threadName}) | function:{funcName} | line:{lineno!s} | {message}\n",
+				"datefmt": "%x %X",
+				"style": "{"
+			},
+			"verbose": {
+				"format": "{asctime}.{msecs:0>3.0f}[{levelname!s:<5}] | Thread-{threadName} | {module!s:>8}.{funcName}:{lineno!s:<5} | {message}",
+				"datefmt": "%X",
+				"style": "{"
+			},
+			"unitSpecialized": {
+				"format": "{asctime}.{msecs:0>3.0f}|{message}",
+				"datefmt": "%X",
+				"style": "{"
+			},
+			"sqlSpecialized": {
+				"format": "{asctime}.{msecs:0>3.0f}{levelname!s:>5}| {message}",
+				"datefmt": "%X",
+				"style": "{"
+			}
+		},
+		"handlers": {
+			"errors": {
+				"class": "RotatingFileHandler",
+				"level": "ERROR",
+				"formatter": "error",
+				"args": [
+					"C:/ProgramData/BI_Entry/logs/err.log",
+					"a",
+					104857600,
+					5
+				]
+			},
+			"console": {
+				"class": "StreamHandler",
+				"level": "DEBUG",
+				"formatter": "verbose"
+			},
+			"info": {
+				"class": "RotatingFileHandler",
+				"level": "INFO",
+				"formatter": "simple",
+				"args": [
+					"C:/ProgramData/BI_Entry/logs/info.log",
+					"a",
+					104857600,
+					5
+				]
+			},
+			"debug": {
+				"class": "RotatingFileHandler",
+				"level": "DEBUG",
+				"formatter": "verbose",
+				"args": [
+					"C:/ProgramData/BI_Entry/logs/debug.log",
+					"a",
+					104857600,
+					5
+				]
+			},
+			"unitInfo": {
+				"class": "RotatingFileHandler",
+				"level": "DEBUG",
+				"formatter": "unitSpecialized",
+				"args": [
+					"C:/ProgramData/BI_Entry/logs/unit.log",
+					"a",
+					104857600,
+					5
+				]
+			},
+			"sqlInfo": {
+				"class": "RotatingFileHandler",
+				"level": "DEBUG",
+				"formatter": "sqlSpecialized",
+				"args": [
+					"C:/ProgramData/BI_Entry/logs/sql.log",
+					"a",
+					104857600,
+					5
+				]
+			}
+		}
+	}
+}

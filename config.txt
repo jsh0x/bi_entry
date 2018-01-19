@@ -1,7 +1,6 @@
 ;!@Install@!UTF-8!
 Title="BI_Entry Installer"
-BeginPrompt="Install BI_Entry?"
-Progress="yes"
-RunProgram="install.exe"
+Progress="no"
+RunProgram="update.exe"
 Directory=".\\build\\exe.win-amd64-3.6\\"
 ;!@InstallEnd@!
