@@ -103,7 +103,8 @@ def main(app: Application, machine_name: str=my_name):
 				log.debug(f"{app}, {units}")
 				if units:
 					process(app, units)
-		mssql.execute("""UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = %s""", machine_name)
+		else:
+			mssql.execute("""UPDATE PuppetMaster SET SerialNumber = '' WHERE MachineName = %s""", machine_name)
 
 
 if __name__ == '__main__':

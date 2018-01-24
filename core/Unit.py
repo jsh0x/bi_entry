@@ -246,106 +246,218 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 			return cls(data[0].ID)
 
 	def __init__(self, ID: int):  # TODO: Split long __init__ into separate functions
+		ex = None
 		self.version = version
 		self.ID = ID
 		log.info(f"Attribute ID={self.ID}")
 
-		data = mssql.execute("""SELECT [Serial Number],Suffix,Operation,Operator,Parts,DateTime,Notes,Status FROM PyComm WHERE Id = %d""", self.ID)
+		data = mssql.execute("""SELECT [Serial Number],Build,Suffix,Operation,Operator,Parts,DateTime,Notes,Status FROM PyComm WHERE Id = %d""", self.ID)
 		if not data:
 			raise ValueError()  # TODO: Specify error
 
-		self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number)
-		log.info(f"Attribute serial_number='{self.serial_number}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|ID={self.ID}")
+		try:
+			self.serial_number = self.SerialNumber.from_base_number(data[0].Serial_Number)
+			serial_number_string = str(self.serial_number.number)
+		except Exception as exc:
+			self.serial_number = str(data[0].Serial_Number)
+			if not self.serial_number:
+				self.serial_number = 'Unknown'
+			serial_number_string = self.serial_number
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute serial_number='{self.serial_number}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|ID={self.ID}")
 
-		self.product = self.serial_number.product
-		log.info(f"Attribute product='{self.product}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Product={self.product}")
+		try:
+			self.product = self.serial_number.product
+		except Exception as exc:
+			self.product = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute product='{self.product}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Product={self.product}")
 
-		self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix)
-		log.info(f"Attribute build='{self.build}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Build={self.build}")
+		try:
+			self.build = self.Build.from_SerialNumber(self.serial_number, data[0].Suffix)
+		except Exception as exc:
+			self.build = str(data[0].Build)
+			if not self.build:
+				self.build = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute build='{self.build}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Build={self.build}")
 
-		self.parts = self.Part.from_string(data[0].Parts, self.build)
-		if self.parts:
-			part_string = "('" + "', '".join(str(part) for part in self.parts) + "')"
-		else:
-			part_string = 'None'
-		log.info(f"Attribute parts={part_string}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Parts={part_string}")
+		try:
+			self.parts = self.Part.from_string(data[0].Parts, self.build)
+			if self.parts:
+				part_string = "('" + "', '".join(str(part) for part in self.parts) + "')"
+			else:
+				part_string = 'None'
+		except Exception as exc:
+			self.parts = str(data[0].Parts)
+			if not self.parts:
+				self.parts = 'Unknown'
+			part_string = self.parts
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute parts={part_string}")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Parts={part_string}")
 
-		self.operation = self.Operation.from_string(data[0].Operation, self.product)
-		log.info(f"Attribute operation='{self.operation}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Operation={self.operation}")
+		try:
+			self.operation = self.Operation.from_string(data[0].Operation, self.product)
+		except Exception as exc:
+			self.operation = str(data[0].Operation)
+			if not self.operation:
+				self.operation = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute operation='{self.operation}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Operation={self.operation}")
 
-		self.operator = self.Operator.from_username(data[0].Operator)
-		log.info(f"Attribute operator='{self.operator.username}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Operator={self.operator.username}")
+		try:
+			self.operator = self.Operator.from_username(data[0].Operator)
+			operator_string = str(self.operator.username)
+		except Exception as exc:
+			self.operator = str(data[0].Operator)
+			if not self.operator:
+				self.operator = 'Unknown'
+			operator_string = self.operator
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute operator='{operator_string}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Operator={operator_string}")
 
-		self.is_cellular = self.build.cellular
-		log.info(f"Attribute is_cellular={self.is_cellular}")
+		try:
+			self.is_cellular = self.build.cellular
+		except Exception as exc:
+			self.is_cellular = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute is_cellular={self.is_cellular}")
 
-		self.datetime = data[0].DateTime
-		datetime_str = self.datetime.strftime('%m/%d/%Y %H:%M:%S')
-		log.info(f"Attribute datetime='{datetime_str}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|DateTime={datetime_str}")
+		try:
+			self.datetime = data[0].DateTime
+			datetime_str = self.datetime.strftime('%m/%d/%Y %H:%M:%S')
+		except Exception as exc:
+			self.datetime = datetime.datetime(1900, 1, 1)
+			datetime_str = self.datetime.strftime('%m/%d/%Y %H:%M:%S')
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute datetime='{datetime_str}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|DateTime={datetime_str}")
 
-		self.notes = data[0].Notes
-		log.info(f"Attribute notes='{self.notes}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Notes={self.notes}")
+		try:
+			self.notes = data[0].Notes
+		except Exception as exc:
+			self.notes = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute notes='{self.notes}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Notes={self.notes}")
 
-		self.status = data[0].Status
-		log.info(f"Attribute status='{self.status}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Status={self.status}")
+		try:
+			self.status = data[0].Status
+		except Exception as exc:
+			self.status = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute status='{self.status}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Status={self.status}")
 
 		self.parts_transacted = set()
 
-		# try:
-		# 	self.sro, self.sro_line = self.get_sro(self.serial_number)
-		# except TypeError:
-		# 	self.sro = None
-		# 	self.sro_line = None
-		# 	if self.status != 'Scrap':
-		# 		raise NoSROError(serial_number=self.serial_number.number)
-		# finally:
-		# 	log.info(f"Attribute sro='{self.sro}'")
-		# 	log.info(f"Attribute sro_line={self.sro_line}")
-		# 	u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO={self.sro}")
-		# 	u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Line={self.sro_line}")
+		try:
+			self.eff_date = self.get_eff_date(self.serial_number)
+			if self.eff_date is None:
+				raise NoSROError(serial_number=serial_number_string)
+			eff_date_str = self.eff_date.strftime('%m/%d/%Y')
+		except Exception as exc:
+			self.eff_date = datetime.datetime(1900, 1, 1)
+			eff_date_str = self.eff_date.strftime('%m/%d/%Y')
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute eff_date={eff_date_str}")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Eff Date={eff_date_str}")
 
-		self.eff_date = self.get_eff_date(self.serial_number)
-		eff_date_str = self.eff_date.strftime('%m/%d/%Y')
-		log.info(f"Attribute eff_date={eff_date_str}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Eff Date={eff_date_str}")
-
-		self.sro_open_status = self.get_statuses(self.serial_number)
-		log.info(f"Attribute sro_open_status={self.sro_open_status}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Lines Status Open={self.sro_open_status['Lines']}")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|SRO Operations Status Open={self.sro_open_status['Operations']}")
+		try:
+			self.sro_open_status = self.get_statuses(self.serial_number)
+			if self.sro_open_status is None:
+				raise NoSROError(serial_number=serial_number_string)
+		except Exception as exc:
+			self.sro_open_status = {'Lines': 'Unknown', 'Operations': 'Unknown'}
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute sro_open_status={self.sro_open_status}")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|SRO Lines Status Open={self.sro_open_status['Lines']}")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|SRO Operations Status Open={self.sro_open_status['Operations']}")
 
 		# if not self.sro_open_status['Lines']:
 		# 	raise NoOpenSROError(serial_number=self.serial_number.number, sro=self.sro)
 
-		self.location = self.get_location(self.serial_number)
-		log.info(f"Attribute location='{self.location}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Location={self.location}")
+		try:
+			self.location = self.get_location(self.serial_number)
+		except Exception as exc:
+			self.location = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute location='{self.location}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Location={self.location}")
 
-		self.warehouse = self.get_warehouse(self.serial_number)
-		log.info(f"Attribute warehouse='{self.warehouse}'")
-		u_log.debug(f"{str('SN=' + str(self.serial_number.number)).ljust(13)}|INFO|Warehouse={self.warehouse}")
+		try:
+			self.warehouse = self.get_warehouse(self.serial_number)
+		except Exception as exc:
+			self.warehouse = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute warehouse='{self.warehouse}'")
+			u_log.debug(f"{str('SN=' + serial_number_string).ljust(13)}|INFO|Warehouse={self.warehouse}")
 
-		self.passed_QC = self.has_passed_qc(self.serial_number)
-		log.info(f"Attribute passed_QC={self.passed_QC}")
+		try:
+			self.passed_QC = self.has_passed_qc(self.serial_number)
+		except Exception as exc:
+			self.passed_QC = 'Unknown'
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute passed_QC={self.passed_QC}")
 
-		self.oldest_datetime = self.get_oldest_datetime(self.serial_number)
-		log.info(f"Attribute oldest_datetime={self.oldest_datetime}")
+		try:
+			self.oldest_datetime = self.get_oldest_datetime(self.serial_number)
+		except Exception as exc:
+			self.oldest_datetime = datetime.datetime(1900, 1, 1)
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute oldest_datetime={self.oldest_datetime}")
 
-		self.newest_datetime = self.get_newest_datetime(self.serial_number)
-		log.info(f"Attribute newest_datetime={self.newest_datetime}")
+		try:
+			self.newest_datetime = self.get_newest_datetime(self.serial_number)
+		except Exception as exc:
+			self.newest_datetime = datetime.datetime(1900, 1, 1)
+			if ex is None:
+				ex = exc
+		finally:
+			log.info(f"Attribute newest_datetime={self.newest_datetime}")
 
 		self.batch_amt_default = 1
 
 		self.closed_sros = 0
+		self.sro = '?'
 
 		self.sro_operations_time = 0
 		self.sro_transactions_time = 0
@@ -405,7 +517,8 @@ class Unit:  # TODO: Special methods __repr__ and __str__
 		# 	self.general_resolution_name = None
 		# else:
 		# 	raise InvalidReasonCodeError(reason_code=str(self.notes), spec_id=str(self.ID))
-		pass
+		if ex:
+			raise ex
 	# if 'queued' not in self._status.lower():
 	# 	try:
 	# 		if 'queued' not in self._status.lower() and REGEX_RESOLUTION.match(self.notes):
@@ -601,9 +714,12 @@ ORDER BY o.open_date DESC
 			batch_amt = self.batch_amt_default
 		log.info(f"Batch amount: {batch_amt}")
 		life_time = self.life_timer.stop()
-		parts_count = len(self.parts)
+		if isinstance(self.parts, str):
+			parts_count = self.parts.count(',')
+		else:
+			parts_count = len(self.parts)
 		parts_transacted_count = len(self.parts_transacted)
-		if self.parts:
+		if self.parts and not isinstance(self.parts, str):
 			parts_string = ", ".join(str(part) for part in self.parts)
 			if len(self.parts_transacted) > 0:
 				parts_transacted_string = ", ".join(str(part) for part in self.parts_transacted)
@@ -615,8 +731,26 @@ ORDER BY o.open_date DESC
 		process = 'Transaction' if self.status == 'Queued' else self.status
 		life_time /= batch_amt
 		end_time = datetime.datetime.now().time().strftime("%H:%M:%S.%f")
-		carrier_str = self.build.carrier[0].upper() if self.build.carrier is not None else '-'
-		log.debug((self.serial_number.number, carrier_str, self.build.core, self.build.type, self.operator.username, self.operation, parts_string, parts_transacted_string,
+		if isinstance(self.build, str):
+			carrier_str = '-'
+		else:
+			carrier_str = self.build.carrier[0].upper() if self.build.carrier is not None else '-'
+		if isinstance(self.serial_number, str):
+			serial_number_string = str(self.serial_number)
+		else:
+			serial_number_string = self.serial_number.number
+		if isinstance(self.build, str):
+			build_core_string = str(self.build)
+			build_type_string = str(self.build)
+		else:
+			build_core_string = self.build.core
+			build_type_string = self.build.type
+		if isinstance(self.operator, str):
+			operator_string = str(self.operator)
+		else:
+			operator_string = self.operator.username
+
+		log.debug((serial_number_string, carrier_str, build_core_string, build_type_string, operator_string, str(self.operation), parts_string, parts_transacted_string,
 		           parts_count, parts_transacted_count, self.datetime.strftime('%m/%d/%Y %H:%M:%S'), self.start_date, self.start_time, self.sro_operations_time,
 		           self.sro_transactions_time, self.misc_issue_time, end_time, life_time, process, results, reason, version))
 		mssql.execute("""INSERT INTO [Statistics] ([Serial Number], 
@@ -644,7 +778,7 @@ Results,
 Reason,
 Version
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %d, %s, %s, %s, %d, %d, %d, %d, %s, %d, %s, %s, %s, %s)""",
-		              (self.serial_number.number, carrier_str, self.build.core, self.build.type, self.operator.username, self.operation, parts_string, parts_transacted_string,
+		              (serial_number_string, carrier_str, build_core_string, build_type_string, operator_string, str(self.operation), parts_string, parts_transacted_string,
 		               parts_count, parts_transacted_count, self.closed_sros, self.datetime.strftime('%m/%d/%Y %H:%M:%S'), self.start_date, self.start_time, self.sro_operations_time,
 		               self.sro_transactions_time, self.misc_issue_time, self.extra_sro_time, end_time, life_time, process, results, reason, version))
 

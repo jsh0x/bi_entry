@@ -28,9 +28,8 @@ TRANSACTION_COMPLETED = 'C1'
 
 class TransactUnit(Unit, completion_string=TRANSACTION_COMPLETED, status_string=TRANSACTION_STATUS):
 	def __init__(self, ID: int):
-		Unit.__init__(self, ID)
 		try:
-
+			Unit.__init__(self, ID)
 			try:
 				self.sro, self.sro_line = self.get_sro(self.serial_number)
 			except TypeError:

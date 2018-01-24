@@ -8,7 +8,7 @@ from __version__ import version
 try:
 	config = Config.open(pathlib.Path.cwd() / 'config.json')
 except OSError:
-	DefaultConfig(pathlib.Path.cwd() / 'config.json')
+	DefaultConfig()
 finally:
 	config = Config.open(pathlib.Path.cwd() / 'config.json')
 

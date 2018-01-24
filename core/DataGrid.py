@@ -7,7 +7,8 @@ import logging
 import threading
 from collections import Counter, UserDict, UserList, namedtuple
 from time import sleep
-from typing import Any, Iterable, List, Tuple, Union
+from typing import Any, Iterable, List, Tuple, Union, Callable
+import queue
 
 import numpy as np
 import pyautogui as pag
@@ -257,6 +258,8 @@ class DataGridNEW:
 	# TODO: Base on pywinauto.controls.uia_controls.ListViewWrapper
 	# TODO: Multithreaded grid population
 	_type_dict = {0: bool, 1: int, 2: float, 3: datetime.datetime}
+	q = queue.Queue()
+	_workers = []
 
 	def __init__(self, control: WindowSpecification, columns: Union[str, Iterable[str]], rows: int):
 		# TODO: If columns and/or rows == None, auto-detect
@@ -439,6 +442,32 @@ class DataGridNEW:
 					free = True
 		self.update_grid_size()
 		self.grid[row, self.column_names.index(column)] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+
+	def worker_thread(self, value, column, row, func: Callable, *args, **kwargs):
+		cell = func(*args, **kwargs)
+		self.q.put((value, column, row, cell, uia_controls.EditWrapper(cell.element_info)))
+
+	def quick_set_cell(self, column: str, row: int, value, *, visible_only: bool = False, specific: int = 0):
+		worker = threading.Thread(target=self.worker_thread, args=(value, column, row, self.get_cell, column, row), kwargs={'visible_only': visible_only, 'specific': specific}, daemon=True)
+		worker.start()
+		self._workers.append(worker)
+
+	def quick_set_execute(self):
+		while not self.q.empty():
+			value, column, row, cell, edit_control = self.q.get()
+			cell.click_input()
+			edit_control.type_keys(str(value) + '{ENTER 5}', with_spaces=True, with_newlines=True)
+			self.grid[row, self.column_names.index(column)] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+		self.update_grid_size()
+		self._workers.clear()
+
+	def quick_set_cell_alt(self, column: str, row: int, value, *, visible_only: bool = False, specific: int = 0):
+		cell = self.get_cell(column, row, visible_only=visible_only, specific=specific)
+		edit_control = uia_controls.EditWrapper(cell.element_info)
+		cell.click_input()
+		edit_control.type_keys(str(value) + '{ENTER 8}', with_spaces=True, with_newlines=True)
+		# self.grid[row, self.column_names.index(column)] = self.pyType_to_cellType(cell.iface_value.CurrentValue)
+		self.update_grid_size()
 
 	def set_cells(self, *args: List[Tuple[str, int, Any]]):
 		for column, row, value in args:

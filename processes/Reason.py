@@ -25,10 +25,8 @@ REASON_COMPLETED = 'C3'
 
 class ReasonUnit(Unit, completion_string=REASON_COMPLETED, status_string=REASON_STATUS):
 	def __init__(self, ID: int):
-		Unit.__init__(self, ID)
-
 		try:
-
+			Unit.__init__(self, ID)
 			try:
 				self.sro, self.sro_line = self.get_sro(self.serial_number)
 			except TypeError:

@@ -58,7 +58,9 @@ class Config(UserDict):
 		json.dump(self.data, fp.open(mode='w+'), indent='\t')
 		self.filepath = fp
 
-def DefaultConfig(fp: Filepath, usr: str=None, pwd=None, sl8_fp: Filepath=None) -> Config:
+def DefaultConfig(fp: Filepath=None, usr: str=None, pwd=None, sl8_fp: Filepath=None) -> Config:
+	if fp is None:
+		fp = pathlib.WindowsPath(os.environ["PROGRAMDATA"]) / 'BI_Entry' / 'config.json'
 	log_dir = pathlib.WindowsPath(os.environ["PROGRAMDATA"]) / 'BI_Entry' / 'logs'
 	log_dir.mkdir(exist_ok=True)
 
@@ -86,7 +88,8 @@ def DefaultConfig(fp: Filepath, usr: str=None, pwd=None, sl8_fp: Filepath=None) 
 	file_size = MEGABYTE * 100
 	config_content = {'Schedule':
 		                  {'active_days': list(range(7))[1:],
-		                   'active_hours':              list(range(0, 2)) + list(range(5, 16)) + list(range(18, 24))},
+		                   'active_hours': list(range(0, 2)) + list(range(5, 16)) + list(range(17, 24))},
+		                   # 'active_hours':              list(range(0, 2)) + list(range(5, 16)) + list(range(18, 24))},
 	                  'Paths':
 		                  {'syteline_exe': str(sl8_fp)},
 	                  'Login':
