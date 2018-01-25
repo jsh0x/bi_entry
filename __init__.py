@@ -10,12 +10,11 @@ from _globals import config
 import logging
 from exceptions import *
 from processes import *
+from utils.decorators import *
 from processes.Transact import TransactUnit
 from processes.Reason import ReasonUnit
 from constants import SYTELINE_WINDOW_TITLE
-from core.Unit import Unit
 from core.Application import Application
-from utils.decorators import *
 from time import sleep
 """
 # try:
@@ -71,7 +70,8 @@ main(args)
 # except ModuleNotFoundError:
 # 	pass"""
 log = logging.getLogger('root')
-@scheduler(active_days, active_hours)
+
+@scheduler
 def main(app: Application, machine_name: str=my_name):
 	if 'Units' not in app.get_focused_form():
 		dlg = app.win32.window(class_name="#32770")
@@ -119,6 +119,8 @@ if __name__ == '__main__':
 	# else:
 	#     pass  # Keep going
 	initialize_logger(config['Logging'])
+
+	main.register_schedule(active_time)
 
 	with Application.start(application_filepath) as app:
 		def start_func(_app: Application, usr: str, pwd: str):

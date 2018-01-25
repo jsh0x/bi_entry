@@ -74,7 +74,7 @@ class Application(psutil.Process):
 			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
 			sl_uia.set_focus()
 			r_i = so.rectangle()
-			c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+			c_coords = center(r_i)
 			pag.click(*c_coords)
 			if self.win32.SignIn.exists(10, 0.09):
 				self.win32.SignIn.wait('ready', 2, 0.09)
@@ -118,7 +118,7 @@ class Application(psutil.Process):
 			so = [item for item in sl_uia.MenuBar.items() if item.texts()[0].lower().strip() == 'sign out'][0]
 			sl_uia.set_focus()
 			r_i = so.rectangle()
-			c_coords = center(x1=r_i.left, y1=r_i.top, x2=r_i.right, y2=r_i.bottom)
+			c_coords = center(r_i)
 			pag.click(*c_coords)
 			sleep(0.5)
 			log.debug(self.win32.top_window().texts()[0])

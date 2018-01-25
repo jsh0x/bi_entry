@@ -3,7 +3,7 @@
 # To compare versions robustly, use 'bi_entry.utils.BIEntryVersion'
 
 short_version = '1.5.6'
-full_version = '1.5.6.54'
+full_version = '1.5.6.66'
 version = short_version
 release = False
 
